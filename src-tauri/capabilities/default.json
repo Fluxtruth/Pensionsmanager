@@ -1,0 +1,30 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "sql:allow-select",
+    "sql:allow-execute",
+    "sql:allow-load",
+    "dialog:allow-save",
+    "dialog:allow-confirm",
+    "dialog:allow-ask",
+    "dialog:allow-message",
+    {
+      "identifier": "fs:allow-write-file",
+      "scope": [
+        "**"
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "scope": [
+        "**"
+      ]
+    }
+  ]
+}
