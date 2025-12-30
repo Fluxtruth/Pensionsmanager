@@ -192,7 +192,7 @@ function GuestsList() {
     );
 
     const GuestFormFields = ({ defaultValues }: { defaultValues?: Partial<Guest> }) => {
-        const [nat, setNat] = useState(defaultValues?.nationality ?? "Deutschland");
+        const [nat, setNat] = useState(defaultValues?.nationality ?? "");
 
         return (
             <div className="grid gap-4 py-4">
@@ -243,7 +243,7 @@ function GuestsList() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Gäste Management</h2>
+                    <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Gäste</h2>
                     <p className="text-zinc-500 dark:text-zinc-400">
                         Verwalte detaillierte Gastinformationen und Präferenzen.
                     </p>

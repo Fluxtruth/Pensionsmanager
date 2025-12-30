@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pensionsmanager
 
-## Getting Started
+Eine moderne, desktop-basierte Anwendung zur Verwaltung von Pensionen, Ferienwohnungen und Gästehäusern. Entwickelt mit Next.js und Tauri für eine performante und intuitive Benutzererfahrung.
 
-First, run the development server:
+## Features
+
+- **🚀 Dashboard**: Zentrale Übersicht über heutige Anreisen, Abreisen und den aktuellen Reinigungsstatus.
+- **📅 Belegungsplan**: Interaktiver Kalender zur Verwaltung von Buchungen und Echtzeit-Zimmerverfügbarkeiten.
+- **📝 Buchungsmanagement**: Geführter Buchungs-Assistent zum schnellen Anlegen von Einzel- und Gruppenbuchungen.
+- **👥 Gästeverwaltung (CRM)**: Vollständige Datenbank zur Pflege von Gastprofilen, Nationalitäten und speziellen Präferenzen.
+- **🏨 Zimmerverwaltung**: Detaillierte Konfiguration von Zimmerkategorien, Bettenanzahl und Statusüberwachung.
+- **🧹 Reinigungsplan**: Intelligentes System zur automatischen Generierung von Reinigungsaufgaben mit konfigurierbaren Frequenzen.
+- **🍳 Frühstücksplaner**: Effiziente Planung der Frühstückskapazitäten basierend auf der aktuellen Belegung.
+- **📊 Tourismusmeldung**: Automatisierter Export von melderelevanten Daten im CSV-Format.
+
+## Technologien
+
+- **Frontend**: [Next.js](https://nextjs.org/) (React)
+- **Desktop**: [Tauri](https://tauri.app/) (Rust-basiertes Framework für sichere und kleine Apps)
+- **UI/UX**: Tailwind CSS & Shadcn UI für ein modernes, responsives Design
+- **Datenbank**: SQLite für lokale Datenspeicherung
+
+## Installation & Entwicklung
+
+### Voraussetzungen
+
+Stellen Sie sicher, dass Sie [Node.js](https://nodejs.org/) und die [Tauri-Abhängigkeiten](https://tauri.app/v1/guides/getting-started/prerequisites) (inkl. Rust) installiert haben.
+
+### Development-Server starten
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run tauri dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Produktions-Build erstellen
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run tauri build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+*Entwickelt für eine effiziente und moderne Pensionsverwaltung.*

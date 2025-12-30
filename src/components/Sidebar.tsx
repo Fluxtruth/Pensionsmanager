@@ -19,7 +19,7 @@ const navigation = [
     { name: "Dashboard", href: "/", icon: Home },
     { name: "Zimmer", href: "/zimmer", icon: BedDouble },
     { name: "Buchungen", href: "/buchungen", icon: CalendarDays },
-    { name: "Gäste (CRM)", href: "/gaeste", icon: Users },
+    { name: "Gäste", href: "/gaeste", icon: Users },
     { name: "Reinigungsplan", href: "/reinigung", icon: Eraser },
     { name: "Frühstück", href: "/fruehstueck", icon: Coffee },
     { name: "Tourismusmeldung", href: "/tourismusmeldung", icon: BarChart3 },
