@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense, useRef } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Plus, Users, Search, GitBranch, Mail, Phone, Building2, UserCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { NationalitySelector } from "@/components/NationalitySelector";
 import { initDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
@@ -35,10 +37,16 @@ interface Guest {
     company: string;
     notes: string;
     contact_info: string;
+    nationality: string;
     total_revenue?: number;
 }
 
-export default function GuestsPage() {
+function GuestsList() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const editId = searchParams.get("edit");
+    const autoOpenHandled = useRef<string | null>(null);
+
     const [guests, setGuests] = useState<Guest[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [isOpen, setIsOpen] = useState(false);
@@ -63,6 +71,19 @@ export default function GuestsPage() {
         loadGuests();
     }, []);
 
+    useEffect(() => {
+        if (editId && guests.length > 0 && autoOpenHandled.current !== editId) {
+            const guest = guests.find(g => g.id === editId);
+            if (guest) {
+                setEditingGuest(guest);
+                setIsEditOpen(true);
+                autoOpenHandled.current = editId;
+            }
+        } else if (!editId) {
+            autoOpenHandled.current = null;
+        }
+    }, [editId, guests]);
+
     const addGuest = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const form = e.currentTarget;
@@ -75,6 +96,7 @@ export default function GuestsPage() {
         const phone = formData.get("phone") as string;
         const company = formData.get("company") as string;
         const notes = formData.get("notes") as string;
+        const nationality = formData.get("nationality") as string;
 
         // Construct visual full name
         const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
@@ -85,8 +107,8 @@ export default function GuestsPage() {
             const db = await initDb();
             if (db) {
                 await db.execute(
-                    "INSERT INTO guests (id, name, first_name, middle_name, last_name, email, phone, company, notes, contact_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [id, fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo]
+                    "INSERT INTO guests (id, name, first_name, middle_name, last_name, email, phone, company, notes, contact_info, nationality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [id, fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality]
                 );
                 await loadGuests();
                 setIsOpen(false);
@@ -111,6 +133,7 @@ export default function GuestsPage() {
         const phone = formData.get("phone") as string;
         const company = formData.get("company") as string;
         const notes = formData.get("notes") as string;
+        const nationality = formData.get("nationality") as string;
 
         const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
         const contactInfo = [email, phone].filter(Boolean).join(" / ");
@@ -119,12 +142,14 @@ export default function GuestsPage() {
             const db = await initDb();
             if (db) {
                 await db.execute(
-                    "UPDATE guests SET name = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, phone = ?, company = ?, notes = ?, contact_info = ? WHERE id = ?",
-                    [fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, editingGuest.id]
+                    "UPDATE guests SET name = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, phone = ?, company = ?, notes = ?, contact_info = ?, nationality = ? WHERE id = ?",
+                    [fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality, editingGuest.id]
                 );
                 await loadGuests();
                 setIsEditOpen(false);
                 setEditingGuest(null);
+                // Clear search param
+                router.replace("/gaeste", { scroll: false });
             }
         } catch (error) {
             console.error("Failed to update guest:", error);
@@ -141,10 +166,6 @@ export default function GuestsPage() {
                 // Check for existing bookings
                 const bookingsRes = await db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM bookings WHERE guest_id = ?", [id]);
                 const bookingCount = bookingsRes?.[0]?.count || 0;
-
-                // Check for existing occasions
-                const occasionsRes = await db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM occasions WHERE main_guest_id = ?", [id]);
-                const occasionCount = occasionsRes?.[0]?.count || 0;
 
                 if (bookingCount > 0) {
                     alert(`Dieser Gast kann nicht gelöscht werden, da er noch ${bookingCount} Buchung(en) im System hat. Bitte löschen Sie zuerst die Buchungen.`);
@@ -170,42 +191,53 @@ export default function GuestsPage() {
         g.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const GuestFormFields = ({ defaultValues }: { defaultValues?: Partial<Guest> }) => (
-        <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                    <Label htmlFor="first_name">Vorname</Label>
-                    <Input id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" />
+    const GuestFormFields = ({ defaultValues }: { defaultValues?: Partial<Guest> }) => {
+        const [nat, setNat] = useState(defaultValues?.nationality ?? "Deutschland");
+
+        return (
+            <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="first_name">Vorname</Label>
+                        <Input id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="middle_name">Zweitname</Label>
+                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} placeholder="Elias" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
+                        <Input id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="email">E-Mail</Label>
+                        <Input id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="phone">Telefon</Label>
+                        <Input id="phone" name="phone" type="tel" defaultValue={defaultValues?.phone} placeholder="+49 123 456789" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="company">Firma</Label>
+                        <Input id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Nationalität</Label>
+                        <input type="hidden" name="nationality" value={nat} />
+                        <NationalitySelector value={nat} onChange={setNat} />
+                    </div>
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="middle_name">Zweitname</Label>
-                    <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} placeholder="Elias" />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
-                    <Input id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required />
+                    <Label htmlFor="notes">Notizen / Präferenzen</Label>
+                    <Textarea id="notes" name="notes" defaultValue={defaultValues?.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" />
                 </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label htmlFor="email">E-Mail</Label>
-                    <Input id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="phone">Telefon</Label>
-                    <Input id="phone" name="phone" type="tel" defaultValue={defaultValues?.phone} placeholder="+49 123 456789" />
-                </div>
-            </div>
-            <div className="space-y-2">
-                <Label htmlFor="company">Firma</Label>
-                <Input id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" />
-            </div>
-            <div className="space-y-2">
-                <Label htmlFor="notes">Notizen / Präferenzen</Label>
-                <Textarea id="notes" name="notes" defaultValue={defaultValues?.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" />
-            </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="space-y-6">
@@ -235,7 +267,14 @@ export default function GuestsPage() {
                     </DialogContent>
                 </Dialog>
 
-                <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                <Dialog open={isEditOpen} onOpenChange={(open) => {
+                    setIsEditOpen(open);
+                    if (!open) {
+                        setEditingGuest(null);
+                        autoOpenHandled.current = null;
+                        router.replace("/gaeste", { scroll: false });
+                    }
+                }}>
                     <DialogContent className="max-w-2xl">
                         <DialogHeader>
                             <DialogTitle>Gast bearbeiten: {editingGuest?.name}</DialogTitle>
@@ -348,5 +387,13 @@ export default function GuestsPage() {
                 </Table>
             </div>
         </div>
+    );
+}
+
+export default function GuestsPage() {
+    return (
+        <Suspense fallback={<div className="p-8 text-center italic text-zinc-500 text-sm">Wird geladen...</div>}>
+            <GuestsList />
+        </Suspense>
     );
 }

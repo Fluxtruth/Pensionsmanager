@@ -10,6 +10,7 @@ const mockData: Record<string, any[]> = {
   bookings: [],
   staff: [],
   cleaning_tasks: [],
+  cleaning_task_suggestions: [],
   breakfast_options: []
 };
 
@@ -45,7 +46,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
                 mockData.guests.push({
                   id: params?.[0], name: params?.[1], first_name: params?.[2], middle_name: params?.[3],
                   last_name: params?.[4], email: params?.[5], phone: params?.[6], company: params?.[7],
-                  notes: params?.[8], contact_info: params?.[9]
+                  notes: params?.[8], contact_info: params?.[9], nationality: params?.[10]
                 });
               } else if (table === "rooms") {
                 mockData.rooms.push({ id: params?.[0], name: params?.[1], type: params?.[2], base_price: params?.[3] || 0 });
@@ -65,6 +66,10 @@ export async function initDb(): Promise<DatabaseMock | null> {
                 });
               } else if (table === "breakfast_options") {
                 mockData.breakfast_options.push({ id: params?.[0], booking_id: params?.[1], date: params?.[2], is_included: params?.[3], is_prepared: params?.[4] || 0, guest_count: params?.[5] || 1, time: params?.[6], comments: params?.[7], source: params?.[8] || 'auto', is_manual: params?.[9] || 0 });
+              } else if (table === "cleaning_tasks") {
+                mockData.cleaning_tasks.push({ id: params?.[0], room_id: params?.[1], staff_id: params?.[2], date: params?.[3], status: params?.[4], is_manual: params?.[5], source: params?.[6], title: params?.[7] });
+              } else if (table === "cleaning_task_suggestions") {
+                mockData.cleaning_task_suggestions.push({ id: params?.[0], title: params?.[1], weekday: params?.[2], frequency_weeks: params?.[3] });
               }
             }
           }
@@ -96,7 +101,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
                     ...mockData.guests[index],
                     name: params?.[0], first_name: params?.[1], middle_name: params?.[2],
                     last_name: params?.[3], email: params?.[4], phone: params?.[5],
-                    company: params?.[6], notes: params?.[7], contact_info: params?.[8]
+                    company: params?.[6], notes: params?.[7], contact_info: params?.[8],
+                    nationality: params?.[9]
                   };
                 } else if (table === "rooms") {
                   mockData.rooms[index] = { ...mockData.rooms[index], name: params?.[0], type: params?.[1], base_price: params?.[2] };
@@ -114,6 +120,10 @@ export async function initDb(): Promise<DatabaseMock | null> {
                   mockData.breakfast_options[index] = { ...mockData.breakfast_options[index], is_included: params?.[0], is_prepared: params?.[1], guest_count: params?.[2], time: params?.[3], comments: params?.[4], source: params?.[5], is_manual: params?.[6] };
                 } else if (table === "booking_groups") {
                   mockData.booking_groups[index] = { ...mockData.booking_groups[index], name: params?.[0] };
+                } else if (table === "cleaning_tasks") {
+                  mockData.cleaning_tasks[index] = { ...mockData.cleaning_tasks[index], status: params?.[0], staff_id: params?.[1], comments: params?.[2] };
+                } else if (table === "cleaning_task_suggestions") {
+                  mockData.cleaning_task_suggestions[index] = { ...mockData.cleaning_task_suggestions[index], title: params?.[0], weekday: params?.[1], frequency_weeks: params?.[2] };
                 }
               }
             }
@@ -210,7 +220,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
       );
     `);
 
-    const guestColumns = ["first_name", "middle_name", "last_name", "email", "phone", "company", "notes", "total_revenue"];
+    const guestColumns = ["first_name", "middle_name", "last_name", "email", "phone", "company", "notes", "total_revenue", "nationality"];
     for (const col of guestColumns) {
       try { await db.execute(`ALTER TABLE guests ADD COLUMN ${col} TEXT`); } catch (e) { }
     }
@@ -246,9 +256,13 @@ export async function initDb(): Promise<DatabaseMock | null> {
 
       CREATE TABLE IF NOT EXISTS cleaning_tasks (
         id TEXT PRIMARY KEY, room_id TEXT, staff_id TEXT, date TEXT, status TEXT,
-        is_exception INTEGER DEFAULT 0, original_date TEXT,
+        is_exception INTEGER DEFAULT 0, original_date TEXT, title TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (staff_id) REFERENCES staff(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS cleaning_task_suggestions (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, weekday INTEGER, frequency_weeks INTEGER DEFAULT 1
       );
 
       CREATE TABLE IF NOT EXISTS breakfast_options (
@@ -272,6 +286,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN delayed_from TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN source TEXT"); } catch (e) { }
+    try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN title TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN source TEXT DEFAULT 'auto'"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
 

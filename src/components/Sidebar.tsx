@@ -22,7 +22,7 @@ const navigation = [
     { name: "Gäste (CRM)", href: "/gaeste", icon: Users },
     { name: "Reinigungsplan", href: "/reinigung", icon: Eraser },
     { name: "Frühstück", href: "/fruehstueck", icon: Coffee },
-    { name: "Berichte", href: "/berichte", icon: BarChart3 },
+    { name: "Tourismusmeldung", href: "/tourismusmeldung", icon: BarChart3 },
 ];
 
 export function Sidebar() {

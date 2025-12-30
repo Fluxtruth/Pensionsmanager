@@ -15,6 +15,18 @@
     "dialog:allow-ask",
     "dialog:allow-message",
     {
+      "identifier": "fs:allow-write-text-file",
+      "scope": [
+        "**"
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "scope": [
+        "**"
+      ]
+    },
+    {
       "identifier": "fs:allow-write-file",
       "scope": [
         "**"

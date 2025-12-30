@@ -5,7 +5,7 @@ import { MyDayWidget } from "@/components/MyDayWidget";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { BedDouble, Bed, Home as HomeIcon, Users, User, LogIn, LogOut, CheckCircle2, ChevronRight, Edit2, AlertTriangle } from "lucide-react";
+import { BedDouble, Bed, Home as HomeIcon, Users, User, LogIn, LogOut, CheckCircle2, ChevronRight, Edit2, AlertTriangle, XCircle } from "lucide-react";
 import { initDb, type DatabaseMock } from "@/lib/db";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,6 +23,7 @@ interface Room {
 
 interface BookingEntry {
   id: string;
+  guest_id: string;
   guest_name: string;
   room_id: string;
   room_name?: string;
@@ -86,7 +87,7 @@ export default function Home() {
 
         // Load Today's Arrivals
         const arrivalResults = await db.select<BookingEntry[]>(`
-          SELECT b.id, g.name as guest_name, b.room_id, r.name as room_name, b.status, b.start_date as date, b.estimated_arrival_time
+          SELECT b.id, b.guest_id, g.name as guest_name, b.room_id, r.name as room_name, b.status, b.start_date as date, b.estimated_arrival_time
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
@@ -95,8 +96,8 @@ export default function Home() {
 
         if (arrivalResults) {
           const sorted = [...arrivalResults].sort((a, b) => {
-            const aVal = a.status === "Checked-In" || a.status === "Checked-Out" ? 1 : 0;
-            const bVal = b.status === "Checked-In" || b.status === "Checked-Out" ? 1 : 0;
+            const aVal = a.status === "Checked-In" || a.status === "Checked-Out" || a.status === "Storniert" ? 1 : 0;
+            const bVal = b.status === "Checked-In" || b.status === "Checked-Out" || b.status === "Storniert" ? 1 : 0;
             return aVal - bVal;
           });
           setArrivals(sorted);
@@ -104,7 +105,7 @@ export default function Home() {
 
         // Load Today's Departures
         const departureResults = await db.select<BookingEntry[]>(`
-          SELECT b.id, g.name as guest_name, b.room_id, r.name as room_name, b.status, b.end_date as date
+          SELECT b.id, b.guest_id, g.name as guest_name, b.room_id, r.name as room_name, b.status, b.end_date as date
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
@@ -114,8 +115,8 @@ export default function Home() {
         if (departureResults) {
           // Sort Departures: Not yet checked out first
           const sorted = [...departureResults].sort((a, b) => {
-            const aVal = a.status === "Checked-Out" ? 1 : 0;
-            const bVal = b.status === "Checked-Out" ? 1 : 0;
+            const aVal = a.status === "Checked-Out" || a.status === "Storniert" ? 1 : 0;
+            const bVal = b.status === "Checked-Out" || b.status === "Storniert" ? 1 : 0;
             return aVal - bVal;
           });
           setDepartures(sorted);
@@ -238,31 +239,63 @@ export default function Home() {
                           ? "bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-800/30"
                           : arrival.status === "Draft"
                             ? "bg-amber-50 border-amber-100 text-amber-600 dark:bg-amber-900/20 dark:border-amber-800/30"
-                            : "bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800/30"
+                            : arrival.status === "Storniert"
+                              ? "bg-zinc-50 border-zinc-200 text-zinc-400 dark:bg-zinc-800/50 dark:border-zinc-700"
+                              : "bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800/30"
                       )}>
-                        {(arrival.status === "Checked-In" || arrival.status === "Checked-Out") ? <CheckCircle2 className="w-5 h-5" /> : arrival.status === "Draft" ? <AlertTriangle className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+                        {(arrival.status === "Checked-In" || arrival.status === "Checked-Out")
+                          ? <CheckCircle2 className="w-5 h-5" />
+                          : arrival.status === "Draft"
+                            ? <AlertTriangle className="w-5 h-5" />
+                            : arrival.status === "Storniert"
+                              ? <XCircle className="w-5 h-5" />
+                              : <LogIn className="w-5 h-5" />}
                       </div>
-                      <div>
-                        <div className="font-bold text-zinc-900 dark:text-zinc-100">{arrival.guest_name}</div>
+                      <div className={cn(arrival.status === "Storniert" && "opacity-50")}>
+                        <div
+                          className={cn(
+                            "font-bold text-zinc-900 dark:text-zinc-100",
+                            arrival.status === "Storniert" && "line-through text-zinc-400"
+                          )}
+                        >
+                          {arrival.guest_name}
+                        </div>
                         <div className="text-xs text-zinc-500 flex items-center gap-1.5 mt-0.5">
                           <BedDouble className="w-3 h-3" /> {arrival.room_name || `Zimmer ${arrival.room_id}`}
-                          {arrival.estimated_arrival_time && (
+                          {arrival.estimated_arrival_time ? (
                             <>
                               <span className="w-1 h-1 rounded-full bg-zinc-300 mx-1" />
-                              <span className="font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/50 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                              <span className={cn(
+                                "font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/50 flex items-center gap-1",
+                                arrival.status === "Storniert" ? "text-zinc-400 border-zinc-200 bg-zinc-50" : "text-blue-600"
+                              )}>
+                                {arrival.status !== "Storniert" && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />}
                                 {arrival.estimated_arrival_time} Uhr
                               </span>
                             </>
+                          ) : (
+                            arrival.status === "Hard-Booked" && (
+                              <>
+                                <span className="w-1 h-1 rounded-full bg-zinc-300 mx-1" />
+                                <span className="font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" /> Zeit fehlt!
+                                </span>
+                              </>
+                            )
                           )}
                           <span className="w-1 h-1 rounded-full bg-zinc-300 mx-1" />
                           <span className={cn(
                             "font-medium",
-                            (arrival.status === "Checked-In" || arrival.status === "Checked-Out") ? "text-emerald-600" : arrival.status === "Draft" ? "text-amber-600" : "text-blue-600"
+                            (arrival.status === "Checked-In" || arrival.status === "Checked-Out") ? "text-emerald-600" :
+                              arrival.status === "Draft" ? "text-amber-600" :
+                                arrival.status === "Storniert" ? "text-red-600 dark:text-red-400" :
+                                  "text-blue-600"
                           )}>
                             {arrival.status === "Checked-In" ? "Eingecheckt" :
                               arrival.status === "Checked-Out" ? "Abgereist" :
-                                arrival.status === "Draft" ? "Entwurf - Nicht final!" : "Noch ausstehend"}
+                                arrival.status === "Draft" ? "Entwurf - Nicht final!" :
+                                  arrival.status === "Storniert" ? "Storniert" :
+                                    "Noch nicht eingecheckt"}
                           </span>
                         </div>
                       </div>
@@ -336,20 +369,37 @@ export default function Home() {
                         "w-10 h-10 rounded-full flex items-center justify-center border",
                         departure.status === "Checked-Out"
                           ? "bg-zinc-100 border-zinc-200 text-zinc-500 dark:bg-zinc-800/50 dark:border-zinc-700"
-                          : "bg-amber-50 border-amber-100 text-amber-600 dark:bg-amber-900/20 dark:border-amber-800/30"
+                          : departure.status === "Storniert"
+                            ? "bg-zinc-50 border-zinc-200 text-zinc-400 dark:bg-zinc-800/50 dark:border-zinc-700"
+                            : "bg-amber-50 border-amber-100 text-amber-600 dark:bg-amber-900/20 dark:border-amber-800/30"
                       )}>
-                        {departure.status === "Checked-Out" ? <CheckCircle2 className="w-5 h-5" /> : <LogOut className="w-5 h-5" />}
+                        {departure.status === "Checked-Out"
+                          ? <CheckCircle2 className="w-5 h-5" />
+                          : departure.status === "Storniert"
+                            ? <XCircle className="w-5 h-5" />
+                            : <LogOut className="w-5 h-5" />}
                       </div>
-                      <div>
-                        <div className="font-bold text-zinc-900 dark:text-zinc-100">{departure.guest_name}</div>
+                      <div className={cn(departure.status === "Storniert" && "opacity-50")}>
+                        <div
+                          className={cn(
+                            "font-bold text-zinc-900 dark:text-zinc-100",
+                            departure.status === "Storniert" && "line-through text-zinc-400"
+                          )}
+                        >
+                          {departure.guest_name}
+                        </div>
                         <div className="text-xs text-zinc-500 flex items-center gap-1.5 mt-0.5">
                           <BedDouble className="w-3 h-3" /> {departure.room_name || `Zimmer ${departure.room_id}`}
                           <span className="w-1 h-1 rounded-full bg-zinc-300 mx-1" />
                           <span className={cn(
                             "font-medium",
-                            departure.status === "Checked-Out" ? "text-zinc-400" : "text-amber-600"
+                            departure.status === "Checked-Out" ? "text-zinc-400" :
+                              departure.status === "Storniert" ? "text-red-600 dark:text-red-400" :
+                                "text-amber-600"
                           )}>
-                            {departure.status === "Checked-Out" ? "Bereits ausgecheckt" : "Noch im Haus"}
+                            {departure.status === "Checked-Out" ? "Bereits ausgecheckt" :
+                              departure.status === "Storniert" ? "Storniert" :
+                                "Noch im Haus"}
                           </span>
                         </div>
                       </div>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
     Plus,
     Settings,
@@ -55,6 +56,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
 import { Switch } from "@/components/ui/switch";
+import { NationalitySelector } from "@/components/NationalitySelector";
 
 interface Booking {
     id: string;
@@ -93,11 +95,15 @@ interface Room {
 interface Guest {
     id: string;
     name: string;
-    first_name?: string;
-    last_name?: string;
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
     email?: string;
     phone?: string;
     company?: string;
+    notes?: string;
+    contact_info?: string;
+    nationality?: string;
 }
 
 interface BreakfastOption {
@@ -133,6 +139,7 @@ function BookingsList() {
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [isGroupDeleteOpen, setIsGroupDeleteOpen] = useState(false);
     const [deletingGroup, setDeletingGroup] = useState<BookingGroup | null>(null);
+    const [renameValue, setRenameValue] = useState("");
 
     // UI States
     const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -148,6 +155,10 @@ function BookingsList() {
     // Check-Out Summary States
     const [isCheckOutOpen, setIsCheckOutOpen] = useState(false);
     const [checkOutBooking, setCheckOutBooking] = useState<Booking | null>(null);
+
+    // Guest Mask States
+    const [isGuestMaskOpen, setIsGuestMaskOpen] = useState(false);
+    const [editingGuestForMask, setEditingGuestForMask] = useState<Guest | null>(null);
 
     // Wizard States
     const [wizardStep, setWizardStep] = useState(1); // 1: Guest, 1.5: Create Guest, 2: Dates, 3: Rooms
@@ -198,6 +209,40 @@ function BookingsList() {
         }
     }, []);
 
+    const updateGuestInMask = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!editingGuestForMask) return;
+
+        const formData = new FormData(e.currentTarget);
+        const firstName = formData.get("first_name") as string;
+        const middleName = formData.get("middle_name") as string;
+        const lastName = formData.get("last_name") as string;
+        const email = formData.get("email") as string;
+        const phone = formData.get("phone") as string;
+        const company = formData.get("company") as string;
+        const notes = formData.get("notes") as string;
+        const nationality = formData.get("nationality") as string;
+
+        const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
+        const contactInfo = [email, phone].filter(Boolean).join(" / ");
+
+        try {
+            const db = await initDb();
+            if (db) {
+                await db.execute(
+                    "UPDATE guests SET name = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, phone = ?, company = ?, notes = ?, contact_info = ?, nationality = ? WHERE id = ?",
+                    [fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality, editingGuestForMask.id]
+                );
+                await loadData();
+                setIsGuestMaskOpen(false);
+                setEditingGuestForMask(null);
+            }
+        } catch (error) {
+            console.error("Failed to update guest:", error);
+            alert("Fehler beim Aktualisieren des Gastes.");
+        }
+    };
+
     useEffect(() => {
         loadData();
     }, [loadData]);
@@ -220,20 +265,24 @@ function BookingsList() {
         }
     }, [filterParam, today]);
 
+    const handleEditClick = useCallback((booking: Booking) => {
+        setEditingBooking(booking);
+        loadBreakfast(booking.id);
+        setEditGroupId(booking.group_id || "none");
+        setEditGroupSearch(groups.find(g => g.id === booking.group_id)?.name || "");
+        setEditNewGroupName("");
+        setIsEditOpen(true);
+        setEditTab("details");
+    }, [groups]);
+
     useEffect(() => {
         if (editId && bookings.length > 0) {
             const booking = bookings.find(b => b.id === editId);
             if (booking) {
-                setEditingBooking(booking);
-                loadBreakfast(booking.id);
-                setEditGroupId(booking.group_id || "none");
-                setEditGroupSearch(groups.find(g => g.id === booking.group_id)?.name || "");
-                setEditNewGroupName("");
-                setIsEditOpen(true);
-                setEditTab("details");
+                handleEditClick(booking);
             }
         }
-    }, [editId, bookings, groups]);
+    }, [editId, bookings, handleEditClick]);
 
     useEffect(() => {
         if (checkoutId && bookings.length > 0) {
@@ -442,6 +491,22 @@ function BookingsList() {
             setDeletingGroup(null);
         } catch (error) {
             console.error("Failed to process group action:", error);
+        }
+    };
+
+    const renameGroup = async (groupId: string, newName: string) => {
+        if (!newName.trim()) return;
+        try {
+            const db = await initDb();
+            if (!db) return;
+
+            await db.execute("UPDATE booking_groups SET name = ? WHERE id = ?", [newName.trim(), groupId]);
+            await loadData();
+            setIsGroupDeleteOpen(false);
+            setDeletingGroup(null);
+            setRenameValue("");
+        } catch (error) {
+            console.error("Failed to rename group:", error);
         }
     };
 
@@ -910,6 +975,26 @@ function BookingsList() {
                                     )}
                                 </div>
                             </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Buchungstyp</Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
+                                        <Button
+                                            key={opt}
+                                            type="button"
+                                            variant={wizardData.occasion === opt ? "default" : "outline"}
+                                            className={cn(
+                                                "h-10 text-sm font-medium transition-all",
+                                                wizardData.occasion === opt ? "bg-blue-600 hover:bg-blue-700 shadow-md border-transparent" : "hover:border-blue-300 hover:bg-blue-50 text-zinc-600"
+                                            )}
+                                            onClick={() => setWizardData(prev => ({ ...prev, occasion: opt }))}
+                                        >
+                                            {opt}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label>Geschätzte Ankunft</Label>
@@ -924,14 +1009,6 @@ function BookingsList() {
                             <div className="space-y-3 pt-2">
                                 <Label className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Wünsche & Anforderungen</Label>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <div className="flex items-center space-x-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                                        <Switch
-                                            id="wizard-family"
-                                            checked={wizardData.isFamilyRoom}
-                                            onCheckedChange={(val) => setWizardData(prev => ({ ...prev, isFamilyRoom: val }))}
-                                        />
-                                        <Label htmlFor="wizard-family" className="text-xs font-medium cursor-pointer">Familienzimmer</Label>
-                                    </div>
                                     <div className="flex items-center space-x-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800">
                                         <Switch
                                             id="wizard-dog"
@@ -1316,6 +1393,7 @@ function BookingsList() {
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setDeletingGroup(group);
+                                                            setRenameValue(group.name);
                                                             setIsGroupDeleteOpen(true);
                                                         }}
                                                     >
@@ -1328,7 +1406,28 @@ function BookingsList() {
                                         {isExpanded && groupBookings.map((booking) => (
                                             <TableRow key={booking.id} className={cn("group hover:bg-zinc-50/50 transition-colors", isGroup ? "bg-white/50" : "")}>
                                                 <TableCell className={cn("py-4", isGroup ? "pl-12" : "")}>
-                                                    <div className={cn("font-bold text-zinc-900", booking.status === "Storniert" && "line-through text-zinc-400")}>{booking.guest_name}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div
+                                                            onClick={() => {
+                                                                const guest = guests.find(g => g.id === booking.guest_id);
+                                                                if (guest) {
+                                                                    setEditingGuestForMask(guest);
+                                                                    setIsGuestMaskOpen(true);
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                "font-bold text-zinc-900 hover:text-blue-600 transition-colors cursor-pointer decoration-blue-200/50 hover:underline underline-offset-4",
+                                                                booking.status === "Storniert" && "line-through text-zinc-400"
+                                                            )}
+                                                        >
+                                                            {booking.guest_name}
+                                                        </div>
+                                                        {booking.occasion && (
+                                                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-zinc-200 text-zinc-500 font-medium">
+                                                                {booking.occasion}
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell className="font-medium">
                                                     <Badge variant="secondary" className="bg-zinc-100 text-zinc-700 border-none font-bold">
@@ -1450,17 +1549,12 @@ function BookingsList() {
                                                                 variant="outline"
                                                                 size="sm"
                                                                 className="h-8 border-blue-200 text-blue-600 hover:bg-blue-50 font-bold"
-                                                                onClick={() => {
-                                                                    setEditingBooking(booking);
-                                                                    loadBreakfast(booking.id);
-                                                                    setIsEditOpen(true);
-                                                                    setEditTab("details");
-                                                                }}
+                                                                onClick={() => handleEditClick(booking)}
                                                             >
                                                                 <ArrowRight className="w-3.5 h-3.5 mr-1" /> Fortsetzen
                                                             </Button>
                                                         )}
-                                                        <Button variant="ghost" size="sm" onClick={() => { setEditingBooking(booking); loadBreakfast(booking.id); setIsEditOpen(true); setEditTab("details"); }}>
+                                                        <Button variant="ghost" size="sm" onClick={() => handleEditClick(booking)}>
                                                             <Settings className="w-4 h-4 text-zinc-500" />
                                                         </Button>
                                                         <Button variant="ghost" size="sm" className="text-red-500 hover:bg-red-50" onClick={() => deleteBooking(booking.id)}>
@@ -1632,6 +1726,26 @@ function BookingsList() {
                                     </div>
                                 </div>
                                 <div className="space-y-2">
+                                    <Label>Buchungstyp</Label>
+                                    <input type="hidden" name="occasion" value={editingBooking.occasion || ""} />
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
+                                            <Button
+                                                key={opt}
+                                                type="button"
+                                                variant={editingBooking.occasion === opt ? "default" : "outline"}
+                                                className={cn(
+                                                    "h-10 text-sm font-medium transition-all",
+                                                    editingBooking.occasion === opt ? "bg-blue-600 hover:bg-blue-700 shadow-md border-transparent" : "hover:border-blue-300 hover:bg-blue-50 text-zinc-600"
+                                                )}
+                                                onClick={() => setEditingBooking({ ...editingBooking, occasion: opt })}
+                                            >
+                                                {opt}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
                                     <Label>Geschätzte Ankunft (am Anreisetag)</Label>
                                     <Input
                                         name="estimated_arrival_time"
@@ -1644,15 +1758,6 @@ function BookingsList() {
                                 <div className="pt-2">
                                     <Label className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Wünsche & Anforderungen</Label>
                                     <div className="grid grid-cols-2 gap-3 mt-1">
-                                        <div className="flex items-center space-x-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                                            <Switch
-                                                name="is_family_room"
-                                                id="edit-family"
-                                                checked={editingBooking.is_family_room === 1}
-                                                onCheckedChange={(checked) => setEditingBooking({ ...editingBooking, is_family_room: checked ? 1 : 0 })}
-                                            />
-                                            <Label htmlFor="edit-family" className="text-xs font-medium cursor-pointer">Familienzimmer</Label>
-                                        </div>
                                         <div className="flex items-center space-x-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800">
                                             <Switch
                                                 name="has_dog"
@@ -1824,9 +1929,10 @@ function BookingsList() {
                                     variant="outline"
                                     className="flex-1 h-12"
                                     onClick={() => {
-                                        setEditingBooking(checkOutBooking);
-                                        setIsCheckOutOpen(false);
-                                        setIsEditOpen(true);
+                                        if (checkOutBooking) {
+                                            handleEditClick(checkOutBooking);
+                                            setIsCheckOutOpen(false);
+                                        }
                                     }}
                                 >
                                     Bearbeiten
@@ -1842,6 +1948,18 @@ function BookingsList() {
                     )}
                 </DialogContent>
             </Dialog>
+            {/* Guest Edit Mask */}
+            <Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
+                    </DialogHeader>
+                    {editingGuestForMask && (
+                        <GuestMaskForm guest={editingGuestForMask} onSubmit={updateGuestInMask} />
+                    )}
+                </DialogContent>
+            </Dialog>
+
             {/* Group Deletion Dialog */}
             <Dialog open={isGroupDeleteOpen} onOpenChange={setIsGroupDeleteOpen}>
                 <DialogContent>
@@ -1853,6 +1971,26 @@ function BookingsList() {
                             Was möchten Sie mit dieser Gruppe und den zugehörigen Buchungen tun?
                         </p>
                         <div className="grid grid-cols-1 gap-3">
+                            <div className="space-y-2 pb-2">
+                                <Label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Gruppe umbenennen</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        value={renameValue}
+                                        onChange={(e) => setRenameValue(e.target.value)}
+                                        placeholder="Neuer Gruppenname..."
+                                        className="h-10"
+                                    />
+                                    <Button
+                                        onClick={() => deletingGroup && renameGroup(deletingGroup.id, renameValue)}
+                                        disabled={!renameValue || renameValue === deletingGroup?.name}
+                                        className="bg-blue-600 hover:bg-blue-700 font-bold"
+                                    >
+                                        Speichern
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <Label className="text-xs font-bold uppercase tracking-widest text-zinc-500 mt-2">Gefahrenbereich / Status</Label>
                             <Button
                                 variant="outline"
                                 className="h-14 justify-start px-4 text-left border-red-100 hover:bg-red-50 hover:text-red-700 hover:border-red-200"
@@ -1880,6 +2018,58 @@ function BookingsList() {
                 </DialogContent>
             </Dialog>
         </div>
+    );
+}
+
+// Helper component for the guest mask form to handle its own state
+function GuestMaskForm({ guest, onSubmit }: { guest: Guest, onSubmit: (e: React.FormEvent<HTMLFormElement>) => void }) {
+    const [nat, setNat] = useState(guest.nationality ?? "Deutschland");
+
+    return (
+        <form onSubmit={onSubmit}>
+            <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="first_name">Vorname</Label>
+                        <Input id="first_name" name="first_name" defaultValue={guest.first_name} placeholder="Max" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="middle_name">Zweitname</Label>
+                        <Input id="middle_name" name="middle_name" defaultValue={guest.middle_name} placeholder="Elias" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
+                        <Input id="last_name" name="last_name" defaultValue={guest.last_name} placeholder="Mustermann" required />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="email">E-Mail</Label>
+                        <Input id="email" name="email" type="email" defaultValue={guest.email} placeholder="max@beispiel.de" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="phone">Telefon</Label>
+                        <Input id="phone" name="phone" type="tel" defaultValue={guest.phone} placeholder="+49 123 456789" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="company">Firma</Label>
+                        <Input id="company" name="company" defaultValue={guest.company} placeholder="Muster GmbH" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Nationalität</Label>
+                        <input type="hidden" name="nationality" value={nat} />
+                        <NationalitySelector value={nat} onChange={setNat} />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="notes">Notizen / Präferenzen</Label>
+                    <Textarea id="notes" name="notes" defaultValue={guest.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" />
+                </div>
+            </div>
+            <Button type="submit" className="w-full mt-2 font-bold bg-blue-600">Aktualisieren</Button>
+        </form>
     );
 }
 

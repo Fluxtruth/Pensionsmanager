@@ -39,7 +39,9 @@ export default function BreakfastPage() {
     const [data, setData] = useState<BreakfastRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [downloadSuccess, setDownloadSuccess] = useState(false);
-    const today = new Date().toISOString().split('T')[0];
+    const [needsGeneration, setNeedsGeneration] = useState(false);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [selectedDate, setSelectedDate] = useState(todayStr);
 
     const loadData = useCallback(async () => {
         try {
@@ -62,15 +64,19 @@ export default function BreakfastPage() {
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND bo.date = ?
                     ORDER BY r.id ASC, bo.time ASC, bo.id ASC
-                `, [today, today, today]);
+                `, [selectedDate, selectedDate, selectedDate]);
                 setData(results || []);
+
+                // Check if generation is needed: any booking without a breakfast_id
+                const missingEntries = (results || []).some(r => r.booking_id && !r.breakfast_id);
+                setNeedsGeneration(missingEntries);
             }
         } catch (error) {
             console.error("Failed to load breakfast data:", error);
         } finally {
             setIsLoading(false);
         }
-    }, [today]);
+    }, [selectedDate]);
 
     useEffect(() => {
         loadData();
@@ -82,12 +88,36 @@ export default function BreakfastPage() {
             if (db) {
                 await db.execute(
                     "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [crypto.randomUUID(), bookingId, today, 1, "08:00", 1, 0, "", "manuell", 1]
+                    [crypto.randomUUID(), bookingId, selectedDate, 1, "08:00", 1, 0, "", "manuell", 1]
                 );
                 await loadData();
             }
         } catch (error) {
             console.error("Failed to add person:", error);
+        }
+    };
+
+    const generateBreakfastPlan = async () => {
+        try {
+            const db = await initDb();
+            if (db) {
+                const missing = data.filter(item => item.booking_id && !item.breakfast_id);
+
+                if (missing.length === 0) {
+                    alert("Alle aktiven Buchungen haben bereits einen Frühstückseintrag.");
+                    return;
+                }
+
+                for (const item of missing) {
+                    await db.execute(
+                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [crypto.randomUUID(), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0]
+                    );
+                }
+                await loadData();
+            }
+        } catch (error) {
+            console.error("Failed to generate breakfast plan:", error);
         }
     };
 
@@ -114,7 +144,7 @@ export default function BreakfastPage() {
                 } else {
                     await db.execute(
                         "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), row.booking_id, today, newIncluded, "08:00", 1, 0, "", "auto", 0]
+                        [crypto.randomUUID(), row.booking_id, selectedDate, newIncluded, "08:00", 1, 0, "", "auto", 0]
                     );
                 }
                 await loadData();
@@ -134,7 +164,7 @@ export default function BreakfastPage() {
                     const id = crypto.randomUUID();
                     await db.execute(
                         `INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, ${field}, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [id, bookingId, today, 1, "08:00", 1, 0, "", value, "auto", 0]
+                        [id, bookingId, selectedDate, 1, "08:00", 1, 0, "", value, "auto", 0]
                     );
                 }
                 await loadData();
@@ -160,7 +190,8 @@ export default function BreakfastPage() {
 
     const exportToPDF = () => {
         const doc = new jsPDF();
-        const dateStr = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const dateObj = new Date(selectedDate);
+        const dateStr = dateObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
         // Header
         doc.setFontSize(22);
@@ -215,7 +246,7 @@ export default function BreakfastPage() {
             }
         });
 
-        const filename = `Fruehstuecksliste_${dateStr.replace(/\./g, '-')}.pdf`;
+        const filename = `Fruehstuecksliste_${selectedDate}.pdf`;
         savePdfNative(doc, filename).then(success => {
             if (success) {
                 setDownloadSuccess(true);
@@ -240,11 +271,34 @@ export default function BreakfastPage() {
                         Individuelle Frühstücksplanung je Person und Zimmer.
                     </p>
                 </div>
-                <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 px-4 py-2 rounded-xl border border-orange-100 dark:border-orange-800/30">
-                    <Coffee className="w-5 h-5 text-orange-600" />
-                    <div className="text-sm font-bold text-orange-900 dark:text-orange-100">
-                        {preparedPersons} / {totalPersons} <span className="text-orange-600 dark:text-orange-400 font-medium">Portionen fertig</span>
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 px-4 py-2 rounded-xl border border-orange-100 dark:border-orange-800/30 mr-2">
+                        <Coffee className="w-5 h-5 text-orange-600" />
+                        <div className="text-sm font-bold text-orange-900 dark:text-orange-100">
+                            {preparedPersons} / {totalPersons} <span className="text-orange-600 dark:text-orange-400 font-medium">Portionen fertig</span>
+                        </div>
                     </div>
+
+                    <Input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        className="w-auto h-10 shadow-sm"
+                    />
+
+                    <Button
+                        className={cn(
+                            "h-10 shadow-lg transition-all",
+                            needsGeneration
+                                ? "bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 animate-pulse ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-zinc-950"
+                                : "bg-orange-600 hover:bg-orange-700 shadow-orange-500/20"
+                        )}
+                        onClick={generateBreakfastPlan}
+                    >
+                        <Clock className="w-4 h-4 mr-2" />
+                        {needsGeneration ? "Plan aktualisieren" : "Plan generieren"}
+                    </Button>
                 </div>
             </div>
 
@@ -254,7 +308,7 @@ export default function BreakfastPage() {
                         <div>
                             <CardTitle className="text-lg">Heutige Frühstücksliste</CardTitle>
                             <CardDescription>
-                                {new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                {new Date(selectedDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' })}
                             </CardDescription>
                         </div>
                         <Button

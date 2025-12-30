@@ -96,7 +96,7 @@ export function MyDayWidget() {
                         <div className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">
                             {stats.checkInsDone}/{stats.checkInsTotal}
                         </div>
-                        <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-1 font-medium italic">Anreisen verwalten</p>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-1 font-medium italic">Anreisende eingecheckt</p>
                     </CardContent>
                 </Card>
             </Link>
@@ -111,7 +111,7 @@ export function MyDayWidget() {
                         <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">
                             {stats.checkOutsDone}/{stats.checkOutsTotal}
                         </div>
-                        <p className="text-[10px] text-amber-600 dark:text-amber-500 mt-1 font-medium italic">Abreisen verwalten</p>
+                        <p className="text-[10px] text-amber-600 dark:text-amber-500 mt-1 font-medium italic">Abreisende ausgecheckt</p>
                     </CardContent>
                 </Card>
             </Link>
@@ -141,7 +141,7 @@ export function MyDayWidget() {
                         <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
                             {stats.draftsCount}
                         </div>
-                        <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1 font-medium italic">Verschobene Buchungen</p>
+                        <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1 font-medium italic">Offene Entwürfe</p>
                     </CardContent>
                 </Card>
             </Link>
@@ -176,7 +176,7 @@ export function MyDayWidget() {
                             {stats.needsCleaningGeneration ? (
                                 <span className="text-amber-600 dark:text-amber-400 font-bold">⚠️ Plan unvollständig!</span>
                             ) : (
-                                "Zimmer gereinigt"
+                                "Aufgaben erledigt"
                             )}
                         </p>
                     </CardContent>

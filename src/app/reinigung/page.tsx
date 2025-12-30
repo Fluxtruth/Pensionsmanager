@@ -51,17 +51,26 @@ interface Room {
 
 interface CleaningTask {
     id: string;
-    room_id: string;
+    room_id: string | null;
     staff_id: string | null;
     date: string;
     status: string;
     comments?: string;
     is_manual?: number;
-    source?: string; // 'Auto', 'Manuell', 'Verschoben'
+    source?: string; // 'Auto', 'Manuell', 'Verschoben', 'Vorschlag'
     delayed_from?: string;
     room_name?: string;
     staff_name?: string;
+    title?: string;
 }
+
+const getWeekNumber = (date: Date) => {
+    const d = new Date(date.getTime());
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    const yearStart = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+};
 
 interface Booking {
     id: string;
@@ -69,13 +78,26 @@ interface Booking {
     end_date: string;
 }
 
+interface TaskSuggestion {
+    id: string;
+    title: string;
+    weekday: number; // 0-6 (Sunday-Saturday)
+    frequency_weeks: number;
+}
+
+const WEEKDAYS = [
+    "Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"
+];
+
 export default function CleaningPage() {
     const today = new Date().toISOString().split('T')[0];
     const [selectedDate, setSelectedDate] = useState(today);
     const [staff, setStaff] = useState<Staff[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
     const [tasks, setTasks] = useState<CleaningTask[]>([]);
+    const [suggestions, setSuggestions] = useState<TaskSuggestion[]>([]);
     const [needsGeneration, setNeedsGeneration] = useState(false);
+
 
     // Dialog States
     const [isStaffOpen, setIsStaffOpen] = useState(false);
@@ -85,6 +107,14 @@ export default function CleaningPage() {
     const [exportType, setExportType] = useState<"Gesamt" | "Einzel">("Gesamt");
     const [exportStaffSelection, setExportStaffSelection] = useState<Record<string, boolean>>({});
     const [downloadSuccess, setDownloadSuccess] = useState(false);
+
+    const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+    const [suggestionFilter, setSuggestionFilter] = useState<string>("all");
+    const [newSuggestionWeekday, setNewSuggestionWeekday] = useState<string>("1");
+    const [newSuggestionFrequency, setNewSuggestionFrequency] = useState<string>("1");
+    const [viewedWeekday, setViewedWeekday] = useState<number>(new Date(selectedDate).getDay());
+    const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+
 
     const loadData = useCallback(async () => {
         try {
@@ -105,12 +135,15 @@ export default function CleaningPage() {
                 `, [selectedDate, selectedDate]);
                 setTasks(taskResults || []);
 
+                const suggestionResults = await db.select<TaskSuggestion[]>("SELECT * FROM cleaning_task_suggestions");
+                setSuggestions(suggestionResults || []);
+
                 // Check if generation is needed
                 const checkouts = await db.select<Booking[]>(
                     "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft'",
                     [selectedDate]
                 );
-                const existingTaskRoomIds = (taskResults || []).map(t => t.room_id);
+                const existingTaskRoomIds = (taskResults || []).filter(t => t.room_id).map(t => t.room_id);
                 const hasMissingTasks = checkouts.some(b => !existingTaskRoomIds.includes(b.room_id));
                 setNeedsGeneration(hasMissingTasks);
             }
@@ -122,6 +155,10 @@ export default function CleaningPage() {
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+    useEffect(() => {
+        setViewedWeekday(new Date(selectedDate).getDay());
+    }, [selectedDate]);
 
     const toggleCleaning = async (roomId: string, isActive: boolean) => {
         try {
@@ -142,6 +179,36 @@ export default function CleaningPage() {
             }
         } catch (error) {
             console.error("Failed to toggle cleaning:", error);
+        }
+    };
+
+    const addManualTask = async (title: string) => {
+        try {
+            const db = await initDb();
+            if (db) {
+                await db.execute(
+                    "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [crypto.randomUUID(), null, selectedDate, "Offen", 1, 'Manuell', title]
+                );
+                await loadData();
+            }
+        } catch (error) {
+            console.error("Failed to add manual task:", error);
+        }
+    };
+
+    const addTaskFromSuggestion = async (suggestion: TaskSuggestion) => {
+        try {
+            const db = await initDb();
+            if (db) {
+                await db.execute(
+                    "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [crypto.randomUUID(), null, selectedDate, "Offen", 1, 'Vorschlag', suggestion.title]
+                );
+                await loadData();
+            }
+        } catch (error) {
+            console.error("Failed to add logic task:", error);
         }
     };
 
@@ -280,9 +347,59 @@ export default function CleaningPage() {
         }
     };
 
+    const addSuggestion = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        const title = formData.get("title") as string;
+        const weekday = parseInt(newSuggestionWeekday);
+        const frequency = parseInt(newSuggestionFrequency) || 1;
+
+        try {
+            const db = await initDb();
+            if (db) {
+                await db.execute(
+                    "INSERT INTO cleaning_task_suggestions (id, title, weekday, frequency_weeks) VALUES (?, ?, ?, ?)",
+                    [crypto.randomUUID(), title, weekday, frequency]
+                );
+                await loadData();
+                (e.target as HTMLFormElement).reset();
+                setNewSuggestionWeekday("1");
+                setNewSuggestionFrequency("1");
+            }
+        } catch (error) {
+            console.error("Failed to add suggestion:", error);
+        }
+    };
+
+    const deleteSuggestion = async (id: string) => {
+        try {
+            const db = await initDb();
+            if (db) {
+                await db.execute("DELETE FROM cleaning_task_suggestions WHERE id = ?", [id]);
+                await loadData();
+            }
+        } catch (error) {
+            console.error("Failed to delete suggestion:", error);
+        }
+    };
+
+    const updateSuggestion = async (id: string, updates: Partial<TaskSuggestion>) => {
+        try {
+            const db = await initDb();
+            if (db) {
+                const keys = Object.keys(updates);
+                const values = Object.values(updates);
+                const setClause = keys.map(k => `${k} = ?`).join(", ");
+                await db.execute(`UPDATE cleaning_task_suggestions SET ${setClause} WHERE id = ?`, [...values, id]);
+                await loadData();
+            }
+        } catch (error) {
+            console.error("Failed to update suggestion:", error);
+        }
+    };
+
     const performExport = async () => {
         try {
-
             const doc = new jsPDF();
             const activeTasksOnly = tasks.filter(t => t.date === selectedDate);
 
@@ -299,9 +416,9 @@ export default function CleaningPage() {
 
                 autoTable(doc, {
                     startY: 40,
-                    head: [["Zimmer", "Quelle", "Personal", "Status", "Notiz"]],
+                    head: [["Aufgabe / Zimmer", "Quelle", "Personal", "Status", "Notiz"]],
                     body: filteredTasks.map(t => [
-                        `Zimmer ${t.room_id} (${t.room_name})`,
+                        t.room_id ? `Zimmer ${t.room_id} (${t.room_name})` : (t.title || "Zusatzaufgabe"),
                         t.source || (t.is_manual ? 'Manuell' : 'Auto'),
                         t.staff_name || "Nicht zugewiesen",
                         t.status,
@@ -328,9 +445,9 @@ export default function CleaningPage() {
 
                     autoTable(doc, {
                         startY: 40,
-                        head: [["Zimmer", "Status", "Notiz"]],
+                        head: [["Aufgabe / Zimmer", "Status", "Notiz"]],
                         body: staffTasks.map(t => [
-                            `Zimmer ${t.room_id} (${t.room_name})`,
+                            t.room_id ? `Zimmer ${t.room_id} (${t.room_name})` : (t.title || "Zusatzaufgabe"),
                             t.status,
                             t.comments || ""
                         ]),
@@ -353,6 +470,25 @@ export default function CleaningPage() {
             alert("Der PDF Export ist fehlgeschlagen.");
         }
     };
+
+    const currentWeekday = new Date(selectedDate).getDay();
+    const currentWeekNum = getWeekNumber(new Date(selectedDate));
+    const suggestionsForViewedWeekday = suggestions.filter(s => {
+        let matchesDay = false;
+        if (s.weekday === -1) { // Täglich
+            matchesDay = true;
+        } else if (s.weekday === -2) { // Werktags (Mo-Fr)
+            matchesDay = viewedWeekday >= 1 && viewedWeekday <= 5;
+        } else {
+            matchesDay = s.weekday === viewedWeekday;
+        }
+
+        const matchesFreq = (currentWeekNum % (s.frequency_weeks || 1)) === 0;
+        return matchesDay && matchesFreq;
+    });
+    const roomTasks = tasks.filter(t => t.room_id !== null);
+    const additionalTasks = tasks.filter(t => t.room_id === null);
+
 
     return (
         <div className="space-y-6 pb-20">
@@ -395,169 +531,339 @@ export default function CleaningPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <Card className="lg:col-span-3 border-none shadow-sm bg-white dark:bg-zinc-900/50">
-                    <CardHeader>
-                        <CardTitle className="text-xl font-bold">Zimmerübersicht</CardTitle>
-                        <CardDescription>Alle Zimmer und ihr Reinigungsstatus.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <Table>
-                            <TableHeader className="bg-zinc-50/50 dark:bg-zinc-800/50">
-                                <TableRow>
-                                    <TableHead className="font-bold pl-6 w-12 text-center">Plan</TableHead>
-                                    <TableHead className="font-bold">Zimmer</TableHead>
-                                    <TableHead className="font-bold">Quelle</TableHead>
-                                    <TableHead className="font-bold">Personal</TableHead>
-                                    <TableHead className="font-bold whitespace-nowrap">Status</TableHead>
-                                    <TableHead className="font-bold">Anmerkungen</TableHead>
-                                    <TableHead className="text-right pr-6 font-bold"></TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {rooms.map((room) => {
-                                    const activeTask = tasks.find(t => t.room_id === room.id && t.date === selectedDate);
-                                    const delayedInfo = tasks.find(t => t.room_id === room.id && t.delayed_from === selectedDate);
-                                    const isActive = !!activeTask;
+                <div className="lg:col-span-3 space-y-6">
+                    <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold">Zimmerübersicht</CardTitle>
+                            <CardDescription>Alle Zimmer und ihr Reinigungsstatus.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader className="bg-zinc-50/50 dark:bg-zinc-800/50">
+                                    <TableRow>
+                                        <TableHead className="font-bold pl-6 w-12 text-center">Plan</TableHead>
+                                        <TableHead className="font-bold">Zimmer</TableHead>
+                                        <TableHead className="font-bold">Quelle</TableHead>
+                                        <TableHead className="font-bold">Personal</TableHead>
+                                        <TableHead className="font-bold whitespace-nowrap text-center">Erledigt</TableHead>
+                                        <TableHead className="font-bold">Anmerkungen</TableHead>
+                                        <TableHead className="text-right pr-6 font-bold"></TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {rooms.map((room) => {
+                                        const activeTask = tasks.find(t => t.room_id === room.id && t.date === selectedDate);
+                                        const delayedInfo = tasks.find(t => t.room_id === room.id && t.delayed_from === selectedDate);
+                                        const isActive = !!activeTask;
 
-                                    return (
-                                        <TableRow
-                                            key={room.id}
-                                            className={cn(
-                                                "group transition-all",
-                                                !isActive && "opacity-40 grayscale-[0.5] hover:opacity-100 hover:grayscale-0"
-                                            )}
-                                        >
-                                            <TableCell className="text-center pl-6">
-                                                <Switch
-                                                    checked={isActive}
-                                                    onCheckedChange={(checked) => toggleCleaning(room.id, checked)}
-                                                />
-                                            </TableCell>
-                                            <TableCell className="font-bold text-zinc-900 dark:text-zinc-100">
-                                                {room.name}
-                                                <div className="text-[10px] text-zinc-500 font-medium uppercase">Zimmer {room.id}</div>
-                                            </TableCell>
-                                            <TableCell>
-                                                {isActive ? (
-                                                    <span className={cn(
-                                                        "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap",
-                                                        activeTask.source === 'Auto' ? "bg-purple-50 text-purple-600 border-purple-100" :
-                                                            activeTask.source === 'Manuell' ? "bg-zinc-100 text-zinc-600 border-zinc-200" :
-                                                                "bg-amber-50 text-amber-600 border-amber-100"
-                                                    )}>
-                                                        {activeTask.source || (activeTask.is_manual ? 'Manuell' : 'Auto')}
-                                                    </span>
-                                                ) : "-"}
-                                            </TableCell>
-                                            <TableCell>
-                                                {isActive ? (
-                                                    <Select
-                                                        value={activeTask?.staff_id || "none"}
-                                                        onValueChange={(val: string) => assignStaff(activeTask!.id, val)}
-                                                    >
-                                                        <SelectTrigger className="w-[140px] h-8 border-none bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-xs">
-                                                            <SelectValue placeholder="Zuweisen..." />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="none" className="text-xs">Nicht zugewiesen</SelectItem>
-                                                            {staff.map(s => (
-                                                                <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                ) : (
-                                                    <div className="flex flex-col">
-                                                        <span className="text-xs text-zinc-400 italic">Keine Reinigung fällig</span>
-                                                        {delayedInfo && (
-                                                            <div className="flex items-center gap-1.5 mt-0.5 animate-pulse">
-                                                                <CalendarClock className="w-3 h-3 text-amber-600" />
-                                                                <span className="text-[10px] text-amber-600 font-bold leading-none">
-                                                                    Reinigung verzögert auf {new Date(delayedInfo.date).toLocaleDateString()}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                        return (
+                                            <TableRow
+                                                key={room.id}
+                                                className={cn(
+                                                    "group transition-all",
+                                                    !isActive && "opacity-40 grayscale-[0.5] hover:opacity-100 hover:grayscale-0"
                                                 )}
-                                            </TableCell>
-                                            <TableCell>
-                                                {isActive ? (
-                                                    <Select
-                                                        value={activeTask?.status ?? ""}
-                                                        onValueChange={(val: string) => updateTaskStatus(activeTask!.id, val)}
-                                                    >
-                                                        <SelectTrigger className={cn(
-                                                            "w-[110px] h-7 text-[10px] font-bold rounded-full border-none",
-                                                            activeTask?.status === "Offen" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                                                                activeTask?.status === "In Arbeit" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                                                                    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                                        )}>
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="Offen" className="text-xs">Offen</SelectItem>
-                                                            <SelectItem value="In Arbeit" className="text-xs">In Arbeit</SelectItem>
-                                                            <SelectItem value="Erledigt" className="text-xs">Erledigt</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                ) : "-"}
-                                            </TableCell>
-                                            <TableCell>
-                                                {isActive ? (
-                                                    <Input
-                                                        defaultValue={activeTask?.comments || ""}
-                                                        placeholder="Notiz..."
-                                                        className="h-7 text-[11px] border-zinc-200 bg-transparent focus:bg-white transition-all w-full max-w-[150px]"
-                                                        onBlur={(e) => updateTaskComments(activeTask!.id, e.target.value)}
+                                            >
+                                                <TableCell className="text-center pl-6">
+                                                    <Switch
+                                                        checked={isActive}
+                                                        onCheckedChange={(checked) => toggleCleaning(room.id, checked)}
                                                     />
-                                                ) : "-"}
-                                            </TableCell>
-                                            <TableCell className="text-right pr-6">
-                                                {isActive && (
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="sm" className="h-8 w-8 text-zinc-400 hover:text-purple-600">
-                                                                    <Timer className="w-4 h-4" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-48">
-                                                                <DropdownMenuLabel className="text-xs font-bold flex items-center gap-2">
-                                                                    <CalendarClock className="w-3 h-3" /> Reinig. verschieben
-                                                                </DropdownMenuLabel>
-                                                                <DropdownMenuSeparator />
-                                                                {[-3, -2, -1, 1, 2, 3].map(offset => {
-                                                                    const date = new Date(selectedDate);
-                                                                    date.setDate(date.getDate() + offset);
-                                                                    const isPast = date.toISOString().split('T')[0] < today;
-                                                                    if (isPast) return null;
+                                                </TableCell>
+                                                <TableCell className="font-bold text-zinc-900 dark:text-zinc-100">
+                                                    {room.name}
+                                                    <div className="text-[10px] text-zinc-500 font-medium uppercase">Zimmer {room.id}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {isActive ? (
+                                                        <span className={cn(
+                                                            "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap",
+                                                            activeTask.source === 'Auto' ? "bg-purple-50 text-purple-600 border-purple-100" :
+                                                                activeTask.source === 'Manuell' ? "bg-zinc-100 text-zinc-600 border-zinc-200" :
+                                                                    "bg-amber-50 text-amber-600 border-amber-100"
+                                                        )}>
+                                                            {activeTask.source || (activeTask.is_manual ? 'Manuell' : 'Auto')}
+                                                        </span>
+                                                    ) : "-"}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {isActive ? (
+                                                        <Select
+                                                            value={activeTask?.staff_id || "none"}
+                                                            onValueChange={(val: string) => assignStaff(activeTask!.id, val)}
+                                                        >
+                                                            <SelectTrigger className="w-[140px] h-8 border-none bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-xs">
+                                                                <SelectValue placeholder="Zuweisen..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="none" className="text-xs">Nicht zugewiesen</SelectItem>
+                                                                {staff.map(s => (
+                                                                    <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    ) : (
+                                                        <div className="flex flex-col">
+                                                            <span className="text-xs text-zinc-400 italic">Keine Reinigung fällig</span>
+                                                            {delayedInfo && (
+                                                                <div className="flex items-center gap-1.5 mt-0.5 animate-pulse">
+                                                                    <CalendarClock className="w-3 h-3 text-amber-600" />
+                                                                    <span className="text-[10px] text-amber-600 font-bold leading-none">
+                                                                        Reinigung verzögert auf {new Date(delayedInfo.date).toLocaleDateString()}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <div className="flex justify-center">
+                                                        {isActive ? (
+                                                            <div className="flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={activeTask?.status === "Erledigt"}
+                                                                    onChange={(e) => updateTaskStatus(activeTask!.id, e.target.checked ? "Erledigt" : "Offen")}
+                                                                    className="w-5 h-5 rounded border-zinc-300 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                                                                />
+                                                            </div>
+                                                        ) : "-"}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {isActive ? (
+                                                        <Input
+                                                            defaultValue={activeTask?.comments || ""}
+                                                            placeholder="Notiz..."
+                                                            className="h-7 text-[11px] border-zinc-200 bg-transparent focus:bg-white transition-all w-full max-w-[150px]"
+                                                            onBlur={(e) => updateTaskComments(activeTask!.id, e.target.value)}
+                                                        />
+                                                    ) : "-"}
+                                                </TableCell>
+                                                <TableCell className="text-right pr-6">
+                                                    {isActive && (
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button variant="ghost" size="sm" className="h-8 w-8 text-zinc-400 hover:text-purple-600">
+                                                                        <Timer className="w-4 h-4" />
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end" className="w-48">
+                                                                    <DropdownMenuLabel className="text-xs font-bold flex items-center gap-2">
+                                                                        <CalendarClock className="w-3 h-3" /> Reinig. verschieben
+                                                                    </DropdownMenuLabel>
+                                                                    <DropdownMenuSeparator />
+                                                                    {[-3, -2, -1, 1, 2, 3].map(offset => {
+                                                                        const date = new Date(selectedDate);
+                                                                        date.setDate(date.getDate() + offset);
+                                                                        const isPast = date.toISOString().split('T')[0] < today;
+                                                                        if (isPast) return null;
 
-                                                                    const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-                                                                    const label = offset > 0
-                                                                        ? `Um ${offset} ${offset === 1 ? 'Tag' : 'Tage'} verzögern`
-                                                                        : `Um ${Math.abs(offset)} ${Math.abs(offset) === 1 ? 'Tag' : 'Tage'} vorziehen`;
+                                                                        const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+                                                                        const label = offset > 0
+                                                                            ? `Um ${offset} ${offset === 1 ? 'Tag' : 'Tage'} verzögern`
+                                                                            : `Um ${Math.abs(offset)} ${Math.abs(offset) === 1 ? 'Tag' : 'Tage'} vorziehen`;
 
-                                                                    return (
-                                                                        <DropdownMenuItem
-                                                                            key={offset}
-                                                                            className="text-xs flex justify-between"
-                                                                            onClick={() => delayTask(activeTask!.id, offset)}
-                                                                        >
-                                                                            <span>{label}</span>
-                                                                            <span className="text-[10px] text-zinc-450 ml-2">({dateStr})</span>
-                                                                        </DropdownMenuItem>
-                                                                    );
-                                                                })}
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
+                                                                        return (
+                                                                            <DropdownMenuItem
+                                                                                key={offset}
+                                                                                className="text-xs flex justify-between"
+                                                                                onClick={() => delayTask(activeTask!.id, offset)}
+                                                                            >
+                                                                                <span>{label}</span>
+                                                                                <span className="text-[10px] text-zinc-450 ml-2">({dateStr})</span>
+                                                                            </DropdownMenuItem>
+                                                                        );
+                                                                    })}
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-8 w-8 text-zinc-300 hover:text-red-500"
+                                                                onClick={async () => {
+                                                                    if (confirm("Aufgabe wirklich entfernen?")) {
+                                                                        const db = await initDb();
+                                                                        if (db) {
+                                                                            await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [activeTask!.id]);
+                                                                            await loadData();
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+
+                    {/* Weitere Aufgaben Section */}
+                    <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                            <div>
+                                <CardTitle className="text-xl font-bold">Weitere Aufgaben</CardTitle>
+                                <CardDescription>Zusätzliche Tätigkeiten für heute.</CardDescription>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setIsSuggestionsOpen(true)} className="h-8">
+                                    <Settings className="w-4 h-4 mr-2" />
+                                    Vorschläge verwalten
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setIsAddTaskOpen(true)} className="h-8">
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Aufgabe hinzufügen
+                                </Button>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            {/* Suggestions List */}
+                            <div className="space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 shrink-0">Vorschläge für</h4>
+                                    <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
+                                        {WEEKDAYS.map((day, i) => (
+                                            <Button
+                                                key={i}
+                                                variant={viewedWeekday === i ? "default" : "ghost"}
+                                                size="sm"
+                                                className={cn(
+                                                    "h-8 text-[11px] font-bold px-3 rounded-full shrink-0 transition-all",
+                                                    viewedWeekday === i
+                                                        ? "bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-200"
+                                                        : i === currentWeekday
+                                                            ? "text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                                                            : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                                )}
+                                                onClick={() => setViewedWeekday(i)}
+                                            >
+                                                {i === currentWeekday && <span className="w-1 h-1 rounded-full bg-current mr-1.5" />}
+                                                {day}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {suggestionsForViewedWeekday.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {suggestionsForViewedWeekday.map(s => {
+                                            const isAlreadyAdded = additionalTasks.some(t => t.title === s.title && t.date === selectedDate);
+                                            return (
+                                                <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border bg-zinc-50/50 dark:bg-zinc-800/50 group transition-all hover:border-purple-200 hover:shadow-sm">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">{s.title}</span>
+                                                        <span className="text-[10px] text-zinc-500">
+                                                            {s.frequency_weeks === 1 ? "Wöchentlich" : `Alle ${s.frequency_weeks} Wochen`}
+                                                        </span>
+                                                    </div>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        disabled={isAlreadyAdded}
+                                                        onClick={() => addTaskFromSuggestion(s)}
+                                                        className={cn(
+                                                            "h-8 px-2",
+                                                            isAlreadyAdded ? "text-emerald-600" : "text-purple-600 hover:bg-purple-50"
+                                                        )}
+                                                    >
+                                                        {isAlreadyAdded ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                                                    </Button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-10 px-4 bg-zinc-50/30 dark:bg-zinc-900/30 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-xl">
+                                        <p className="text-zinc-400 text-sm italic">Keine geplanten Vorschläge für {WEEKDAYS[viewedWeekday]}.</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Active Additional Tasks Table */}
+                            <div className="rounded-xl border overflow-hidden">
+                                <Table>
+                                    <TableHeader className="bg-zinc-50/50 dark:bg-zinc-800/50">
+                                        <TableRow>
+                                            <TableHead className="font-bold pl-6">Aufgabe</TableHead>
+                                            <TableHead className="font-bold">Personal</TableHead>
+                                            <TableHead className="font-bold text-center">Erledigt</TableHead>
+                                            <TableHead className="font-bold">Notiz</TableHead>
+                                            <TableHead className="text-right pr-6 font-bold"></TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {additionalTasks.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={5} className="text-center py-8 text-zinc-400 italic text-sm">
+                                                    Keine zusätzlichen Aufgaben für heute geplant.
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            additionalTasks.map((task) => (
+                                                <TableRow key={task.id} className="group">
+                                                    <TableCell className="pl-6">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-zinc-900 dark:text-zinc-100">{task.title || "Zusatzaufgabe"}</span>
+                                                            <span className="text-[10px] text-zinc-500 flex items-center gap-1">
+                                                                <span className={cn(
+                                                                    "w-1.5 h-1.5 rounded-full",
+                                                                    task.source === 'Vorschlag' ? "bg-purple-500" : "bg-zinc-400"
+                                                                )} />
+                                                                {task.source || 'Manuell'}
+                                                            </span>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Select
+                                                            value={task.staff_id || "none"}
+                                                            onValueChange={(val: string) => assignStaff(task.id, val)}
+                                                        >
+                                                            <SelectTrigger className="w-[140px] h-8 border-none bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-xs">
+                                                                <SelectValue placeholder="Zuweisen..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="none" className="text-xs">Nicht zugewiesen</SelectItem>
+                                                                {staff.map(s => (
+                                                                    <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        <div className="flex justify-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={task.status === "Erledigt"}
+                                                                onChange={(e) => updateTaskStatus(task.id, e.target.checked ? "Erledigt" : "Offen")}
+                                                                className="w-5 h-5 rounded border-zinc-300 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                                                            />
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Input
+                                                            defaultValue={task.comments || ""}
+                                                            placeholder="Notiz..."
+                                                            className="h-7 text-[11px] border-zinc-200 bg-transparent focus:bg-white transition-all w-full max-w-[150px]"
+                                                            onBlur={(e) => updateTaskComments(task.id, e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell className="text-right pr-6">
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            className="h-8 w-8 text-zinc-300 hover:text-red-500"
+                                                            className="h-8 w-8 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                                                             onClick={async () => {
                                                                 if (confirm("Aufgabe wirklich entfernen?")) {
                                                                     const db = await initDb();
                                                                     if (db) {
-                                                                        await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [activeTask!.id]);
+                                                                        await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [task.id]);
                                                                         await loadData();
                                                                     }
                                                                 }
@@ -565,18 +871,16 @@ export default function CleaningPage() {
                                                         >
                                                             <Trash2 className="w-4 h-4" />
                                                         </Button>
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-
-                {/* Personal Sidebar */}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>                            {/* Personal Sidebar */}
                 <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50 h-fit sticky top-6">
                     <CardHeader>
                         <CardTitle className="text-xl font-bold">Personal</CardTitle>
@@ -595,7 +899,7 @@ export default function CleaningPage() {
                                     <div key={s.id} className="space-y-2">
                                         <div className="flex justify-between text-sm">
                                             <span className="font-bold text-zinc-700 dark:text-zinc-300">{s.name}</span>
-                                            <span className="text-xs font-medium text-zinc-500">{assignedCount} / {s.daily_capacity} Zi.</span>
+                                            <span className="text-xs font-medium text-zinc-500">{assignedCount} / {s.daily_capacity} Aufgaben</span>
                                         </div>
                                         <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
                                             <div
@@ -614,6 +918,179 @@ export default function CleaningPage() {
                 </Card>
             </div>
 
+            {/* Additional Tasks Dialogs */}
+            <Dialog open={isSuggestionsOpen} onOpenChange={setIsSuggestionsOpen}>
+                <DialogContent className="sm:max-w-4xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl font-bold">Vorschläge konfigurieren</DialogTitle>
+                        <DialogDescription>Automatisierte Aufgabenvorschläge basierend auf dem Wochentag und der Frequenz.</DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={addSuggestion} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border">
+                        <div className="md:col-span-2 space-y-2">
+                            <Label htmlFor="title">Aufgabe</Label>
+                            <Input id="title" name="title" placeholder="z.B. Fenster putzen" required />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="weekday">Wochentag</Label>
+                            <Select value={newSuggestionWeekday} onValueChange={setNewSuggestionWeekday}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="-1">Täglich</SelectItem>
+                                    <SelectItem value="-2">Werktags (Mo-Fr)</SelectItem>
+                                    <DropdownMenuSeparator />
+                                    {WEEKDAYS.map((day, i) => (
+                                        <SelectItem key={i} value={i.toString()}>{day}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="frequency">Frequenz</Label>
+                            <Select value={newSuggestionFrequency} onValueChange={setNewSuggestionFrequency}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="1">Wöchentlich</SelectItem>
+                                    <SelectItem value="2">Alle 2 Wochen</SelectItem>
+                                    <SelectItem value="3">Alle 3 Wochen</SelectItem>
+                                    <SelectItem value="4">Alle 4 Wochen</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button type="submit" className="bg-purple-600 hover:bg-purple-700">
+                            Neu
+                        </Button>
+                    </form>
+
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider">Bestehende Vorschläge</h3>
+                        <div className="flex items-center gap-2">
+                            <Label htmlFor="filter-weekday" className="text-xs text-zinc-500">Filtern nach:</Label>
+                            <Select value={suggestionFilter} onValueChange={setSuggestionFilter}>
+                                <SelectTrigger id="filter-weekday" className="h-8 w-[150px] text-xs">
+                                    <SelectValue placeholder="Wochentag..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all" className="text-xs">Alle Tage</SelectItem>
+                                    <SelectItem value="-1" className="text-xs">Täglich</SelectItem>
+                                    <SelectItem value="-2" className="text-xs">Werktags (Mo-Fr)</SelectItem>
+                                    <DropdownMenuSeparator />
+                                    {WEEKDAYS.map((day, i) => (
+                                        <SelectItem key={i} value={i.toString()} className="text-xs">{day}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="border rounded-xl overflow-auto max-h-[60vh] shadow-sm">
+                        <Table>
+                            <TableHeader className="bg-zinc-100/50">
+                                <TableRow>
+                                    <TableHead className="font-bold">Aufgabe</TableHead>
+                                    <TableHead className="font-bold">Intervall</TableHead>
+                                    <TableHead className="font-bold">Wochentag</TableHead>
+                                    <TableHead className="text-right font-bold pr-6">Aktionen</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {suggestions
+                                    .filter(s => suggestionFilter === "all" || s.weekday.toString() === suggestionFilter)
+                                    .length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={4} className="text-center py-6 text-zinc-400 italic">
+                                            {suggestionFilter === "all" ? "Keine Vorschläge konfiguriert." : `Keine Vorschläge für ${WEEKDAYS[parseInt(suggestionFilter)]} gefunden.`}
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    suggestions
+                                        .filter(s => suggestionFilter === "all" || s.weekday.toString() === suggestionFilter)
+                                        .map(s => (
+                                            <TableRow key={s.id}>
+                                                <TableCell className="font-bold">
+                                                    <Input
+                                                        defaultValue={s.title}
+                                                        className="h-8 border-none bg-transparent hover:bg-zinc-100 focus:bg-white transition-all font-bold px-2"
+                                                        onBlur={(e) => updateSuggestion(s.id, { title: e.target.value })}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Select
+                                                        value={s.frequency_weeks.toString()}
+                                                        onValueChange={(val) => updateSuggestion(s.id, { frequency_weeks: parseInt(val) })}
+                                                    >
+                                                        <SelectTrigger className="h-8 border-none bg-transparent hover:bg-zinc-100 transition-all text-xs">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="1">Wöchentlich</SelectItem>
+                                                            <SelectItem value="2">Alle 2 Wochen</SelectItem>
+                                                            <SelectItem value="3">Alle 3 Wochen</SelectItem>
+                                                            <SelectItem value="4">Alle 4 Wochen</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Select
+                                                        value={s.weekday.toString()}
+                                                        onValueChange={(val) => updateSuggestion(s.id, { weekday: parseInt(val) })}
+                                                    >
+                                                        <SelectTrigger className="h-8 border-none bg-transparent hover:bg-zinc-100 transition-all text-xs uppercase font-medium">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="-1" className="text-xs">Täglich</SelectItem>
+                                                            <SelectItem value="-2" className="text-xs">Werktags (Mo-Fr)</SelectItem>
+                                                            <DropdownMenuSeparator />
+                                                            {WEEKDAYS.map((day, i) => (
+                                                                <SelectItem key={i} value={i.toString()} className="text-xs">{day}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </TableCell>
+                                                <TableCell className="text-right pr-6">
+                                                    <Button variant="ghost" size="sm" onClick={() => deleteSuggestion(s.id)} className="text-red-500 hover:text-red-600 hover:bg-red-50">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isAddTaskOpen} onOpenChange={setIsAddTaskOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-bold">Zusätzliche Aufgabe hinzufügen</DialogTitle>
+                        <DialogDescription>Erstelle eine manuelle Aufgabe für heute.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={async (e) => {
+                        e.preventDefault();
+                        const title = new FormData(e.currentTarget).get('title') as string;
+                        if (title) {
+                            await addManualTask(title);
+                            setIsAddTaskOpen(false);
+                        }
+                    }} className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="manual-title">Aufgabenbezeichnung</Label>
+                            <Input id="manual-title" name="title" placeholder="z.B. Terrassenmöbel reinigen" required />
+                        </div>
+                        <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 font-bold">
+                            Aufgabe erstellen
+                        </Button>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
             {/* Staff Management Dialogs */}
             <Dialog open={isStaffOpen} onOpenChange={setIsStaffOpen}>
                 <DialogContent className="max-w-2xl">
@@ -631,7 +1108,7 @@ export default function CleaningPage() {
                         >
                             <Plus className="w-4 h-4 mr-2" /> Personal hinzufügen
                         </Button>
-                        <div className="border rounded-xl bg-zinc-50 dark:bg-zinc-900 shadow-inner overflow-hidden">
+                        <div className="border rounded-xl bg-zinc-50 dark:bg-zinc-900 shadow-inner overflow-y-auto max-h-[40vh]">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -646,7 +1123,7 @@ export default function CleaningPage() {
                                         <TableRow key={s.id}>
                                             <TableCell className="font-bold">{s.name}</TableCell>
                                             <TableCell className="text-xs text-zinc-500">{s.role}</TableCell>
-                                            <TableCell className="text-sm font-medium">{s.daily_capacity} Zi./Tag</TableCell>
+                                            <TableCell className="text-sm font-medium">{s.daily_capacity} Aufgaben/Tag</TableCell>
                                             <TableCell className="text-right pr-6 space-x-1">
                                                 <Button
                                                     variant="ghost"
@@ -693,7 +1170,7 @@ export default function CleaningPage() {
                             <Input id="role" name="role" defaultValue={editingStaff?.role} />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="capacity">Kapazität (Zimmer/Tag)</Label>
+                            <Label htmlFor="capacity">Kapazität (Aufgaben/Tag)</Label>
                             <Input id="capacity" name="capacity" type="number" defaultValue={editingStaff?.daily_capacity || 5} />
                         </div>
                         <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 font-bold">
