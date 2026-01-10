@@ -41,3 +41,23 @@ npm run tauri build
 ---
 
 *Entwickelt für eine effiziente und moderne Pensionsverwaltung.*
+
+## Release & Versioning
+
+Ein automatisierter GitHub Action Workflow erstellt bei jedem neuen GitHub Release automatisch einen Windows-Installer (`.exe`).
+
+### Vorgehensweise für ein neues Release
+
+1.  **Version in `tauri.conf.json` aktualisieren**:
+    Die Version in `src-tauri/tauri.conf.json` muss erhöht werden.
+    *   **Format**: Strikt numerisch (Semantic Versioning).
+    *   **Beispiel**: `"version": "1.0.1"` (KEIN `v` davor!).
+
+2.  **Änderungen committen und pushen**.
+
+3.  **Neues Release auf GitHub erstellen**:
+    Erstelle ein neues Release im GitHub Repository.
+    *   **Tag version**: Hier ist ein vorangestelltes `v` üblich.
+    *   **Beispiel**: `v1.0.1`.
+
+⚠️ **Wichtig**: Der Tag auf GitHub (z.B. `v1.0.1`) und die Version in `tauri.conf.json` (z.B. `1.0.1`) sollten übereinstimmen (abgesehen vom `v`), um Verwirrung zu vermeiden. Der Installer wird mit der Version aus der `tauri.conf.json` gebaut.
