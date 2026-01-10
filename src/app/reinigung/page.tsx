@@ -62,6 +62,22 @@ interface CleaningTask {
     room_name?: string;
     staff_name?: string;
     title?: string;
+    task_type?: 'cleaning' | 'checkin';
+}
+
+interface CheckInBooking {
+    id: string;
+    room_id: string;
+    dog_count: number;
+    extra_bed_count: number;
+    has_dog: number;
+    estimated_arrival_time: string | null;
+    guest_name: string;
+    guest_last_name?: string;
+    room_name: string;
+    stay_type?: string;
+    occasion?: string;
+    child_count?: number;
 }
 
 const getWeekNumber = (date: Date) => {
@@ -72,11 +88,15 @@ const getWeekNumber = (date: Date) => {
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 };
 
+
 interface Booking {
     id: string;
     room_id: string;
     end_date: string;
 }
+
+
+
 
 interface TaskSuggestion {
     id: string;
@@ -96,6 +116,8 @@ export default function CleaningPage() {
     const [rooms, setRooms] = useState<Room[]>([]);
     const [tasks, setTasks] = useState<CleaningTask[]>([]);
     const [suggestions, setSuggestions] = useState<TaskSuggestion[]>([]);
+    const [checkIns, setCheckIns] = useState<CheckInBooking[]>([]);
+    const [checkouts, setCheckouts] = useState<CheckInBooking[]>([]);
     const [needsGeneration, setNeedsGeneration] = useState(false);
 
 
@@ -138,14 +160,63 @@ export default function CleaningPage() {
                 const suggestionResults = await db.select<TaskSuggestion[]>("SELECT * FROM cleaning_task_suggestions");
                 setSuggestions(suggestionResults || []);
 
-                // Check if generation is needed
-                const checkouts = await db.select<Booking[]>(
+                // Load Check-Ins for today
+                const checkInResults = await db.select<CheckInBooking[]>(`
+                    SELECT b.id, b.room_id, b.dog_count, b.extra_bed_count, b.has_dog, b.estimated_arrival_time, 
+                           g.name as guest_name, g.last_name as guest_last_name, r.name as room_name,
+                           b.stay_type, b.occasion, b.child_count
+                    FROM bookings b
+                    LEFT JOIN guests g ON b.guest_id = g.id
+                    LEFT JOIN rooms r ON b.room_id = r.id
+                    WHERE b.start_date = ? AND b.status != 'Draft' AND b.status != 'Storniert'
+                `, [selectedDate]);
+                setCheckIns(checkInResults || []);
+
+                // Load Check-Outs for today (Detailed)
+                const checkoutResults = await db.select<CheckInBooking[]>(`
+                    SELECT b.id, b.room_id, b.dog_count, b.extra_bed_count, b.has_dog, b.estimated_arrival_time, 
+                           g.name as guest_name, g.last_name as guest_last_name, r.name as room_name,
+                           b.stay_type, b.occasion, b.child_count
+                    FROM bookings b
+                    LEFT JOIN guests g ON b.guest_id = g.id
+                    LEFT JOIN rooms r ON b.room_id = r.id
+                    WHERE b.end_date = ? AND b.status != 'Draft'
+                `, [selectedDate]);
+                setCheckouts(checkoutResults || []);
+
+                // Check if generation is needed (Checkouts or Check-Ins)
+                const checkoutsForGen = await db.select<Booking[]>(
                     "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft'",
                     [selectedDate]
                 );
-                const existingTaskRoomIds = (taskResults || []).filter(t => t.room_id).map(t => t.room_id);
-                const hasMissingTasks = checkouts.some(b => !existingTaskRoomIds.includes(b.room_id));
-                setNeedsGeneration(hasMissingTasks);
+                const existingTaskRoomIds = (taskResults || []).filter(t => t.room_id && (t.task_type === 'cleaning' || !t.task_type)).map(t => t.room_id);
+                const hasMissingCleaningTasks = checkoutsForGen.some(b => !existingTaskRoomIds.includes(b.room_id));
+
+                const checkInsToGenerate = checkInResults.filter(b => {
+                    const existingTask = taskResults.find(t => t.room_id === b.room_id && t.date === selectedDate && t.task_type === 'checkin');
+                    return !existingTask;
+                });
+
+                // Auto-generate missing check-in tasks immediately
+                if (checkInsToGenerate.length > 0) {
+                    for (const booking of checkInsToGenerate) {
+                        await db.execute(
+                            "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            [crypto.randomUUID(), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
+                        );
+                    }
+                    // Refetch tasks after generation
+                    const updatedTaskResults = await db.select<CleaningTask[]>(`
+                        SELECT ct.*, r.name as room_name, s.name as staff_name
+                        FROM cleaning_tasks ct
+                        LEFT JOIN rooms r ON ct.room_id = r.id
+                        LEFT JOIN staff s ON ct.staff_id = s.id
+                        WHERE ct.date = ? OR ct.delayed_from = ?
+                    `, [selectedDate, selectedDate]);
+                    setTasks(updatedTaskResults || []);
+                }
+
+                setNeedsGeneration(hasMissingCleaningTasks);
             }
         } catch (error) {
             console.error("Failed to load cleaning data:", error);
@@ -160,19 +231,19 @@ export default function CleaningPage() {
         setViewedWeekday(new Date(selectedDate).getDay());
     }, [selectedDate]);
 
-    const toggleCleaning = async (roomId: string, isActive: boolean) => {
+    const toggleCleaning = async (roomId: string, isActive: boolean, type: 'cleaning' | 'checkin' = 'cleaning') => {
         try {
             const db = await initDb();
             if (db) {
                 if (isActive) {
                     await db.execute(
-                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source) VALUES (?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), roomId, selectedDate, "Offen", 1, 'Manuell']
+                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [crypto.randomUUID(), roomId, selectedDate, "Offen", 1, 'Manuell', type]
                     );
                 } else {
                     await db.execute(
-                        "DELETE FROM cleaning_tasks WHERE room_id = ? AND date = ? AND (delayed_from IS NULL OR delayed_from != ?)",
-                        [roomId, selectedDate, selectedDate]
+                        "DELETE FROM cleaning_tasks WHERE room_id = ? AND date = ? AND task_type = ? AND (delayed_from IS NULL OR delayed_from != ?)",
+                        [roomId, selectedDate, type, selectedDate]
                     );
                 }
                 await loadData();
@@ -257,8 +328,23 @@ export default function CleaningPage() {
 
                 for (const roomId of roomsToClean) {
                     await db.execute(
-                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source) VALUES (?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), roomId, selectedDate, "Offen", 0, 'Auto']
+                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [crypto.randomUUID(), roomId, selectedDate, "Offen", 0, 'Auto', 'cleaning']
+                    );
+                }
+
+                // Check-Ins Generation
+                const checkInsToGenerate = checkIns.filter(b => {
+                    const hasDog = b.dog_count > 0 || b.has_dog === 1;
+                    const hasExtraBed = b.extra_bed_count > 0;
+                    const existingTask = tasks.find(t => t.room_id === b.room_id && t.date === selectedDate && t.task_type === 'checkin');
+                    return (hasDog || hasExtraBed) && !existingTask;
+                });
+
+                for (const booking of checkInsToGenerate) {
+                    await db.execute(
+                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [crypto.randomUUID(), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
                     );
                 }
 
@@ -398,6 +484,12 @@ export default function CleaningPage() {
         }
     };
 
+
+
+
+
+
+
     const performExport = async () => {
         try {
             const doc = new jsPDF();
@@ -408,25 +500,91 @@ export default function CleaningPage() {
                 !t.staff_id || exportStaffSelection[t.staff_id] !== false
             );
 
+            const cleaningTasks = filteredTasks.filter(t => (t.task_type === 'cleaning' || !t.task_type) && t.room_id);
+            const additionalTasks = filteredTasks.filter(t => (t.task_type === 'cleaning' || !t.task_type) && !t.room_id);
+            const checkInTasks = filteredTasks.filter(t => t.task_type === 'checkin');
+
             if (exportType === "Gesamt") {
                 doc.setFontSize(18);
                 doc.text("Reinigungsplan - Gesamtübersicht", 14, 22);
                 doc.setFontSize(12);
                 doc.text(`Datum: ${new Date(selectedDate).toLocaleDateString()}`, 14, 30);
 
-                autoTable(doc, {
-                    startY: 40,
-                    head: [["Aufgabe / Zimmer", "Quelle", "Personal", "Status", "Notiz"]],
-                    body: filteredTasks.map(t => [
-                        t.room_id ? `Zimmer ${t.room_id} (${t.room_name})` : (t.title || "Zusatzaufgabe"),
-                        t.source || (t.is_manual ? 'Manuell' : 'Auto'),
-                        t.staff_name || "Nicht zugewiesen",
-                        t.status,
-                        t.comments || ""
-                    ]),
-                });
+                let currentY = 40;
+
+                // Section 1: Reinigung (Zimmer)
+                if (cleaningTasks.length > 0) {
+                    doc.setFontSize(14);
+                    doc.text("Reinigungsaufgaben / Check-Outs", 14, currentY);
+                    currentY += 5;
+
+                    autoTable(doc, {
+                        startY: currentY,
+                        head: [["Zimmer", "Gast", "Art", "Hund", "Aufbettung", "Kinder", "Personal", "Notiz"]],
+                        body: cleaningTasks.map(t => {
+                            const booking = checkouts.find(b => b.room_id === t.room_id);
+                            return [
+                                t.room_name || `Zimmer ${t.room_id}`,
+                                booking?.guest_last_name || booking?.guest_name || "-",
+                                booking?.occasion || "-",
+                                (booking?.dog_count && booking.dog_count > 0) ? `${booking.dog_count}` : (booking?.has_dog ? "Ja" : "-"),
+                                (booking?.extra_bed_count && booking.extra_bed_count > 0) ? `${booking.extra_bed_count}` : "-",
+                                (booking?.child_count && booking.child_count > 0) ? `${booking.child_count}` : "-",
+                                t.staff_name || "Nicht zugewiesen",
+                                t.comments || ""
+                            ];
+                        }),
+                    });
+                    currentY = (doc as any).lastAutoTable.finalY + 15;
+                }
+
+                // Section 2: Weitere Aufgaben
+                if (additionalTasks.length > 0) {
+                    doc.setFontSize(14);
+                    doc.text("Weitere Aufgaben (Allgemein)", 14, currentY);
+                    currentY += 5;
+
+                    autoTable(doc, {
+                        startY: currentY,
+                        head: [["Aufgabe", "Personal", "Notiz"]],
+                        body: additionalTasks.map(t => [
+                            t.title || "Unbenannte Aufgabe",
+                            t.staff_name || "Nicht zugewiesen",
+                            t.comments || ""
+                        ]),
+                    });
+                    currentY = (doc as any).lastAutoTable.finalY + 15;
+                }
+
+                // Section 3: Check-Ins
+                if (checkInTasks.length > 0) {
+                    doc.setFontSize(14);
+                    doc.text("Anreise-Vorbereitungen (Check-Ins)", 14, currentY);
+                    currentY += 5;
+
+                    autoTable(doc, {
+                        startY: currentY,
+                        head: [["Zimmer", "Gast", "Art", "Hund", "Aufbettung", "Kinder", "Personal", "Notiz"]],
+                        body: checkInTasks.map(t => {
+                            const booking = checkIns.find(b => b.room_id === t.room_id);
+
+                            return [
+                                t.room_name || `Zimmer ${t.room_id}`,
+                                booking?.guest_last_name || booking?.guest_name || "-",
+                                booking?.occasion || "-",
+                                (booking?.dog_count && booking.dog_count > 0) ? `${booking.dog_count}` : (booking?.has_dog ? "Ja" : "-"),
+                                (booking?.extra_bed_count && booking.extra_bed_count > 0) ? `${booking.extra_bed_count}` : "-",
+                                (booking?.child_count && booking.child_count > 0) ? `${booking.child_count}` : "-",
+                                t.staff_name || "Nicht zugewiesen",
+                                t.comments || ""
+                            ];
+                        }),
+                    });
+                }
+
             } else {
                 // Individual plans per staff
+                // Group by staff first, then split inside
                 const staffMap = filteredTasks.reduce((acc, t) => {
                     const key = t.staff_id || "unassigned";
                     if (!acc[key]) acc[key] = [];
@@ -443,15 +601,71 @@ export default function CleaningPage() {
                     doc.setFontSize(12);
                     doc.text(`Datum: ${new Date(selectedDate).toLocaleDateString()}`, 14, 30);
 
-                    autoTable(doc, {
-                        startY: 40,
-                        head: [["Aufgabe / Zimmer", "Status", "Notiz"]],
-                        body: staffTasks.map(t => [
-                            t.room_id ? `Zimmer ${t.room_id} (${t.room_name})` : (t.title || "Zusatzaufgabe"),
-                            t.status,
-                            t.comments || ""
-                        ]),
-                    });
+                    let currentY = 40;
+                    const sCleaning = staffTasks.filter(t => (t.task_type === 'cleaning' || !t.task_type) && t.room_id);
+                    const sAdditional = staffTasks.filter(t => (t.task_type === 'cleaning' || !t.task_type) && !t.room_id);
+                    const sCheckIn = staffTasks.filter(t => t.task_type === 'checkin');
+
+                    if (sCleaning.length > 0) {
+                        doc.setFontSize(14);
+                        doc.text("Reinigung (Zimmer)", 14, currentY);
+                        currentY += 5;
+                        autoTable(doc, {
+                            startY: currentY,
+                            head: [["Zimmer", "Gast", "Art", "Hund", "Aufbettung", "Kinder", "Notiz"]],
+                            body: sCleaning.map(t => {
+                                const booking = checkouts.find(b => b.room_id === t.room_id);
+                                return [
+                                    t.room_name || `Zimmer ${t.room_id}`,
+                                    booking?.guest_last_name || booking?.guest_name || "-",
+                                    booking?.occasion || "-",
+                                    (booking?.dog_count && booking.dog_count > 0) ? `${booking.dog_count}` : (booking?.has_dog ? "Ja" : "-"),
+                                    (booking?.extra_bed_count && booking.extra_bed_count > 0) ? `${booking.extra_bed_count}` : "-",
+                                    (booking?.child_count && booking.child_count > 0) ? `${booking.child_count}` : "-",
+                                    t.comments || ""
+                                ];
+                            }),
+                        });
+                        currentY = (doc as any).lastAutoTable.finalY + 15;
+                    }
+
+                    if (sAdditional.length > 0) {
+                        doc.setFontSize(14);
+                        doc.text("Weitere Aufgaben", 14, currentY);
+                        currentY += 5;
+                        autoTable(doc, {
+                            startY: currentY,
+                            head: [["Aufgabe", "Notiz"]],
+                            body: sAdditional.map(t => [
+                                t.title || "Unbenannte Aufgabe",
+                                t.comments || ""
+                            ]),
+                        });
+                        currentY = (doc as any).lastAutoTable.finalY + 15;
+                    }
+
+                    if (sCheckIn.length > 0) {
+                        doc.setFontSize(14);
+                        doc.text("Vorbereitung (Check-Ins)", 14, currentY);
+                        currentY += 5;
+                        autoTable(doc, {
+                            startY: currentY,
+                            head: [["Zimmer", "Gast", "Art", "Hund", "Aufbettung", "Kinder", "Notiz"]],
+                            body: sCheckIn.map(t => {
+                                const booking = checkIns.find(b => b.room_id === t.room_id);
+
+                                return [
+                                    t.room_name || `Zimmer ${t.room_id}`,
+                                    booking?.guest_last_name || booking?.guest_name || "-",
+                                    booking?.occasion || "-",
+                                    (booking?.dog_count && booking.dog_count > 0) ? `${booking.dog_count}` : (booking?.has_dog ? "Ja" : "-"),
+                                    (booking?.extra_bed_count && booking.extra_bed_count > 0) ? `${booking.extra_bed_count}` : "-",
+                                    (booking?.child_count && booking.child_count > 0) ? `${booking.child_count}` : "-",
+                                    t.comments || ""
+                                ];
+                            }),
+                        });
+                    }
                 });
             }
 
@@ -552,8 +766,8 @@ export default function CleaningPage() {
                                 </TableHeader>
                                 <TableBody>
                                     {rooms.map((room) => {
-                                        const activeTask = tasks.find(t => t.room_id === room.id && t.date === selectedDate);
-                                        const delayedInfo = tasks.find(t => t.room_id === room.id && t.delayed_from === selectedDate);
+                                        const activeTask = tasks.find(t => t.room_id === room.id && t.date === selectedDate && (t.task_type === 'cleaning' || !t.task_type));
+                                        const delayedInfo = tasks.find(t => t.room_id === room.id && t.delayed_from === selectedDate && (t.task_type === 'cleaning' || !t.task_type));
                                         const isActive = !!activeTask;
 
                                         return (
@@ -567,7 +781,7 @@ export default function CleaningPage() {
                                                 <TableCell className="text-center pl-6">
                                                     <Switch
                                                         checked={isActive}
-                                                        onCheckedChange={(checked) => toggleCleaning(room.id, checked)}
+                                                        onCheckedChange={(checked) => toggleCleaning(room.id, checked, 'cleaning')}
                                                     />
                                                 </TableCell>
                                                 <TableCell className="font-bold text-zinc-900 dark:text-zinc-100">
@@ -696,6 +910,132 @@ export default function CleaningPage() {
                                                             </Button>
                                                         </div>
                                                     )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+
+                    {/* Check-In Preparations Section */}
+                    <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
+                        <CardHeader>
+                            <CardTitle className="text-xl font-bold">Anreise-Vorbereitungen</CardTitle>
+                            <CardDescription>Aufgaben für heutige Anreisen (z.B. Hunde, Zustellbetten).</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader className="bg-zinc-50/50 dark:bg-zinc-800/50">
+                                    <TableRow>
+                                        <TableHead className="font-bold pl-6 w-12 text-center">Plan</TableHead>
+                                        <TableHead className="font-bold">Zimmer</TableHead>
+                                        <TableHead className="font-bold">Quelle</TableHead>
+                                        <TableHead className="font-bold">Personal</TableHead>
+                                        <TableHead className="font-bold text-center">Details</TableHead>
+                                        <TableHead className="font-bold whitespace-nowrap text-center">Erledigt</TableHead>
+                                        <TableHead className="font-bold">Notiz</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {rooms.map((room) => {
+                                        const activeTask = tasks.find(t => t.room_id === room.id && t.date === selectedDate && t.task_type === 'checkin');
+                                        const isActive = !!activeTask;
+                                        const booking = checkIns.find(b => b.room_id === room.id);
+                                        const hasDog = booking ? (booking.dog_count > 0 || booking.has_dog === 1) : false;
+                                        const hasExtraBed = booking ? (booking.extra_bed_count > 0) : false;
+
+                                        return (
+                                            <TableRow
+                                                key={room.id}
+                                                className={cn(
+                                                    "group transition-all",
+                                                    !isActive && "opacity-40 grayscale-[0.5] hover:opacity-100 hover:grayscale-0"
+                                                )}
+                                            >
+                                                <TableCell className="text-center pl-6">
+                                                    <Switch
+                                                        checked={isActive}
+                                                        onCheckedChange={(checked) => toggleCleaning(room.id, checked, 'checkin')}
+                                                    />
+                                                </TableCell>
+                                                <TableCell className="font-bold text-zinc-900 dark:text-zinc-100">
+                                                    {room.name}
+                                                    {booking && (
+                                                        <div className="text-[10px] text-zinc-500 font-medium">
+                                                            {booking.guest_name} ({booking.estimated_arrival_time || "keine Zeit"})
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {isActive ? (
+                                                        <span className={cn(
+                                                            "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap",
+                                                            activeTask.source === 'Auto' ? "bg-purple-50 text-purple-600 border-purple-100" :
+                                                                "bg-zinc-100 text-zinc-600 border-zinc-200"
+                                                        )}>
+                                                            {activeTask.source || 'Manuell'}
+                                                        </span>
+                                                    ) : "-"}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {isActive ? (
+                                                        <Select
+                                                            value={activeTask?.staff_id || "none"}
+                                                            onValueChange={(val: string) => assignStaff(activeTask!.id, val)}
+                                                        >
+                                                            <SelectTrigger className="w-[140px] h-8 border-none bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-xs">
+                                                                <SelectValue placeholder="Zuweisen..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="none" className="text-xs">Nicht zugewiesen</SelectItem>
+                                                                {staff.map(s => (
+                                                                    <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    ) : "-"}
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <div className="flex justify-center items-center gap-2">
+                                                        {hasDog && (
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                                                                {booking!.dog_count > 1 ? `${booking!.dog_count}x ` : ""}Hund
+                                                            </span>
+                                                        )}
+                                                        {hasExtraBed && (
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                                                                {booking!.extra_bed_count}x Zustellbett
+                                                            </span>
+                                                        )}
+                                                        {!hasDog && !hasExtraBed && booking && (
+                                                            <span className="text-[10px] text-zinc-400">Standard</span>
+                                                        )}
+                                                        {!booking && <span className="text-[10px] text-zinc-300">-</span>}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <div className="flex justify-center">
+                                                        {isActive ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={activeTask?.status === "Erledigt"}
+                                                                onChange={(e) => updateTaskStatus(activeTask!.id, e.target.checked ? "Erledigt" : "Offen")}
+                                                                className="w-5 h-5 rounded border-zinc-300 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                                                            />
+                                                        ) : "-"}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {isActive ? (
+                                                        <Input
+                                                            defaultValue={activeTask?.comments || ""}
+                                                            placeholder="Notiz..."
+                                                            className="h-7 text-[11px] border-zinc-200 bg-transparent focus:bg-white transition-all w-full max-w-[150px]"
+                                                            onBlur={(e) => updateTaskComments(activeTask!.id, e.target.value)}
+                                                        />
+                                                    ) : "-"}
                                                 </TableCell>
                                             </TableRow>
                                         );

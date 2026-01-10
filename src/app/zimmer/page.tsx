@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { BedDouble, Bed, Home, Users, Settings2, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from "lucide-react";
+import { BedDouble, Bed, Home, Users, Settings2, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Flower2, Accessibility } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
     Dialog,
     DialogContent,
@@ -31,6 +32,8 @@ interface Room {
     name: string;
     type: string;
     base_price: number;
+    is_allergy_friendly?: number;
+    is_accessible?: number;
     status?: string;
     current_booking_id?: string;
     current_guest_name?: string;
@@ -181,15 +184,19 @@ export default function RoomsPage() {
         const name = formData.get("name") as string;
         const type = formData.get("type") as string;
         const price = parseFloat(formData.get("price") as string) || 0;
+        const isAllergyFriendly = formData.get("is_allergy_friendly") === "on" ? 1 : 0;
+        const isAccessible = formData.get("is_accessible") === "on" ? 1 : 0;
 
         try {
             const db = await initDb();
             if (db) {
-                await db.execute("INSERT INTO rooms (id, name, type, base_price) VALUES (?, ?, ?, ?)", [
+                await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)", [
                     id,
                     name,
                     type,
-                    price
+                    price,
+                    isAllergyFriendly,
+                    isAccessible
                 ]);
                 await loadRooms();
                 setIsOpen(false);
@@ -211,6 +218,8 @@ export default function RoomsPage() {
         const name = formData.get("name") as string;
         const type = formData.get("type") as string;
         const price = parseFloat(formData.get("price") as string) || 0;
+        const isAllergyFriendly = formData.get("is_allergy_friendly") === "on" ? 1 : 0;
+        const isAccessible = formData.get("is_accessible") === "on" ? 1 : 0;
 
         try {
             const db = await initDb();
@@ -220,8 +229,8 @@ export default function RoomsPage() {
                 if (idChanged) {
                     // 1. Create the new room record first
                     await db.execute(
-                        "INSERT INTO rooms (id, name, type, base_price) VALUES (?, ?, ?, ?)",
-                        [newId, name, type, price]
+                        "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)",
+                        [newId, name, type, price, isAllergyFriendly, isAccessible]
                     );
 
                     // 2. Update all related tables that reference this room_id
@@ -234,8 +243,8 @@ export default function RoomsPage() {
                 } else {
                     // Standard update if ID didn't change
                     await db.execute(
-                        "UPDATE rooms SET name = ?, type = ?, base_price = ? WHERE id = ?",
-                        [name, type, price, editingRoom.id]
+                        "UPDATE rooms SET name = ?, type = ?, base_price = ?, is_allergy_friendly = ?, is_accessible = ? WHERE id = ?",
+                        [name, type, price, isAllergyFriendly, isAccessible, editingRoom.id]
                     );
                 }
 
@@ -295,6 +304,20 @@ export default function RoomsPage() {
                             <div className="space-y-2">
                                 <Label htmlFor="price">Standard-Preis / Nacht (€)</Label>
                                 <Input id="price" name="price" type="number" step="0.01" placeholder="85.00" required />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                <div className="flex items-center space-x-2">
+                                    <Switch id="new-allergy" name="is_allergy_friendly" />
+                                    <Label htmlFor="new-allergy" className="text-sm font-medium flex items-center gap-2">
+                                        <Flower2 className="w-4 h-4 text-pink-500" /> Allergiker
+                                    </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <Switch id="new-accessible" name="is_accessible" />
+                                    <Label htmlFor="new-accessible" className="text-sm font-medium flex items-center gap-2">
+                                        <Accessibility className="w-4 h-4 text-blue-500" /> Barrierefrei
+                                    </Label>
+                                </div>
                             </div>
                             <Button type="submit" className="w-full">Speichern</Button>
                         </form>
@@ -364,10 +387,10 @@ export default function RoomsPage() {
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${(room.status || "Verfügbar") === "Verfügbar"
-                                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                                    : room.status === "Belegt"
-                                                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                : room.status === "Belegt"
+                                                    ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                                    : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                                                 }`}>
                                                 {room.status || "Verfügbar"}
                                             </span>
@@ -598,6 +621,28 @@ export default function RoomsPage() {
                             <div className="space-y-2">
                                 <Label htmlFor="edit-price">Standard-Preis / Nacht (€)</Label>
                                 <Input id="edit-price" name="price" type="number" step="0.01" defaultValue={editingRoom.base_price} required />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                <div className="flex items-center space-x-2">
+                                    <Switch
+                                        id="edit-allergy"
+                                        name="is_allergy_friendly"
+                                        defaultChecked={!!editingRoom.is_allergy_friendly}
+                                    />
+                                    <Label htmlFor="edit-allergy" className="text-sm font-medium flex items-center gap-2">
+                                        <Flower2 className="w-4 h-4 text-pink-500" /> Allergiker
+                                    </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <Switch
+                                        id="edit-accessible"
+                                        name="is_accessible"
+                                        defaultChecked={!!editingRoom.is_accessible}
+                                    />
+                                    <Label htmlFor="edit-accessible" className="text-sm font-medium flex items-center gap-2">
+                                        <Accessibility className="w-4 h-4 text-blue-500" /> Barrierefrei
+                                    </Label>
+                                </div>
                             </div>
                             <div className="pt-2">
                                 <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border mb-4">

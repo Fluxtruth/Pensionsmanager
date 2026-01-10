@@ -2,9 +2,18 @@ import Database from "@tauri-apps/plugin-sql";
 
 // In-memory storage for mock database
 const mockData: Record<string, any[]> = {
-  rooms: [],
+  rooms: [
+    { id: "101", name: "Zimmer 101", type: "Einzelzimmer", base_price: 50 },
+    { id: "102", name: "Zimmer 102", type: "Doppelzimmer", base_price: 80 },
+    { id: "103", name: "Zimmer 103", type: "Doppelzimmer", base_price: 85 },
+    { id: "201", name: "Appartement A", type: "Ferienwohnung", base_price: 120 },
+    { id: "202", name: "Appartement B", type: "Ferienwohnung", base_price: 130 }
+  ],
   room_configs: [],
-  guests: [],
+  guests: [
+    { id: "g1", name: "Max Mustermann", first_name: "Max", last_name: "Mustermann", email: "max@example.com", phone: "0123456789", company: "Musterfirma" },
+    { id: "g2", name: "Erika Musterfrau", first_name: "Erika", last_name: "Musterfrau", email: "erika@example.com", phone: "0987654321" }
+  ],
   occasions: [],
   booking_groups: [],
   bookings: [],
@@ -49,7 +58,14 @@ export async function initDb(): Promise<DatabaseMock | null> {
                   notes: params?.[8], contact_info: params?.[9], nationality: params?.[10]
                 });
               } else if (table === "rooms") {
-                mockData.rooms.push({ id: params?.[0], name: params?.[1], type: params?.[2], base_price: params?.[3] || 0 });
+                mockData.rooms.push({
+                  id: params?.[0],
+                  name: params?.[1],
+                  type: params?.[2],
+                  base_price: params?.[3] || 0,
+                  is_allergy_friendly: params?.[4] || 0,
+                  is_accessible: params?.[5] || 0
+                });
               } else if (table === "occasions") {
                 mockData.occasions.push({ id: params?.[0], title: params?.[1], type: params?.[2], status: params?.[3], main_guest_id: params?.[4] });
               } else if (table === "booking_groups") {
@@ -69,7 +85,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
               } else if (table === "breakfast_options") {
                 mockData.breakfast_options.push({ id: params?.[0], booking_id: params?.[1], date: params?.[2], is_included: params?.[3], is_prepared: params?.[4] || 0, guest_count: params?.[5] || 1, time: params?.[6], comments: params?.[7], source: params?.[8] || 'auto', is_manual: params?.[9] || 0 });
               } else if (table === "cleaning_tasks") {
-                mockData.cleaning_tasks.push({ id: params?.[0], room_id: params?.[1], staff_id: params?.[2], date: params?.[3], status: params?.[4], is_manual: params?.[5], source: params?.[6], title: params?.[7] });
+                mockData.cleaning_tasks.push({ id: params?.[0], room_id: params?.[1], staff_id: params?.[2], date: params?.[3], status: params?.[4], is_manual: params?.[5], source: params?.[6], title: params?.[7], task_type: params?.[8] || 'cleaning', comments: params?.[9] });
               } else if (table === "cleaning_task_suggestions") {
                 mockData.cleaning_task_suggestions.push({ id: params?.[0], title: params?.[1], weekday: params?.[2], frequency_weeks: params?.[3] });
               }
@@ -107,7 +123,14 @@ export async function initDb(): Promise<DatabaseMock | null> {
                     nationality: params?.[9]
                   };
                 } else if (table === "rooms") {
-                  mockData.rooms[index] = { ...mockData.rooms[index], name: params?.[0], type: params?.[1], base_price: params?.[2] };
+                  mockData.rooms[index] = {
+                    ...mockData.rooms[index],
+                    name: params?.[0],
+                    type: params?.[1],
+                    base_price: params?.[2],
+                    is_allergy_friendly: params?.[3],
+                    is_accessible: params?.[4]
+                  };
                 } else if (table === "bookings") {
                   mockData.bookings[index] = {
                     ...mockData.bookings[index],
@@ -204,10 +227,14 @@ export async function initDb(): Promise<DatabaseMock | null> {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         type TEXT NOT NULL,
-        base_price REAL DEFAULT 0
+        base_price REAL DEFAULT 0,
+        is_allergy_friendly INTEGER DEFAULT 0,
+        is_accessible INTEGER DEFAULT 0
       );
     `);
     try { await db.execute("ALTER TABLE rooms ADD COLUMN base_price REAL DEFAULT 0"); } catch (e) { }
+    try { await db.execute("ALTER TABLE rooms ADD COLUMN is_allergy_friendly INTEGER DEFAULT 0"); } catch (e) { }
+    try { await db.execute("ALTER TABLE rooms ADD COLUMN is_accessible INTEGER DEFAULT 0"); } catch (e) { }
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS room_configs (
@@ -263,6 +290,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
       CREATE TABLE IF NOT EXISTS cleaning_tasks (
         id TEXT PRIMARY KEY, room_id TEXT, staff_id TEXT, date TEXT, status TEXT,
         is_exception INTEGER DEFAULT 0, original_date TEXT, title TEXT,
+        task_type TEXT DEFAULT 'cleaning',
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (staff_id) REFERENCES staff(id)
       );
@@ -298,6 +326,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN delayed_from TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN source TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN title TEXT"); } catch (e) { }
+    try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN task_type TEXT DEFAULT 'cleaning'"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN source TEXT DEFAULT 'auto'"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
 
