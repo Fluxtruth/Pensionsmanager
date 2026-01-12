@@ -35,7 +35,7 @@ const mockData: Record<string, any[]> = {
   staff: [],
   cleaning_tasks: [],
   cleaning_task_suggestions: [],
-  cleaning_task_suggestions: [],
+
   breakfast_options: [],
   settings: [
     { key: "branding_title", value: "Pensionsmanager" },
