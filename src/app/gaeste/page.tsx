@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NationalitySelector } from "@/components/NationalitySelector";
 import { initDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Guest {
     id: string;
@@ -53,6 +54,18 @@ function GuestsList() {
     const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [isDbReady, setIsDbReady] = useState(false);
+
+    const [deleteConfirm, setDeleteConfirm] = useState<{
+        isOpen: boolean;
+        title: string;
+        description: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: "",
+        description: "",
+        onConfirm: () => { },
+    });
 
     const loadGuests = async () => {
         try {
@@ -158,30 +171,37 @@ function GuestsList() {
     };
 
     const deleteGuest = async (id: string, name: string) => {
-        if (!confirm(`Möchten Sie den Gast "${name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+        setDeleteConfirm({
+            isOpen: true,
+            title: "Gast löschen",
+            description: `Möchten Sie den Gast "${name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+            onConfirm: async () => {
+                try {
+                    const db = await initDb();
+                    if (db) {
+                        // Check for existing bookings
+                        const bookingsRes = await db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM bookings WHERE guest_id = ?", [id]);
+                        const bookingCount = bookingsRes?.[0]?.count || 0;
 
-        try {
-            const db = await initDb();
-            if (db) {
-                // Check for existing bookings
-                const bookingsRes = await db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM bookings WHERE guest_id = ?", [id]);
-                const bookingCount = bookingsRes?.[0]?.count || 0;
+                        if (bookingCount > 0) {
+                            alert(`Dieser Gast kann nicht gelöscht werden, da er noch ${bookingCount} Buchung(en) im System hat. Bitte löschen Sie zuerst die Buchungen.`);
+                            setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                            return;
+                        }
 
-                if (bookingCount > 0) {
-                    alert(`Dieser Gast kann nicht gelöscht werden, da er noch ${bookingCount} Buchung(en) im System hat. Bitte löschen Sie zuerst die Buchungen.`);
-                    return;
+                        // Automatische Bereinigung alter Anlässe (Legacy-Daten), um Gastlöschung zu ermöglichen
+                        await db.execute("DELETE FROM occasions WHERE main_guest_id = ?", [id]);
+
+                        await db.execute("DELETE FROM guests WHERE id = ?", [id]);
+                        await loadGuests();
+                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                    }
+                } catch (error) {
+                    console.error("Failed to delete guest:", error);
+                    alert("Fehler beim Löschen des Gastes.");
                 }
-
-                // Automatische Bereinigung alter Anlässe (Legacy-Daten), um Gastlöschung zu ermöglichen
-                await db.execute("DELETE FROM occasions WHERE main_guest_id = ?", [id]);
-
-                await db.execute("DELETE FROM guests WHERE id = ?", [id]);
-                await loadGuests();
             }
-        } catch (error) {
-            console.error("Failed to delete guest:", error);
-            alert("Fehler beim Löschen des Gastes.");
-        }
+        });
     };
 
     const filteredGuests = guests.filter((g) =>
@@ -203,7 +223,7 @@ function GuestsList() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} placeholder="Elias" />
+                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
@@ -386,6 +406,14 @@ function GuestsList() {
                     </TableBody>
                 </Table>
             </div>
+
+            <ConfirmDialog
+                isOpen={deleteConfirm.isOpen}
+                onOpenChange={(open) => setDeleteConfirm(prev => ({ ...prev, isOpen: open }))}
+                onConfirm={deleteConfirm.onConfirm}
+                title={deleteConfirm.title}
+                description={deleteConfirm.description}
+            />
         </div>
     );
 }

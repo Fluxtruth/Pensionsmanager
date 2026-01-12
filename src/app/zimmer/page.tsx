@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { BedDouble, Bed, Home, Users, Settings2, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Flower2, Accessibility } from "lucide-react";
+import { BedDouble, Bed, Home, Users, Pencil, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Flower2, Accessibility } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -370,7 +370,7 @@ export default function RoomsPage() {
                                                         setIsConfigOpen(true);
                                                     }}
                                                 >
-                                                    <Settings2 className="w-3 h-3 text-zinc-400" />
+                                                    <Pencil className="w-3 h-3 text-zinc-400" />
                                                 </Button>
                                             </div>
                                         </TableCell>
@@ -379,7 +379,21 @@ export default function RoomsPage() {
                                                 <div className="p-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-md group-hover:bg-white dark:group-hover:bg-zinc-700 transition-colors">
                                                     {getRoomIcon(room.type)}
                                                 </div>
-                                                <span className="text-sm text-zinc-600 dark:text-zinc-400">{room.type}</span>
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm text-zinc-600 dark:text-zinc-400">{room.type}</span>
+                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                        {!!room.is_allergy_friendly && (
+                                                            <div title="Allergikerfreundlich" className="p-0.5 bg-pink-50 dark:bg-pink-900/20 rounded border border-pink-100 dark:border-pink-900/30">
+                                                                <Flower2 className="w-3 h-3 text-pink-500" />
+                                                            </div>
+                                                        )}
+                                                        {!!room.is_accessible && (
+                                                            <div title="Barrierefrei" className="p-0.5 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-900/30">
+                                                                <Accessibility className="w-3 h-3 text-blue-500" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </TableCell>
                                         <TableCell className="font-semibold text-zinc-900 dark:text-zinc-100">

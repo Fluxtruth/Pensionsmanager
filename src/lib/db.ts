@@ -15,13 +15,35 @@ const mockData: Record<string, any[]> = {
     { id: "g2", name: "Erika Musterfrau", first_name: "Erika", last_name: "Musterfrau", email: "erika@example.com", phone: "0987654321" }
   ],
   occasions: [],
-  booking_groups: [],
-  bookings: [],
+  booking_groups: [
+    { id: "bg1", name: "Karneval" }
+  ],
+  bookings: [
+    {
+      id: "b1", room_id: "101", guest_id: "g1",
+      start_date: "2026-01-12", end_date: "2026-01-13",
+      status: "Draft", payment_status: "Offen",
+      group_id: "bg1", guests_per_room: 1
+    },
+    {
+      id: "b2", room_id: "102", guest_id: "g2",
+      start_date: "2026-01-12", end_date: "2026-01-13",
+      status: "Draft", payment_status: "Offen",
+      group_id: "bg1", guests_per_room: 1
+    }
+  ],
   staff: [],
   cleaning_tasks: [],
   cleaning_task_suggestions: [],
-  breakfast_options: []
+  cleaning_task_suggestions: [],
+  breakfast_options: [],
+  settings: [
+    { key: "branding_title", value: "Pensionsmanager" },
+    { key: "branding_logo", value: "/logo.jpg" }
+  ]
 };
+
+export const tableNames = Object.keys(mockData);
 
 interface DbResult {
   rowsAffected: number;
@@ -73,14 +95,13 @@ export async function initDb(): Promise<DatabaseMock | null> {
               } else if (table === "bookings") {
                 mockData.bookings.push({
                   id: params?.[0], room_id: params?.[1], guest_id: params?.[2],
-                  occasion_id: params?.[3], start_date: params?.[4], end_date: params?.[5],
-                  final_price: params?.[6], status: params?.[7], payment_status: params?.[8],
-                  occasion: params?.[9], estimated_arrival_time: params?.[10],
-                  group_id: params?.[11],
-                  is_family_room: params?.[12], has_dog: params?.[13],
-                  is_allergy_friendly: params?.[14], has_mobility_impairment: params?.[15],
-                  guests_per_room: params?.[16], stay_type: params?.[17],
-                  dog_count: params?.[18], child_count: params?.[19], extra_bed_count: params?.[20]
+                  occasion: params?.[3], start_date: params?.[4], end_date: params?.[5],
+                  status: params?.[6], payment_status: params?.[7], estimated_arrival_time: params?.[8],
+                  group_id: params?.[9],
+                  is_family_room: params?.[10], has_dog: params?.[11],
+                  is_allergy_friendly: params?.[12], has_mobility_impairment: params?.[13],
+                  guests_per_room: params?.[14], stay_type: params?.[15],
+                  dog_count: params?.[16], child_count: params?.[17], extra_bed_count: params?.[18]
                 });
               } else if (table === "breakfast_options") {
                 mockData.breakfast_options.push({ id: params?.[0], booking_id: params?.[1], date: params?.[2], is_included: params?.[3], is_prepared: params?.[4] || 0, guest_count: params?.[5] || 1, time: params?.[6], comments: params?.[7], source: params?.[8] || 'auto', is_manual: params?.[9] || 0 });
@@ -88,15 +109,52 @@ export async function initDb(): Promise<DatabaseMock | null> {
                 mockData.cleaning_tasks.push({ id: params?.[0], room_id: params?.[1], staff_id: params?.[2], date: params?.[3], status: params?.[4], is_manual: params?.[5], source: params?.[6], title: params?.[7], task_type: params?.[8] || 'cleaning', comments: params?.[9] });
               } else if (table === "cleaning_task_suggestions") {
                 mockData.cleaning_task_suggestions.push({ id: params?.[0], title: params?.[1], weekday: params?.[2], frequency_weeks: params?.[3] });
+              } else if (table === "settings") {
+                // Upsert for settings
+                const key = params?.[0];
+                const value = params?.[1];
+                const existingIndex = mockData.settings.findIndex(s => s.key === key);
+                if (existingIndex !== -1) {
+                  mockData.settings[existingIndex].value = value;
+                } else {
+                  mockData.settings.push({ key, value });
+                }
               }
             }
           }
+        } else if (upperQuery.includes("INSERT OR REPLACE INTO SETTINGS")) {
+          const key = params?.[0];
+          const value = params?.[1];
+          if (mockData.settings) {
+            const existingIndex = mockData.settings.findIndex(s => s.key === key);
+            if (existingIndex !== -1) {
+              mockData.settings[existingIndex].value = value;
+            } else {
+              mockData.settings.push({ key, value });
+            }
+          }
+          return { rowsAffected: 1, lastInsertId: 0 };
         } else if (upperQuery.includes("UPDATE")) {
           if (upperQuery.includes("SET STATUS = 'STORNIERT' WHERE GROUP_ID = ?")) {
             const groupId = params?.[0];
             mockData.bookings.forEach(b => {
               if (b.group_id === groupId) b.status = 'Storniert';
             });
+            return { rowsAffected: 1, lastInsertId: 0 };
+          }
+          if (upperQuery.includes("SET STATUS = 'STORNIERT' WHERE ID = ?")) {
+            const id = params?.[0];
+            const booking = mockData.bookings.find(b => b.id === id);
+            if (booking) booking.status = 'Storniert';
+            return { rowsAffected: 1, lastInsertId: 0 };
+          }
+          if (upperQuery.includes("SET STATUS = 'CHECKED-OUT'")) {
+            const id = params?.[params.length - 1];
+            const booking = mockData.bookings.find(b => b.id === id);
+            if (booking) {
+              booking.status = 'Checked-Out';
+              booking.actual_checkout_at = params?.[0];
+            }
             return { rowsAffected: 1, lastInsertId: 0 };
           }
           if (upperQuery.includes("SET OCCASION_ID = NULL")) {
@@ -134,14 +192,14 @@ export async function initDb(): Promise<DatabaseMock | null> {
                 } else if (table === "bookings") {
                   mockData.bookings[index] = {
                     ...mockData.bookings[index],
-                    room_id: params?.[0], guest_id: params?.[1], occasion_id: params?.[2],
+                    room_id: params?.[0], guest_id: params?.[1], occasion: params?.[2],
                     start_date: params?.[3], end_date: params?.[4], status: params?.[5],
-                    payment_status: params?.[6], occasion: params?.[7], estimated_arrival_time: params?.[8],
-                    group_id: params?.[9],
-                    is_family_room: params?.[10], has_dog: params?.[11],
-                    is_allergy_friendly: params?.[12], has_mobility_impairment: params?.[13],
-                    guests_per_room: params?.[14], stay_type: params?.[15],
-                    dog_count: params?.[16], child_count: params?.[17], extra_bed_count: params?.[18]
+                    payment_status: params?.[6], estimated_arrival_time: params?.[7],
+                    group_id: params?.[8],
+                    is_family_room: params?.[9], has_dog: params?.[10],
+                    is_allergy_friendly: params?.[11], has_mobility_impairment: params?.[12],
+                    guests_per_room: params?.[13], stay_type: params?.[14],
+                    dog_count: params?.[15], child_count: params?.[16], extra_bed_count: params?.[17]
                   };
                 } else if (table === "breakfast_options") {
                   mockData.breakfast_options[index] = { ...mockData.breakfast_options[index], is_included: params?.[0], is_prepared: params?.[1], guest_count: params?.[2], time: params?.[3], comments: params?.[4], source: params?.[5], is_manual: params?.[6] };
@@ -304,6 +362,11 @@ export async function initDb(): Promise<DatabaseMock | null> {
         is_prepared INTEGER DEFAULT 0, guest_count INTEGER DEFAULT 1, time TEXT,
         comments TEXT,
         FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
       );
     `);
 

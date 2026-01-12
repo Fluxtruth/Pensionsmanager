@@ -1,6 +1,6 @@
 {
   "name": "pensionsmanager",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Eine moderne Next.js & Tauri App zur effizienten Verwaltung von Pensionen und Gästehäusern.",
   "private": true,
   "scripts": {
@@ -17,9 +17,11 @@
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-fs": "^2.4.4",
@@ -34,6 +36,7 @@
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-resizable-panels": "^4.3.3",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {

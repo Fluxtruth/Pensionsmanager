@@ -25,9 +25,17 @@ import {
     EyeOff,
     Flower2,
     Accessibility,
-    Download
+    Download,
+    Pencil,
+    RotateCcw,
+    Clock,
+    Mail,
+    Phone,
+    Building2,
+    User
 } from "lucide-react";
 import { ROOM_TYPES } from "@/lib/constants";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -82,6 +90,7 @@ interface Booking {
     guest_email?: string;
     group_id?: string;
     group_name?: string;
+    guest_company?: string;
     is_family_room?: number;
     has_dog?: number;
     is_allergy_friendly?: number;
@@ -129,6 +138,9 @@ interface BreakfastOption {
     time: string;
     guest_count: number;
     comments: string;
+    is_prepared?: number;
+    source?: string;
+    is_manual?: number;
 }
 
 function BookingsList() {
@@ -166,6 +178,67 @@ function BookingsList() {
     const [editNewGroupName, setEditNewGroupName] = useState<string>("");
     const [groupSearch, setGroupSearch] = useState<string>("");
     const [editGroupSearch, setEditGroupSearch] = useState<string>("");
+    const [isEditGroupSearchFocused, setIsEditGroupSearchFocused] = useState(false);
+    const [editGuestSearch, setEditGuestSearch] = useState<string>("");
+    const [isEditGuestSearchFocused, setIsEditGuestSearchFocused] = useState(false);
+    const [editRoomType, setEditRoomType] = useState<string>("");
+
+    // Breakfast Save States
+    const [pendingBreakfastChanges, setPendingBreakfastChanges] = useState<Record<string, { time?: string, comments?: string }>>({});
+
+    // ... inside existing code ...
+
+    const trackBreakfastChange = (breakfastId: string, field: 'time' | 'comments', value: string) => {
+        setPendingBreakfastChanges(prev => ({
+            ...prev,
+            [breakfastId]: {
+                ...prev[breakfastId],
+                [field]: value
+            }
+        }));
+    };
+
+    const handleSaveBreakfastChanges = async () => {
+        if (Object.keys(pendingBreakfastChanges).length === 0) return;
+
+        try {
+            const db = await initDb();
+            if (db) {
+                // Execute updates sequentially to avoid potential DB lock issues (though rare in mock/sqlite)
+                for (const [id, changes] of Object.entries(pendingBreakfastChanges)) {
+                    const original = breakfastOptions.find(o => o.id === id);
+                    if (original) {
+                        const isIncluded = original.is_included;
+                        const isPrepared = original.is_prepared ?? 0;
+                        const guestCount = original.guest_count ?? 1;
+                        const time = changes.time ?? original.time ?? "08:00";
+                        const comments = changes.comments ?? original.comments ?? "";
+                        const source = original.source ?? "manual";
+                        const isManual = original.is_manual ?? 1;
+
+                        await db.execute(
+                            `UPDATE breakfast_options SET is_included=?, is_prepared=?, guest_count=?, time=?, comments=?, source=?, is_manual=? WHERE id=?`,
+                            [isIncluded, isPrepared, guestCount, time, comments, source, isManual, id]
+                        );
+                    }
+                }
+
+                setPendingBreakfastChanges({});
+                if (editingBooking) {
+                    await loadBreakfast(editingBooking.id);
+                }
+                setIsEditOpen(false); // Close dialog on save
+            }
+        } catch (error) {
+            console.error("Failed to save breakfast changes:", error);
+            alert("Fehler beim Speichern der Änderungen.");
+        }
+    };
+
+    // Customer/Group/Company Filter States
+    const [customerSearchQuery, setCustomerSearchQuery] = useState<string>("");
+    const [searchFilter, setSearchFilter] = useState<{ type: 'guest' | 'group' | 'company', id: string, label: string } | null>(null);
+    const [showCustomerSuggestions, setShowCustomerSuggestions] = useState<boolean>(false);
 
     // Check-Out Summary States
     const [isCheckOutOpen, setIsCheckOutOpen] = useState(false);
@@ -174,6 +247,22 @@ function BookingsList() {
     // Guest Mask States
     const [isGuestMaskOpen, setIsGuestMaskOpen] = useState(false);
     const [editingGuestForMask, setEditingGuestForMask] = useState<Guest | null>(null);
+
+    const [deleteConfirm, setDeleteConfirm] = useState<{
+        isOpen: boolean;
+        title: string;
+        description: string;
+        confirmText?: string;
+        variant?: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: "",
+        description: "",
+        confirmText: "Löschen",
+        variant: "danger",
+        onConfirm: () => { },
+    });
 
     // Wizard States
 
@@ -199,6 +288,7 @@ function BookingsList() {
     });
     const [guestSearch, setGuestSearch] = useState("");
     const [isCreatingGuest, setIsCreatingGuest] = useState(false);
+    const [isWizardGroupSearchFocused, setIsWizardGroupSearchFocused] = useState(false);
 
     // Success Modal State
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -225,7 +315,7 @@ function BookingsList() {
             const db = await initDb();
             if (db) {
                 const bookingResults = await db.select<Booking[]>(`
-                    SELECT b.*, g.name as guest_name, g.phone as guest_phone, g.email as guest_email, r.name as room_name, bg.name as group_name
+                    SELECT b.*, g.name as guest_name, g.phone as guest_phone, g.email as guest_email, g.company as guest_company, r.name as room_name, bg.name as group_name
                     FROM bookings b 
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN rooms r ON b.room_id = r.id
@@ -362,7 +452,7 @@ function BookingsList() {
         const booking = bookings.find(b => b.id === id);
         if (booking && (newStatus === "Hard-Booked" || newStatus === "Checked-In")) {
             if (checkRoomOverlap(booking.room_id, booking.start_date, booking.end_date, id)) {
-                alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt (hart gebucht oder eingecheckt).");
+                alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
                 return;
             }
         }
@@ -436,32 +526,11 @@ function BookingsList() {
         };
     };
 
-    const updateBooking = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
+    const updateBooking = async () => {
         if (!editingBooking) return;
-        const formData = new FormData(e.currentTarget);
-        const updated = {
-            room_id: formData.get("room_id") as string,
-            guest_id: formData.get("guest_id") as string,
-            occasion: formData.get("occasion") as string,
-            start_date: formData.get("start_date") as string,
-            end_date: formData.get("end_date") as string,
-            status: formData.get("status") as string,
-            payment_status: formData.get("payment_status") as string,
-            estimated_arrival_time: formData.get("estimated_arrival_time") as string,
-            is_family_room: formData.get("is_family_room") === "on" ? 1 : 0,
-            has_dog: parseInt(formData.get("dog_count") as string || "0") > 0 ? 1 : 0,
-            is_allergy_friendly: formData.get("is_allergy_friendly") === "on" ? 1 : 0,
-            has_mobility_impairment: formData.get("has_mobility_impairment") === "on" ? 1 : 0,
-            guests_per_room: parseInt(formData.get("guests_per_room") as string || "1"),
-            stay_type: formData.get("stay_type") as string,
-            dog_count: parseInt(formData.get("dog_count") as string || "0"),
-            child_count: parseInt(formData.get("child_count") as string || "0"),
-            extra_bed_count: parseInt(formData.get("extra_bed_count") as string || "0"),
-        };
 
-        if (updated.status === "Hard-Booked" || updated.status === "Checked-In") {
-            if (checkRoomOverlap(updated.room_id, updated.start_date, updated.end_date, editingBooking.id)) {
+        if (editingBooking.status === "Hard-Booked" || editingBooking.status === "Checked-In") {
+            if (checkRoomOverlap(editingBooking.room_id, editingBooking.start_date, editingBooking.end_date, editingBooking.id)) {
                 alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt.");
                 return;
             }
@@ -470,9 +539,9 @@ function BookingsList() {
         try {
             const db = await initDb();
             if (db) {
-                let finalGroupId = formData.get("group_id") as string;
+                let finalGroupId = editGroupId;
                 if (finalGroupId === "new") {
-                    const newName = formData.get("new_group_name") as string;
+                    const newName = editNewGroupName;
                     if (newName) {
                         const existingGroup = groups.find(g => g.name.toLowerCase() === newName.toLowerCase());
                         if (existingGroup) {
@@ -489,7 +558,27 @@ function BookingsList() {
 
                 await db.execute(
                     "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ? WHERE id = ?",
-                    [updated.room_id, updated.guest_id, updated.occasion, updated.start_date, updated.end_date, updated.status, updated.payment_status, updated.estimated_arrival_time, (finalGroupId === "none" || !finalGroupId) ? null : finalGroupId, updated.is_family_room, updated.has_dog, updated.is_allergy_friendly, updated.has_mobility_impairment, updated.guests_per_room, updated.stay_type, updated.dog_count, updated.child_count, updated.extra_bed_count, editingBooking.id]
+                    [
+                        editingBooking.room_id,
+                        editingBooking.guest_id,
+                        editingBooking.occasion,
+                        editingBooking.start_date,
+                        editingBooking.end_date,
+                        editingBooking.status,
+                        editingBooking.payment_status,
+                        editingBooking.estimated_arrival_time,
+                        (finalGroupId === "none" || !finalGroupId) ? null : finalGroupId,
+                        editingBooking.is_family_room,
+                        editingBooking.has_dog,
+                        editingBooking.is_allergy_friendly,
+                        editingBooking.has_mobility_impairment,
+                        editingBooking.guests_per_room,
+                        editingBooking.stay_type,
+                        editingBooking.dog_count,
+                        editingBooking.child_count,
+                        editingBooking.extra_bed_count,
+                        editingBooking.id
+                    ]
                 );
                 await loadData();
                 setIsEditOpen(false);
@@ -500,18 +589,49 @@ function BookingsList() {
         }
     };
 
-    const deleteBooking = async (id: string) => {
-        if (!confirm("Buchung wirklich löschen?")) return;
-        try {
-            const db = await initDb();
-            if (db) {
-                await db.execute("DELETE FROM breakfast_options WHERE booking_id = ?", [id]);
-                await db.execute("DELETE FROM bookings WHERE id = ?", [id]);
-                await loadData();
+    const cancelBooking = async (id: string) => {
+        setDeleteConfirm({
+            isOpen: true,
+            title: "Buchung stornieren",
+            description: "Möchten Sie diese Buchung wirklich stornieren? Der Termin wird für andere Gäste freigegeben.",
+            confirmText: "Stornieren",
+            variant: "warning",
+            onConfirm: async () => {
+                try {
+                    const db = await initDb();
+                    if (db) {
+                        await db.execute("UPDATE bookings SET status = 'Storniert' WHERE id = ?", [id]);
+                        await loadData();
+                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                    }
+                } catch (error) {
+                    console.error("Failed to cancel booking:", error);
+                }
             }
-        } catch (error) {
-            console.error("Failed to delete booking:", error);
-        }
+        });
+    };
+
+    const permanentDeleteBooking = async (id: string) => {
+        setDeleteConfirm({
+            isOpen: true,
+            title: "Buchung unwiderruflich löschen",
+            description: "Diese Aktion kann nicht rückgängig gemacht werden. Alle Daten zu dieser Buchung werden gelöscht.",
+            confirmText: "Löschen",
+            variant: "danger",
+            onConfirm: async () => {
+                try {
+                    const db = await initDb();
+                    if (db) {
+                        await db.execute("DELETE FROM breakfast_options WHERE booking_id = ?", [id]);
+                        await db.execute("DELETE FROM bookings WHERE id = ?", [id]);
+                        await loadData();
+                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                    }
+                } catch (error) {
+                    console.error("Failed to delete booking:", error);
+                }
+            }
+        });
     };
 
     const deleteGroup = async (groupId: string, action: 'delete' | 'storno') => {
@@ -626,6 +746,8 @@ function BookingsList() {
         setDateToFilter("");
         setDateTypeFilter("start");
         setHideCanceled(false);
+        setCustomerSearchQuery("");
+        setSearchFilter(null);
     };
 
     const setTodayFilter = () => {
@@ -644,6 +766,14 @@ function BookingsList() {
         const compareDate = dateTypeFilter === "start" ? b.start_date : b.end_date;
         if (dateFromFilter && compareDate < dateFromFilter) return false;
         if (dateToFilter && compareDate > dateToFilter) return false;
+
+        // Search Filter
+        if (searchFilter) {
+            if (searchFilter.type === 'guest' && b.guest_id !== searchFilter.id) return false;
+            if (searchFilter.type === 'group' && b.group_id !== searchFilter.id) return false;
+            if (searchFilter.type === 'company' && b.guest_company !== searchFilter.id) return false;
+        }
+
         return true;
     }).sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
@@ -684,6 +814,35 @@ function BookingsList() {
 
         return result;
     }, [filteredBookings, groups]);
+
+    const searchSuggestions = useMemo(() => {
+        if (!customerSearchQuery) return [];
+        const query = customerSearchQuery.toLowerCase();
+        const results: { type: 'guest' | 'group' | 'company', id: string, label: string, subLabel?: string }[] = [];
+
+        // 1. Groups
+        groups.filter(g => g.name.toLowerCase().includes(query)).forEach(g => {
+            results.push({ type: 'group', id: g.id, label: g.name, subLabel: 'Gruppe' });
+        });
+
+        // 2. Companies (Unique)
+        const matchingCompanies = new Set<string>();
+        guests.forEach(g => {
+            if (g.company && g.company.toLowerCase().includes(query)) {
+                matchingCompanies.add(g.company);
+            }
+        });
+        Array.from(matchingCompanies).sort().forEach(c => {
+            results.push({ type: 'company', id: c, label: c, subLabel: 'Firma' });
+        });
+
+        // 3. Guests
+        guests.filter(g => g.name.toLowerCase().includes(query)).slice(0, 10).forEach(g => {
+            results.push({ type: 'guest', id: g.id, label: g.name, subLabel: g.company || 'Privatgast' });
+        });
+
+        return results;
+    }, [guests, groups, customerSearchQuery]);
 
     const toggleGroup = (groupId: string) => {
         setExpandedGroups(prev => {
@@ -736,6 +895,48 @@ function BookingsList() {
         return rooms.filter(r => r.type === wizardData.roomType);
     }, [rooms, wizardData.roomType]);
 
+    // --- EDIT DIALOG LOGIC ---
+
+    const filteredEditGuests = useMemo(() => {
+        if (!editGuestSearch) return guests.slice(0, 5);
+        return guests.filter(g =>
+            g.name.toLowerCase().includes(editGuestSearch.toLowerCase()) ||
+            g.company?.toLowerCase().includes(editGuestSearch.toLowerCase())
+        ).slice(0, 5);
+    }, [guests, editGuestSearch]);
+
+    const editRoomTypeAvailability = useMemo(() => {
+        const availability: Record<string, number> = {};
+        if (!editingBooking) return availability;
+
+        roomTypes.forEach(type => {
+            const roomsOfType = rooms.filter(r => r.type === type);
+            if (!editingBooking.start_date || !editingBooking.end_date) {
+                availability[type] = roomsOfType.length;
+                return;
+            }
+
+            const availableCount = roomsOfType.filter(r => {
+                const hasOverlap = bookings.some(b =>
+                    b.id !== editingBooking.id && // Exclude current booking
+                    b.room_id === r.id &&
+                    b.status !== "Checked-Out" &&
+                    b.status !== "Storniert" &&
+                    b.start_date < editingBooking.end_date &&
+                    b.end_date > editingBooking.start_date
+                );
+                return !hasOverlap;
+            }).length;
+            availability[type] = availableCount;
+        });
+        return availability;
+    }, [rooms, bookings, editingBooking, roomTypes]);
+
+    const editAllRoomsForType = useMemo(() => {
+        if (!editRoomType) return [];
+        return rooms.filter(r => r.type === editRoomType);
+    }, [rooms, editRoomType]);
+
     const getRoomIcon = (type: string, className?: string) => {
         const iconClass = className || "w-4 h-4 text-zinc-400 group-hover:text-blue-500 transition-colors";
         switch (type) {
@@ -781,37 +982,40 @@ function BookingsList() {
             const db = await initDb();
             if (!db) return;
 
-            let finalGroupId = wizardData.groupId;
-            if (finalGroupId === "new" && wizardData.newGroupName) {
-                const existingGroup = groups.find(g => g.name.toLowerCase() === wizardData.newGroupName.toLowerCase());
+            // Capture current state immediately to prevent race conditions with resetWizard
+            const finalWizardData = { ...wizardData };
+
+            let finalGroupId = finalWizardData.groupId;
+            if (finalGroupId === "new" && finalWizardData.newGroupName) {
+                const existingGroup = groups.find(g => g.name.toLowerCase() === finalWizardData.newGroupName.toLowerCase());
                 if (existingGroup) {
                     finalGroupId = existingGroup.id;
                 } else {
                     finalGroupId = crypto.randomUUID();
-                    await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [finalGroupId, wizardData.newGroupName]);
+                    await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [finalGroupId, finalWizardData.newGroupName]);
                 }
             }
 
             const booking = {
                 id: crypto.randomUUID(),
-                room_id: wizardData.roomId,
-                guest_id: wizardData.guestId,
-                occasion: wizardData.occasion,
-                start_date: wizardData.startDate,
-                end_date: wizardData.endDate,
+                room_id: finalWizardData.roomId,
+                guest_id: finalWizardData.guestId,
+                occasion: finalWizardData.occasion,
+                start_date: finalWizardData.startDate,
+                end_date: finalWizardData.endDate,
                 status: status,
                 payment_status: "Offen",
-                estimated_arrival_time: wizardData.arrivalTime,
+                estimated_arrival_time: finalWizardData.arrivalTime,
                 group_id: (finalGroupId === "new" || finalGroupId === "none" || !finalGroupId) ? null : finalGroupId,
-                is_family_room: wizardData.isFamilyRoom ? 1 : 0,
-                has_dog: wizardData.dogCount > 0 ? 1 : 0,
-                is_allergy_friendly: wizardData.isAllergyFriendly ? 1 : 0,
-                has_mobility_impairment: wizardData.hasMobilityImpairment ? 1 : 0,
-                guests_per_room: wizardData.guestsPerRoom,
-                stay_type: wizardData.stayType,
-                dog_count: wizardData.dogCount,
-                child_count: wizardData.childCount,
-                extra_bed_count: wizardData.extraBedCount
+                is_family_room: finalWizardData.isFamilyRoom ? 1 : 0,
+                has_dog: finalWizardData.dogCount > 0 ? 1 : 0,
+                is_allergy_friendly: finalWizardData.isAllergyFriendly ? 1 : 0,
+                has_mobility_impairment: finalWizardData.hasMobilityImpairment ? 1 : 0,
+                guests_per_room: finalWizardData.guestsPerRoom,
+                stay_type: finalWizardData.stayType,
+                dog_count: finalWizardData.dogCount,
+                child_count: finalWizardData.childCount,
+                extra_bed_count: finalWizardData.extraBedCount
             };
 
             if (checkRoomOverlap(booking.room_id, booking.start_date, booking.end_date)) {
@@ -823,6 +1027,8 @@ function BookingsList() {
                 "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [booking.id, booking.room_id, booking.guest_id, booking.occasion, booking.start_date, booking.end_date, booking.status, booking.payment_status, booking.estimated_arrival_time, booking.group_id, booking.is_family_room, booking.has_dog, booking.is_allergy_friendly, booking.has_mobility_impairment, booking.guests_per_room, booking.stay_type, booking.dog_count, booking.child_count, booking.extra_bed_count]
             );
+
+            // Wait for DB op to finish before resetting or closing
             await loadData();
             setIsBookingOpen(false);
 
@@ -830,7 +1036,7 @@ function BookingsList() {
             if (status === "Hard-Booked") {
                 const roomName = rooms.find(r => r.id === booking.room_id)?.name || "Unbekanntes Zimmer";
                 setSuccessBookingData({
-                    guestName: wizardData.guestName,
+                    guestName: finalWizardData.guestName,
                     roomName: roomName,
                     startDate: booking.start_date,
                     endDate: booking.end_date,
@@ -848,6 +1054,7 @@ function BookingsList() {
                 setShowSuccessModal(true);
             }
 
+            // Moved resetWizard to after everything is done, though isBookingOpen(false) might trigger it via onOpenChange also.
             resetWizard();
         } catch (error) {
             console.error("Failed to add booking:", error);
@@ -992,18 +1199,21 @@ function BookingsList() {
                 <div className="flex gap-2">
                     <Button
                         variant="outline"
-                        className="h-11 px-4 border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+                        className="px-4 border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
                         onClick={handleExport}
                     >
-                        <Download className="w-5 h-5 mr-2" /> Export
+                        <Download className="w-4 h-4 mr-2" /> Export
                     </Button>
                     <Dialog open={isBookingOpen} onOpenChange={(val) => {
                         setIsBookingOpen(val);
                         if (!val) resetWizard();
                     }}>
                         <DialogTrigger asChild>
-                            <Button className="bg-blue-600 hover:bg-blue-700 h-11 px-6 shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02]">
-                                <Plus className="w-5 h-5 mr-2" /> Neue Buchung
+                            <Button
+                                onClick={() => resetWizard()}
+                                className="bg-blue-600 hover:bg-blue-700"
+                            >
+                                <Plus className="w-4 h-4 mr-2" /> Neue Buchung
                             </Button>
                         </DialogTrigger>
                         <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-6">
@@ -1159,12 +1369,14 @@ function BookingsList() {
 
                                     <div className="space-y-1.5">
                                         <Label className="text-xs">Gruppe (Optional)</Label>
-                                        <div className="relative">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                        <div className="relative group">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
                                             <Input
                                                 placeholder="Gruppe suchen oder erstellen..."
-                                                className="pl-9 h-10"
+                                                className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
                                                 value={groupSearch}
+                                                onFocus={() => setIsWizardGroupSearchFocused(true)}
+                                                onBlur={() => setTimeout(() => setIsWizardGroupSearchFocused(false), 200)}
                                                 onChange={(e) => {
                                                     setGroupSearch(e.target.value);
                                                     if (e.target.value === "") {
@@ -1179,31 +1391,46 @@ function BookingsList() {
                                                     }
                                                 }}
                                             />
+
+                                            {isWizardGroupSearchFocused && groupSearch && !groups.some(g => g.name.toLowerCase() === groupSearch.toLowerCase()) && (
+                                                <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
+                                                    <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
+                                                    <button
+                                                        type="button"
+                                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                                                        onClick={() => {
+                                                            setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: groupSearch }));
+                                                            setIsWizardGroupSearchFocused(false);
+                                                        }}
+                                                    >
+                                                        <Plus className="w-4 h-4" /> "{groupSearch}" erstellen
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {isWizardGroupSearchFocused && (
+                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                    {groups
+                                                        .filter(g => !groupSearch || (g.name.toLowerCase().includes(groupSearch.toLowerCase()) && g.name.toLowerCase() !== groupSearch.toLowerCase()))
+                                                        .map(g => (
+                                                            <button
+                                                                key={g.id}
+                                                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                onClick={() => {
+                                                                    setGroupSearch(g.name);
+                                                                    setWizardData(prev => ({ ...prev, groupId: g.id, newGroupName: "" }));
+                                                                }}
+                                                            >
+                                                                <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
+                                                                {groupSearch === g.name && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                            </button>
+                                                        ))
+                                                    }
+                                                    {groups.length === 0 && (
+                                                        <div className="px-3 py-4 text-xs text-zinc-400 italic text-center">Keine Gruppen vorhanden</div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        {groupSearch && !groups.some(g => g.name.toLowerCase() === groupSearch.toLowerCase()) && (
-                                            <div className="text-[10px] text-blue-600 font-bold uppercase mt-1 pl-1">
-                                                + Neu erstellen: "{groupSearch}"
-                                            </div>
-                                        )}
-                                        {groupSearch && groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase()) && g.name.toLowerCase() !== groupSearch.toLowerCase()).length > 0 && (
-                                            <div className="absolute z-20 w-[90%] mt-1 bg-white border border-zinc-200 rounded-lg shadow-xl max-h-[150px] overflow-y-auto p-1">
-                                                {groups
-                                                    .filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase()))
-                                                    .map(g => (
-                                                        <button
-                                                            key={g.id}
-                                                            className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 rounded-md transition-colors"
-                                                            onClick={() => {
-                                                                setGroupSearch(g.name);
-                                                                setWizardData(prev => ({ ...prev, groupId: g.id, newGroupName: "" }));
-                                                            }}
-                                                        >
-                                                            {g.name}
-                                                        </button>
-                                                    ))
-                                                }
-                                            </div>
-                                        )}
                                     </div>
 
                                     <div className="space-y-2">
@@ -1296,7 +1523,7 @@ function BookingsList() {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2 pt-2">
+                                    <div className="grid grid-cols-2 gap-2 pt-2">
                                         <div className="flex items-center space-x-2">
                                             <Switch
                                                 id="wizard-allergy"
@@ -1353,7 +1580,9 @@ function BookingsList() {
                                                         <span className={cn("text-[9px] font-bold uppercase",
                                                             wizardData.roomType === type ? "text-blue-100" : (isDisabled ? "text-red-500" : "text-emerald-600")
                                                         )}>
-                                                            {isDisabled ? "Voll" : `${availableCount} verfügbar`}
+                                                            {(wizardData.startDate && wizardData.endDate) && (
+                                                                isDisabled ? "Voll" : `${availableCount} verfügbar`
+                                                            )}
                                                         </span>
                                                     </button>
                                                 );
@@ -1490,9 +1719,84 @@ function BookingsList() {
             </div>
 
             <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
-                <CardContent className="p-4">
+                <CardContent className="py-2.5 px-4">
                     <div className="flex flex-wrap items-end gap-4">
-                        <div className="space-y-1.5 flex-1 min-w-[150px]">
+                        {/* Customer Search Filter */}
+                        <div className="space-y-0.5 w-[180px] relative">
+                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kunde suchen</Label>
+                            <div className="relative group">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                <Input
+                                    placeholder="Gast, Firma oder Gruppe..."
+                                    className="pl-9 h-9 text-sm shadow-sm"
+                                    value={customerSearchQuery}
+                                    onChange={(e) => {
+                                        setCustomerSearchQuery(e.target.value);
+                                        setShowCustomerSuggestions(true);
+                                        if (e.target.value === "") setSearchFilter(null);
+                                    }}
+                                    onFocus={() => setShowCustomerSuggestions(true)}
+                                />
+                                {(customerSearchQuery || searchFilter) && (
+                                    <button
+                                        onClick={() => {
+                                            setCustomerSearchQuery("");
+                                            setSearchFilter(null);
+                                            setShowCustomerSuggestions(false);
+                                        }}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                    >
+                                        <XCircle className="w-4 h-4 text-zinc-400" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Suggestions Dropdown */}
+                            {showCustomerSuggestions && customerSearchQuery && !searchFilter && (
+                                <div className="absolute z-50 w-[240px] mt-1 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl max-h-[300px] overflow-y-auto p-1 animate-in fade-in zoom-in duration-200">
+                                    {searchSuggestions.map((item, idx) => (
+                                        <button
+                                            key={`${item.type}-${item.id}-${idx}`}
+                                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group"
+                                            onClick={() => {
+                                                setCustomerSearchQuery(item.label);
+                                                setSearchFilter(item);
+                                                setShowCustomerSuggestions(false);
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={cn(
+                                                    "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                                                    item.type === 'company' ? "bg-purple-100 text-purple-600" :
+                                                        item.type === 'group' ? "bg-blue-100 text-blue-600" :
+                                                            "bg-zinc-100 text-zinc-600"
+                                                )}>
+                                                    {item.type === 'company' ? <Building2 className="w-4 h-4" /> :
+                                                        item.type === 'group' ? <Users className="w-4 h-4" /> :
+                                                            <User className="w-4 h-4" />}
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-700 dark:group-hover:text-blue-400">
+                                                        {item.label}
+                                                    </div>
+                                                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
+                                                        {item.subLabel}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-blue-400 transition-transform group-hover:translate-x-0.5" />
+                                        </button>
+                                    ))}
+                                    {searchSuggestions.length === 0 && (
+                                        <div className="px-3 py-4 text-xs text-zinc-500 text-center italic">
+                                            Keine Treffer gefunden
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-0.5 w-[140px]">
                             <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</Label>
                             <select
                                 value={statusFilter ?? "all"}
@@ -1501,27 +1805,17 @@ function BookingsList() {
                             >
                                 <option value="all">Alle Status</option>
                                 <option value="Draft">Draft (Entwurf)</option>
-                                <option value="Hard-Booked">Hart gebucht</option>
+                                <option value="Hard-Booked">Fest gebucht</option>
                                 <option value="Checked-In">Eingecheckt</option>
                                 <option value="Checked-Out">Abgereist</option>
                             </select>
                         </div>
-                        <div className="space-y-1.5 w-[110px]">
-                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Datumstyp</Label>
-                            <select
-                                value={dateTypeFilter ?? "start"}
-                                onChange={(e) => setDateTypeFilter(e.target.value as "start" | "end")}
-                                className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-sm"
-                            >
-                                <option value="start">Anreise</option>
-                                <option value="end">Abreise</option>
-                            </select>
-                        </div>
-                        <div className="space-y-1.5 w-[135px]">
+
+                        <div className="space-y-0.5 w-[130px]">
                             <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">von</Label>
                             <Input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
                         </div>
-                        <div className="space-y-1.5 w-[135px]">
+                        <div className="space-y-0.5 w-[130px]">
                             <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">bis</Label>
                             <Input type="date" value={dateToFilter} onChange={(e) => setDateToFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
                         </div>
@@ -1529,11 +1823,7 @@ function BookingsList() {
                             <Button variant="outline" size="sm" className="h-9 shadow-sm" onClick={setTodayFilter}>
                                 <Calendar className="w-4 h-4 mr-2 text-blue-500" /> Heute
                             </Button>
-                            <Button variant="ghost" size="sm" className="h-9 text-zinc-500" onClick={resetFilters}>
-                                <XCircle className="w-4 h-4 mr-2" /> Reset
-                            </Button>
                         </div>
-
                         <div className="flex items-center gap-3 pl-4 border-l border-zinc-100 dark:border-zinc-800 h-9">
                             <div className="flex items-center gap-2">
                                 <Switch
@@ -1549,15 +1839,19 @@ function BookingsList() {
                             <div className="flex items-center gap-2">
                                 <Switch
                                     id="hide-canceled"
-                                    checked={hideCanceled}
-                                    onCheckedChange={setHideCanceled}
+                                    checked={!hideCanceled}
+                                    onCheckedChange={(val) => setHideCanceled(!val)}
                                 />
                                 <Label htmlFor="hide-canceled" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
-                                    <XCircle className="w-3.5 h-3.5" />
-                                    Stornos ausblenden
+                                    {!hideCanceled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                    Stornos
                                 </Label>
                             </div>
                         </div>
+
+                        <Button variant="ghost" size="sm" className="h-9 text-xs font-bold text-zinc-500 ml-auto" onClick={resetFilters}>
+                            <RotateCcw className="w-3.5 h-3.5 mr-2" /> Filter zurücksetzen
+                        </Button>
                     </div>
                 </CardContent>
             </Card>
@@ -1628,22 +1922,11 @@ function BookingsList() {
                                                         });
                                                         const avgScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
                                                         const color = avgScore >= 100 ? "text-emerald-500" : avgScore >= 70 ? "text-blue-500" : avgScore >= 40 ? "text-amber-500" : "text-rose-500";
-                                                        const circleColor = avgScore >= 100 ? "stroke-emerald-500" : avgScore >= 70 ? "stroke-blue-500" : avgScore >= 40 ? "stroke-amber-500" : "stroke-rose-500";
 
                                                         return (
                                                             <div className="flex flex-col items-center justify-center gap-1">
-                                                                <div className="relative w-7 h-7">
-                                                                    <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                                                                        <circle cx="18" cy="18" r="16" fill="none" className="stroke-blue-100 dark:stroke-blue-900/30" strokeWidth="4" />
-                                                                        <circle
-                                                                            cx="18" cy="18" r="16" fill="none"
-                                                                            className={cn("transition-all duration-1000", circleColor)}
-                                                                            strokeWidth="4"
-                                                                            strokeDasharray={`${avgScore}, 100`}
-                                                                            strokeLinecap="round"
-                                                                        />
-                                                                    </svg>
-                                                                    <span className={cn("absolute inset-0 flex items-center justify-center text-[7px] font-black", color)}>
+                                                                <div className="relative flex items-center justify-center w-10 h-8">
+                                                                    <span className={cn("text-xs font-black tracking-tight", color)}>
                                                                         {avgScore}%
                                                                     </span>
                                                                 </div>
@@ -1658,7 +1941,7 @@ function BookingsList() {
                                                             const status = statuses[0];
                                                             return (
                                                                 <Badge variant="outline" className={cn(
-                                                                    "text-[9px] h-5 px-2 rounded-full font-bold",
+                                                                    "text-[10px] h-6 px-3 rounded-full font-bold",
                                                                     status === "Storniert" ? "bg-red-50 border-red-200 text-red-600" :
                                                                         status === "Checked-Out" ? "bg-zinc-100 border-zinc-200 text-zinc-500" :
                                                                             status === "Checked-In" ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
@@ -1666,14 +1949,14 @@ function BookingsList() {
                                                                                     "bg-amber-50 border-amber-200 text-amber-600"
                                                                 )}>
                                                                     {status === "Hard-Booked" ? "FEST" :
-                                                                        status === "Checked-In" ? "IN" :
+                                                                        status === "Checked-In" ? "EINGECHECKT" :
                                                                             status === "Checked-Out" ? "OUT" :
                                                                                 status.toUpperCase()}
                                                                 </Badge>
                                                             );
                                                         }
                                                         return (
-                                                            <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-600 text-[9px] h-5 px-2 rounded-full font-black">
+                                                            <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-600 text-[10px] h-6 px-3 rounded-full font-black">
                                                                 GEMISCHT
                                                             </Badge>
                                                         );
@@ -1691,18 +1974,29 @@ function BookingsList() {
                                                             setIsGroupDeleteOpen(true);
                                                         }}
                                                     >
-                                                        <Settings className="w-3.5 h-3.5 mr-1" /> Verwalten
+                                                        <Pencil className="w-3.5 h-3.5 mr-1" /> Verwalten
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
                                         )}
 
                                         {isExpanded && groupBookings.map((booking) => (
-                                            <TableRow key={booking.id} className={cn("group hover:bg-zinc-50/50 transition-colors", isGroup ? "bg-white/50" : "")}>
+                                            <TableRow
+                                                key={booking.id}
+                                                className={cn(
+                                                    "group transition-colors cursor-pointer",
+                                                    isGroup ? "bg-white/50" : "",
+                                                    booking.status === "Storniert"
+                                                        ? "hover:bg-red-50/10 opacity-70 grayscale-[0.6]"
+                                                        : "hover:bg-zinc-50/50"
+                                                )}
+                                                onClick={() => handleEditClick(booking)}
+                                            >
                                                 <TableCell className={cn("py-4", isGroup ? "pl-12" : "")}>
                                                     <div className="flex items-center gap-2">
                                                         <div
-                                                            onClick={() => {
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
                                                                 const guest = guests.find(g => g.id === booking.guest_id);
                                                                 if (guest) {
                                                                     setEditingGuestForMask(guest);
@@ -1710,8 +2004,10 @@ function BookingsList() {
                                                                 }
                                                             }}
                                                             className={cn(
-                                                                "font-bold text-zinc-900 hover:text-blue-600 transition-colors cursor-pointer decoration-blue-200/50 hover:underline underline-offset-4",
-                                                                booking.status === "Storniert" && "line-through text-zinc-400"
+                                                                "font-bold transition-colors cursor-pointer decoration-blue-200/50 hover:underline underline-offset-4",
+                                                                booking.status === "Storniert"
+                                                                    ? "line-through text-zinc-500 decoration-red-500/70 decoration-2"
+                                                                    : "text-zinc-900 hover:text-blue-600"
                                                             )}
                                                         >
                                                             {booking.guest_name}
@@ -1728,7 +2024,10 @@ function BookingsList() {
                                                         {booking.room_name || `Zimmer ${booking.room_id}`}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className="text-xs text-zinc-500 font-medium whitespace-nowrap">
+                                                <TableCell className={cn(
+                                                    "text-xs font-medium whitespace-nowrap",
+                                                    booking.status === "Storniert" ? "line-through text-zinc-400 decoration-red-500/70 decoration-2" : "text-zinc-500"
+                                                )}>
                                                     {new Date(booking.start_date).toLocaleDateString('de-DE')} - {new Date(booking.end_date).toLocaleDateString('de-DE')}
                                                 </TableCell>
                                                 <TableCell className="text-center">
@@ -1737,82 +2036,61 @@ function BookingsList() {
                                                         const hasPhone = !!booking.guest_phone;
                                                         const hasEmail = !!booking.guest_email;
 
-                                                        const score = (hasArrival ? 40 : 0) + (hasPhone ? 30 : 0) + (hasEmail ? 30 : 0);
-                                                        const color = score >= 100 ? "text-emerald-500" : score >= 70 ? "text-blue-500" : score >= 40 ? "text-amber-500" : "text-rose-500";
-                                                        const circleColor = score >= 100 ? "stroke-emerald-500" : score >= 70 ? "stroke-blue-500" : score >= 40 ? "stroke-amber-500" : "stroke-rose-500";
-
-                                                        const arrivalDate = new Date(booking.start_date);
-                                                        const diffTime = arrivalDate.getTime() - new Date(today).getTime();
-                                                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                                                        // Marks rows from 3 days before arrival
-                                                        const isCloseToArrival = diffDays >= 0 && diffDays <= 3;
-                                                        const isUrgent = isCloseToArrival && score < 100;
-                                                        const missingArrivalUrgent = isCloseToArrival && !hasArrival;
-
                                                         return (
-                                                            <div className="flex flex-col items-center justify-center gap-1 group/quality relative h-10">
-                                                                {/* Simple Colored Number Indicator */}
-                                                                <div className="relative flex items-center justify-center w-10 h-8">
-                                                                    <span className={cn("text-xs font-black tracking-tight", color)}>
-                                                                        {score}%
-                                                                    </span>
+                                                            <div className="flex items-center justify-center gap-1.5">
+                                                                {/* Arrival Time */}
+                                                                <div
+                                                                    title={hasArrival ? `Ankunftszeit: ${booking.estimated_arrival_time}` : (booking.start_date === today ? "DRINGEND: Ankunftszeit fehlt (Heute Anreise!)" : "Ankunftszeit fehlt")}
+                                                                    className={cn(
+                                                                        "p-1.5 rounded-full transition-all duration-200",
+                                                                        hasArrival ? "bg-emerald-100/50 text-emerald-600" :
+                                                                            (booking.start_date === today ? "bg-red-100 text-red-600 shadow-sm animate-pulse" : "bg-red-50 text-red-300 opacity-60 grayscale")
+                                                                    )}
+                                                                >
+                                                                    <Clock className="w-3.5 h-3.5" />
                                                                 </div>
 
-                                                                {/* Badges - Subtle positioning */}
-                                                                {missingArrivalUrgent && (
-                                                                    <div className="absolute -top-1 -right-0 w-3.5 h-3.5 bg-rose-600 rounded-full border border-white dark:border-zinc-950 flex items-center justify-center shadow-sm z-10">
-                                                                        <span className="text-[7px] text-white font-black">!</span>
+                                                                {/* Phone */}
+                                                                <div
+                                                                    title={hasPhone ? `Telefon: ${booking.guest_phone}` : "Telefonnummer fehlt"}
+                                                                    className={cn(
+                                                                        "p-1.5 rounded-full transition-all duration-200",
+                                                                        hasPhone ? "bg-emerald-100/50 text-emerald-600" : "bg-red-50 text-red-300 opacity-60 grayscale"
+                                                                    )}
+                                                                >
+                                                                    <Phone className="w-3.5 h-3.5" />
+                                                                </div>
+
+                                                                {/* Email */}
+                                                                <div
+                                                                    title={hasEmail ? `E-Mail: ${booking.guest_email}` : "E-Mail Adresse fehlt"}
+                                                                    className={cn(
+                                                                        "p-1.5 rounded-full transition-all duration-200",
+                                                                        hasEmail ? "bg-emerald-100/50 text-emerald-600" : "bg-red-50 text-red-300 opacity-60 grayscale"
+                                                                    )}
+                                                                >
+                                                                    <Mail className="w-3.5 h-3.5" />
+                                                                </div>
+
+                                                                {/* Allergy Friendly */}
+                                                                {(!!booking.is_allergy_friendly) && (
+                                                                    <div
+                                                                        title="Allergikerfreundlich benötigt"
+                                                                        className="p-1.5 rounded-full bg-pink-50 text-pink-500 transition-all duration-200 border border-pink-100"
+                                                                    >
+                                                                        <Flower2 className="w-3.5 h-3.5" />
                                                                     </div>
                                                                 )}
 
-                                                                {!hasArrival && !missingArrivalUrgent && (
-                                                                    <div className="absolute -top-1 -right-0 w-3.5 h-3.5 bg-amber-400 rounded-full border border-white dark:border-zinc-950 flex items-center justify-center shadow-sm z-10">
-                                                                        <span className="text-[7px] text-white font-black">?</span>
+                                                                {/* Accessibility */}
+                                                                {(!!booking.has_mobility_impairment) && (
+                                                                    <div
+                                                                        title="Barrierefreiheit benötigt"
+                                                                        className="p-1.5 rounded-full bg-blue-50 text-blue-600 transition-all duration-200 border border-blue-100"
+                                                                    >
+                                                                        <Accessibility className="w-3.5 h-3.5" />
                                                                     </div>
                                                                 )}
-
-                                                                {/* Tooltip */}
-                                                                <div className="absolute top-full right-0 mt-2 w-56 p-3 bg-white dark:bg-zinc-950 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-800 opacity-0 group-hover/quality:opacity-100 transition-opacity z-[100] pointer-events-none">
-                                                                    <div className="text-[10px] space-y-2">
-                                                                        {/* Urgent Warning */}
-                                                                        {isCloseToArrival && score < 100 && (
-                                                                            <div className="text-rose-600 font-bold border-b border-rose-50 pb-1 text-center">
-                                                                                Anreise in {diffDays} {diffDays === 1 ? 'Tag' : 'Tagen'}
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Action Banner */}
-                                                                        {!hasArrival && (
-                                                                            <div className={cn(
-                                                                                "text-white px-2 py-1.5 rounded-lg font-bold text-center text-[9px] uppercase tracking-wider shadow-sm",
-                                                                                missingArrivalUrgent ? "bg-rose-600" : "bg-rose-500"
-                                                                            )}>
-                                                                                Ankunftszeit nachtragen!
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Checklist */}
-                                                                        <div className="space-y-1.5 pt-1">
-                                                                            <div className="flex justify-between items-center">
-                                                                                <span className={cn("font-medium", hasArrival ? "text-zinc-500" : "text-zinc-900 font-bold")}>Ankunftszeit</span>
-                                                                                {hasArrival ? (
-                                                                                    <Check className="w-3 h-3 text-emerald-500" />
-                                                                                ) : (
-                                                                                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-rose-100" />
-                                                                                )}
-                                                                            </div>
-                                                                            <div className="flex justify-between items-center">
-                                                                                <span className="text-zinc-500 font-medium">Telefonnummer</span>
-                                                                                {hasPhone ? <Check className="w-3 h-3 text-emerald-500" /> : <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />}
-                                                                            </div>
-                                                                            <div className="flex justify-between items-center">
-                                                                                <span className="text-zinc-500 font-medium">E-Mail Adresse</span>
-                                                                                {hasEmail ? <Check className="w-3 h-3 text-emerald-500" /> : <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />}
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
                                                             </div>
                                                         );
                                                     })()}
@@ -1837,13 +2115,19 @@ function BookingsList() {
                                                 <TableCell className="text-right px-6">
                                                     <div className="flex justify-end gap-1">
                                                         {booking.start_date === today && booking.status === "Hard-Booked" && (
-                                                            <Button variant="outline" size="sm" className="h-8 border-emerald-200 text-emerald-600 hover:bg-emerald-50" onClick={() => updateBookingStatus(booking.id, "Checked-In")}>
-                                                                <LogIn className="w-3.5 h-3.5 mr-1" /> In
+                                                            <Button variant="outline" size="sm" className="h-8 border-emerald-200 text-emerald-600 hover:bg-emerald-50" onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                updateBookingStatus(booking.id, "Checked-In");
+                                                            }}>
+                                                                <LogIn className="w-3.5 h-3.5 mr-1" /> Check-In
                                                             </Button>
                                                         )}
                                                         {booking.end_date === today && booking.status === "Checked-In" && (
-                                                            <Button variant="outline" size="sm" className="h-8 border-amber-200 text-amber-600 hover:bg-amber-50" onClick={() => handleCheckOutClick(booking)}>
-                                                                <LogOut className="w-3.5 h-3.5 mr-1" /> Out
+                                                            <Button variant="outline" size="sm" className="h-8 border-amber-200 text-amber-600 hover:bg-amber-50" onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleCheckOutClick(booking);
+                                                            }}>
+                                                                <LogOut className="w-3.5 h-3.5 mr-1" /> Check-Out
                                                             </Button>
                                                         )}
                                                         {booking.status === "Draft" && (
@@ -1856,12 +2140,33 @@ function BookingsList() {
                                                                 <ArrowRight className="w-3.5 h-3.5 mr-1" /> Fortsetzen
                                                             </Button>
                                                         )}
-                                                        <Button variant="ghost" size="sm" onClick={() => handleEditClick(booking)}>
-                                                            <Settings className="w-4 h-4 text-zinc-500" />
-                                                        </Button>
-                                                        <Button variant="ghost" size="sm" className="text-red-500 hover:bg-red-50" onClick={() => deleteBooking(booking.id)}>
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </Button>
+                                                        {/* Edit button removed in favor of row click */}
+                                                        {booking.status === "Storniert" ? (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-red-500 hover:bg-red-50"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    permanentDeleteBooking(booking.id);
+                                                                }}
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </Button>
+                                                        ) : (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-red-500 hover:bg-red-50"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    cancelBooking(booking.id);
+                                                                }}
+                                                                title="Stornieren"
+                                                            >
+                                                                <XCircle className="w-4 h-4" />
+                                                            </Button>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -1882,30 +2187,134 @@ function BookingsList() {
                     setEditGroupId("none");
                     setEditNewGroupName("");
                     setEditTab("details");
+                    setPendingBreakfastChanges({}); // Clear pending changes
                     router.push('/buchungen', { scroll: false });
                 }
             }}>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader><DialogTitle>Buchung verwalten: {editingBooking?.guest_name}</DialogTitle></DialogHeader>
-                    <div className="flex gap-4 border-b border-zinc-100 mb-4">
-                        <button onClick={() => setEditTab("details")} className={cn("pb-2 text-sm font-medium transition-colors border-b-2", editTab === "details" ? "border-blue-500 text-blue-600" : "border-transparent text-zinc-400")}>Details</button>
-                        <button onClick={() => setEditTab("breakfast")} className={cn("pb-2 text-sm font-medium transition-colors border-b-2", editTab === "breakfast" ? "border-blue-500 text-blue-600" : "border-transparent text-zinc-400")}>Frühstück</button>
-                    </div>
+                <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-6">
+                    <DialogHeader className="mb-4 shrink-0 flex flex-row items-center justify-between">
+                        <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                            Buchung verwalten
+                            {editingBooking?.guest_name && <span className="text-zinc-400 font-normal text-lg">| {editingBooking.guest_name}</span>}
+                        </DialogTitle>
+
+                        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
+                            <button
+                                onClick={() => setEditTab("details")}
+                                className={cn(
+                                    "px-4 py-1.5 text-xs font-bold rounded-md transition-all",
+                                    editTab === "details" ? "bg-white dark:bg-zinc-950 text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                )}
+                            >
+                                Details
+                            </button>
+                            <button
+                                onClick={() => setEditTab("breakfast")}
+                                className={cn(
+                                    "px-4 py-1.5 text-xs font-bold rounded-md transition-all",
+                                    editTab === "breakfast" ? "bg-white dark:bg-zinc-950 text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                )}
+                            >
+                                Frühstück
+                            </button>
+                        </div>
+                    </DialogHeader>
 
                     {editingBooking && (
                         editTab === "details" ? (
-                            <form key={editingBooking.id} onSubmit={updateBooking} className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2 relative">
-                                        <Label className="text-xs">Gruppe wählen / neu erstellen</Label>
-                                        <input type="hidden" name="group_id" value={editGroupId} />
-                                        <input type="hidden" name="new_group_name" value={editNewGroupName} />
-                                        <div className="relative">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                            <div className="flex-1 min-h-0 grid grid-cols-12 gap-6 overflow-hidden">
+                                {/* SPALTE 1: GAST (3 Spalten) */}
+                                <div className="col-span-3 flex flex-col gap-4 border-r border-zinc-100 pr-6 overflow-y-auto">
+                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">1. Gast</Label>
+
+                                    {/* Selected Guest Display */}
+                                    {editingBooking.guest_id && (
+                                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 mb-2 relative group">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
+                                                    {editingBooking.guest_name?.charAt(0) || "G"}
+                                                </div>
+                                                <div className="overflow-hidden">
+                                                    <div className="text-[10px] text-blue-600 font-bold uppercase">Aktueller Gast</div>
+                                                    <div className="font-bold text-sm truncate">{editingBooking.guest_name}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1 mt-4">
+                                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Status</Label>
+                                        <Select
+                                            value={editingBooking.status ?? "Draft"}
+                                            onValueChange={(val) => setEditingBooking({ ...editingBooking, status: val })}
+                                        >
+                                            <SelectTrigger
+                                                className={cn(
+                                                    "h-10 transition-all font-bold border-0 ring-1 ring-inset",
+                                                    editingBooking.status === "Draft" && "bg-zinc-100 text-zinc-700 ring-zinc-200 hover:bg-zinc-200",
+                                                    editingBooking.status === "Hard-Booked" && "bg-blue-600 text-white ring-blue-600 hover:bg-blue-700",
+                                                    editingBooking.status === "Checked-In" && "bg-emerald-600 text-white ring-emerald-600 hover:bg-emerald-700",
+                                                    editingBooking.status === "Checked-Out" && "bg-orange-500 text-white ring-orange-500 hover:bg-orange-600",
+                                                    editingBooking.status === "Storniert" && "bg-red-600 text-white ring-red-600 hover:bg-red-700",
+                                                    !editingBooking.status && "bg-zinc-100 text-zinc-700 ring-zinc-200"
+                                                )}
+                                            >
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Draft" className="font-medium text-zinc-600">Draft (Entwurf)</SelectItem>
+                                                <SelectItem value="Hard-Booked" className="font-bold text-blue-600">Fest gebucht</SelectItem>
+                                                <SelectItem value="Checked-In" className="font-bold text-emerald-600">Eingecheckt</SelectItem>
+                                                <SelectItem value="Checked-Out" className="font-bold text-orange-600">Abgereist</SelectItem>
+                                                <SelectItem value="Storniert" className="font-bold text-red-600">Storniert</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                </div>
+
+                                {/* SPALTE 2: DETAILS (4 Spalten) */}
+                                <div className="col-span-4 flex flex-col gap-5 border-r border-zinc-100 pr-6 overflow-y-auto">
+                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Details</Label>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs">Anreise</Label>
+                                            <div className="relative">
+                                                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                <Input
+                                                    type="date"
+                                                    className="pl-9 h-10"
+                                                    value={editingBooking.start_date}
+                                                    onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, start_date: e.target.value }) : null)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs">Abreise</Label>
+                                            <div className="relative">
+                                                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                <Input
+                                                    type="date"
+                                                    className="pl-9 h-10"
+                                                    value={editingBooking.end_date}
+                                                    onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, end_date: e.target.value }) : null)}
+                                                    min={editingBooking.start_date}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs">Gruppe (Optional)</Label>
+                                        <div className="relative group">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
                                             <Input
-                                                placeholder="Suchen..."
-                                                className="pl-9 h-9 text-sm"
+                                                placeholder="Gruppe suchen oder erstellen..."
+                                                className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
                                                 value={editGroupSearch}
+                                                onFocus={() => setIsEditGroupSearchFocused(true)}
+                                                onBlur={() => setTimeout(() => setIsEditGroupSearchFocused(false), 200)}
                                                 onChange={(e) => {
                                                     setEditGroupSearch(e.target.value);
                                                     if (e.target.value === "") {
@@ -1923,281 +2332,366 @@ function BookingsList() {
                                                     }
                                                 }}
                                             />
-                                        </div>
-                                        {editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
-                                            <div className="text-[10px] text-blue-600 font-bold uppercase mt-1">
-                                                Neu: "{editGroupSearch}"
-                                            </div>
-                                        )}
-                                        {editGroupSearch && groups.filter(g => g.name.toLowerCase().includes(editGroupSearch.toLowerCase()) && g.name.toLowerCase() !== editGroupSearch.toLowerCase()).length > 0 && (
-                                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[120px] overflow-y-auto p-1">
-                                                {groups
-                                                    .filter(g => g.name.toLowerCase().includes(editGroupSearch.toLowerCase()) && g.name.toLowerCase() !== editGroupSearch.toLowerCase())
-                                                    .map(g => (
-                                                        <button
-                                                            key={g.id}
-                                                            type="button"
-                                                            className="w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                                                            onClick={() => {
-                                                                setEditGroupSearch(g.name);
-                                                                setEditGroupId(g.id);
-                                                                setEditNewGroupName("");
-                                                            }}
-                                                        >
-                                                            {g.name}
-                                                        </button>
-                                                    ))
-                                                }
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Gast</Label>
-                                        <select
-                                            name="guest_id"
-                                            value={editingBooking.guest_id ?? ""}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, guest_id: e.target.value })}
-                                            className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-sm"
-                                        >
-                                            {guests.map(g => (
-                                                <option key={g.id} value={g.id}>{g.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Status</Label>
-                                        <select
-                                            name="status"
-                                            value={editingBooking.status ?? ""}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, status: e.target.value })}
-                                            className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-sm"
-                                        >
-                                            <option value="Draft">Draft</option>
-                                            <option value="Hard-Booked">Hart gebucht</option>
-                                            <option value="Checked-In">Eingecheckt</option>
-                                            <option value="Checked-Out">Abgereist</option>
-                                            <option value="Storniert">Storniert</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Zimmer</Label>
-                                        <select
-                                            name="room_id"
-                                            value={editingBooking.room_id ?? ""}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, room_id: e.target.value })}
-                                            className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-sm"
-                                        >
-                                            {rooms.map(r => {
-                                                const isOccupied = checkRoomOverlap(r.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id);
-                                                return (
-                                                    <option
-                                                        key={r.id}
-                                                        value={r.id}
-                                                        disabled={isOccupied}
-                                                        className={isOccupied ? "text-red-500 bg-zinc-50" : ""}
-                                                    >
-                                                        {r.name} {isOccupied ? "— BELEGT" : ""}
-                                                    </option>
-                                                );
-                                            })}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">Anreise</Label>
-                                        <Input
-                                            name="start_date"
-                                            type="date"
-                                            value={editingBooking.start_date}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, start_date: e.target.value })}
-                                            className="h-9 text-sm shadow-sm"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">Abreise</Label>
-                                        <Input
-                                            name="end_date"
-                                            type="date"
-                                            value={editingBooking.end_date}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, end_date: e.target.value })}
-                                            className="h-9 text-sm shadow-sm"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label className="text-xs">Buchungstyp</Label>
-                                    <input type="hidden" name="occasion" value={editingBooking.occasion || ""} />
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
-                                            <Button
-                                                key={opt}
-                                                type="button"
-                                                variant={editingBooking.occasion === opt ? "default" : "outline"}
-                                                className={cn(
-                                                    "h-8 text-xs font-bold transition-all",
-                                                    editingBooking.occasion === opt ? "bg-blue-600 hover:bg-blue-700 shadow-md border-transparent" : "hover:border-blue-300 hover:bg-blue-50 text-zinc-600"
-                                                )}
-                                                onClick={() => setEditingBooking({ ...editingBooking, occasion: opt })}
-                                            >
-                                                {opt}
-                                            </Button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-4 pb-2 border-b border-zinc-100">
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">Gäste / Zimmer</Label>
-                                        <Input
-                                            name="guests_per_room"
-                                            type="number"
-                                            min="1"
-                                            className="h-9"
-                                            value={editingBooking.guests_per_room || 1}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, guests_per_room: parseInt(e.target.value) || 1 })}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">Typ</Label>
-                                        <select
-                                            name="stay_type"
-                                            value={editingBooking.stay_type || "privat"}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, stay_type: e.target.value })}
-                                            className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-                                        >
-                                            <option value="privat">Privat</option>
-                                            <option value="beruflich">Beruflich</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">Ankunft</Label>
-                                        <Input
-                                            name="estimated_arrival_time"
-                                            type="time"
-                                            className="h-9"
-                                            value={editingBooking.estimated_arrival_time || ""}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, estimated_arrival_time: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-3">
-                                    <div className="space-y-1">
-                                        <Label className="text-[10px] font-bold uppercase text-zinc-500">Hunde</Label>
-                                        <Input
-                                            name="dog_count"
-                                            type="number"
-                                            min="0"
-                                            className="h-8"
-                                            value={editingBooking.dog_count || 0}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, dog_count: parseInt(e.target.value) || 0 })}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-[10px] font-bold uppercase text-zinc-500">Kinder</Label>
-                                        <Input
-                                            name="child_count"
-                                            type="number"
-                                            min="0"
-                                            className="h-8"
-                                            value={editingBooking.child_count || 0}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, child_count: parseInt(e.target.value) || 0 })}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-[10px] font-bold uppercase text-zinc-500">Aufbettung</Label>
-                                        <Input
-                                            name="extra_bed_count"
-                                            type="number"
-                                            min="0"
-                                            className="h-8"
-                                            value={editingBooking.extra_bed_count || 0}
-                                            onChange={(e) => setEditingBooking({ ...editingBooking, extra_bed_count: parseInt(e.target.value) || 0 })}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="pt-2">
-                                    <Label className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Anforderungen</Label>
-                                    <div className="grid grid-cols-2 gap-3 mt-1">
-                                        <div className="flex items-center space-x-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                                            <Switch
-                                                name="is_allergy_friendly"
-                                                id="edit-allergy"
-                                                checked={editingBooking.is_allergy_friendly === 1}
-                                                onCheckedChange={(checked) => setEditingBooking({ ...editingBooking, is_allergy_friendly: checked ? 1 : 0 })}
-                                            />
-                                            <Label htmlFor="edit-allergy" className="text-xs font-medium cursor-pointer">Allergiker</Label>
-                                        </div>
-                                        <div className="flex items-center space-x-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                                            <Switch
-                                                name="has_mobility_impairment"
-                                                id="edit-mobility"
-                                                checked={editingBooking.has_mobility_impairment === 1}
-                                                onCheckedChange={(checked) => setEditingBooking({ ...editingBooking, has_mobility_impairment: checked ? 1 : 0 })}
-                                            />
-                                            <Label htmlFor="edit-mobility" className="text-xs font-medium cursor-pointer">Gehbehindert</Label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <Button type="submit" className="w-full bg-blue-600 font-bold shadow-lg shadow-blue-600/20">Änderungen speichern</Button>
-                            </form>
-                        ) : (
-                            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-                                {getDaysArray(editingBooking.start_date, editingBooking.end_date).map(day => {
-                                    const dayOptions = breakfastOptions.filter(o => o.date === day);
-                                    return (
-                                        <div key={day} className="p-4 border rounded-2xl bg-zinc-50 dark:bg-zinc-900 shadow-sm space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 italic">
-                                                    {new Date(day).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                            {editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
+                                                <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
+                                                    <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
+                                                    <div className="flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm">
+                                                        <Plus className="w-4 h-4" /> "{editGroupSearch}" erstellen
+                                                    </div>
                                                 </div>
-                                                <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase" onClick={() => addPersonToDay(day)}>
-                                                    <Plus className="w-3 h-3 mr-1" /> Person hinzufügen
-                                                </Button>
-                                            </div>
-
-                                            {dayOptions.length === 0 ? (
-                                                <div className="flex items-center justify-center py-4 border-2 border-dashed border-zinc-200 rounded-xl">
-                                                    <button onClick={() => addPersonToDay(day)} className="text-xs text-zinc-400 font-medium hover:text-blue-500 transition-colors">
-                                                        Kein Frühstück geplant. Klicken zum Hinzufügen.
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-3">
-                                                    {dayOptions.map((opt, idx) => (
-                                                        <div key={opt.id} className="bg-white dark:bg-zinc-950 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 space-y-3">
-                                                            <div className="flex items-center justify-between">
-                                                                <div className="text-[10px] font-black text-zinc-300 uppercase italic">Person {idx + 1}</div>
-                                                                <button onClick={() => removePersonFromDay(opt.id!)} className="text-zinc-300 hover:text-red-500 transition-colors">
-                                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                                </button>
-                                                            </div>
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-[10px] uppercase font-bold text-zinc-400">Zeit</Label>
-                                                                    <Input type="time" className="h-9 text-xs shadow-sm rounded-lg" defaultValue={opt.time || "08:00"} onBlur={(e) => saveBreakfast(day, { time: e.target.value }, opt.id)} />
-                                                                </div>
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-[10px] uppercase font-bold text-zinc-400">Hinweise</Label>
-                                                                    <Input className="h-9 text-xs shadow-sm rounded-lg" defaultValue={opt.comments || ""} placeholder="Allergien..." onBlur={(e) => saveBreakfast(day, { comments: e.target.value }, opt.id)} />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                            )}
+                                            {isEditGroupSearchFocused && (
+                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                    {groups
+                                                        .filter(g => !editGroupSearch || (g.name.toLowerCase().includes(editGroupSearch.toLowerCase()) && g.name.toLowerCase() !== editGroupSearch.toLowerCase()))
+                                                        .map(g => (
+                                                            <button
+                                                                type="button"
+                                                                key={g.id}
+                                                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                onClick={() => {
+                                                                    setEditGroupSearch(g.name);
+                                                                    setEditGroupId(g.id);
+                                                                    setEditNewGroupName("");
+                                                                }}
+                                                            >
+                                                                <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
+                                                                {editGroupSearch === g.name && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                            </button>
+                                                        ))
+                                                    }
                                                 </div>
                                             )}
                                         </div>
-                                    );
-                                })}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-xs">Buchungstyp</Label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
+                                                <Button
+                                                    key={opt}
+                                                    type="button" // Prevent form submit
+                                                    variant={editingBooking.occasion === opt ? "default" : "outline"}
+                                                    className={cn(
+                                                        "h-8 text-xs font-medium",
+                                                        editingBooking.occasion === opt ? "bg-blue-600 hover:bg-blue-700" : "text-zinc-600"
+                                                    )}
+                                                    onClick={() => setEditingBooking(prev => prev ? ({ ...prev, occasion: opt }) : null)}
+                                                >
+                                                    {opt}
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                className="h-9"
+                                                value={editingBooking.guests_per_room || 1}
+                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, guests_per_room: parseInt(e.target.value) || 1 }) : null)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
+                                            <Select
+                                                value={editingBooking.stay_type || "privat"}
+                                                onValueChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, stay_type: val }) : null)}
+                                            >
+                                                <SelectTrigger className="h-9">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="privat">Privat</SelectItem>
+                                                    <SelectItem value="beruflich">Beruflich</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-4 gap-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                className="h-8 text-xs"
+                                                value={editingBooking.dog_count || 0}
+                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, dog_count: parseInt(e.target.value) || 0 }) : null)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                className="h-8 text-xs"
+                                                value={editingBooking.child_count || 0}
+                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, child_count: parseInt(e.target.value) || 0 }) : null)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                className="h-8 text-xs"
+                                                value={editingBooking.extra_bed_count || 0}
+                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, extra_bed_count: parseInt(e.target.value) || 0 }) : null)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
+                                            <Input
+                                                type="time"
+                                                className="h-8 text-xs"
+                                                value={editingBooking.estimated_arrival_time || ""}
+                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, estimated_arrival_time: e.target.value }) : null)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 pt-2">
+                                        <div className="flex items-center space-x-2">
+                                            <Switch
+                                                id="edit-allergy"
+                                                checked={editingBooking.is_allergy_friendly === 1}
+                                                onCheckedChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, is_allergy_friendly: val ? 1 : 0 }) : null)}
+                                            />
+                                            <Label htmlFor="edit-allergy" className="text-xs font-medium">Allergikerfreundlich benötigt</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Switch
+                                                id="edit-mobility"
+                                                checked={editingBooking.has_mobility_impairment === 1}
+                                                onCheckedChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, has_mobility_impairment: val ? 1 : 0 }) : null)}
+                                            />
+                                            <Label htmlFor="edit-mobility" className="text-xs font-medium">Barrierefreiheit benötigt</Label>
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                                {/* SPALTE 3: ZIMMER (5 Spalten) */}
+                                <div className="col-span-5 flex flex-col gap-4 overflow-y-auto">
+                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">3. Zimmer wählen</Label>
+
+                                    <div className="space-y-3">
+                                        <div className="text-sm font-medium mb-1">Zimmertyp filtern</div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {roomTypes.map(type => {
+                                                const availableCount = editRoomTypeAvailability[type] || 0;
+                                                const isDisabled = availableCount === 0;
+                                                return (
+                                                    <button
+                                                        key={type}
+                                                        type="button"
+                                                        // Disable only if 0 available AND not currently selected (so you can see it's full but maybe we want to allow overbooking in admin? No, let's keep it safe. But wait, if *current* room is this type, `availableCount` includes it because we excluded the booking ID in the availability check. So `availableCount` should be > 0 if we are keeping the same room.)
+                                                        disabled={isDisabled}
+                                                        onClick={() => setEditRoomType(prev => prev === type ? "" : type)}
+                                                        className={cn(
+                                                            "flex flex-col items-start p-2 rounded-lg border transition-all text-left",
+                                                            editRoomType === type
+                                                                ? "bg-blue-600 border-blue-600 text-white shadow-md ring-2 ring-blue-600/20"
+                                                                : isDisabled
+                                                                    ? "opacity-50 cursor-not-allowed bg-zinc-50 border-zinc-200"
+                                                                    : "border-zinc-200 hover:border-blue-400 hover:bg-blue-50"
+                                                        )}
+                                                    >
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            {getRoomIcon(type, cn("w-4 h-4", editRoomType === type ? "text-white" : "text-zinc-400"))}
+                                                            <span className={cn("font-bold text-xs truncate", editRoomType === type ? "text-white" : "text-zinc-900")}>{type}</span>
+                                                        </div>
+                                                        <span className={cn("text-[9px] font-bold uppercase",
+                                                            editRoomType === type ? "text-blue-100" : (isDisabled ? "text-red-500" : "text-emerald-600")
+                                                        )}>
+                                                            {isDisabled ? "Voll" : `${availableCount} verfügbar`}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 min-h-[200px] bg-zinc-50/50 dark:bg-zinc-900/20 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 overflow-y-auto">
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="text-xs font-bold text-zinc-500 uppercase">
+                                                    Verfügbare Zimmer {editRoomType ? `(${editRoomType})` : ""}
+                                                </div>
+                                                {editRoomType && (
+                                                    <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setEditRoomType("")}>
+                                                        Filter löschen
+                                                    </Button>
+                                                )}
+                                            </div>
+
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {(editRoomType ? editAllRoomsForType : rooms).map(room => {
+                                                    const isOccupied = checkRoomOverlap(room.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id);
+
+                                                    // In Admin mode (Booking Edit), we might want to see occupied rooms but disabled?
+                                                    // Or just hide them like Assistant.
+                                                    // The Assistant logic:
+                                                    if (!editRoomType && typeof isOccupied === 'boolean' && isOccupied) return null;
+
+                                                    return (
+                                                        <button
+                                                            key={room.id}
+                                                            type="button"
+                                                            disabled={isOccupied}
+                                                            onClick={() => setEditingBooking(prev => prev ? ({ ...prev, room_id: room.id, room_name: room.name }) : null)}
+                                                            className={cn(
+                                                                "p-3 rounded-xl border transition-all text-left flex items-center justify-between group",
+                                                                editingBooking.room_id === room.id
+                                                                    ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600 shadow-md"
+                                                                    : isOccupied
+                                                                        ? "hidden"
+                                                                        : "border-zinc-100 bg-white hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm"
+                                                            )}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={cn(
+                                                                    "w-8 h-8 rounded-lg flex items-center justify-center",
+                                                                    editingBooking.room_id === room.id ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"
+                                                                )}>
+                                                                    {getRoomIcon(room.type, "w-4 h-4")}
+                                                                </div>
+                                                                <div>
+                                                                    <div className={cn("font-bold text-sm", editingBooking.room_id === room.id ? "text-emerald-900" : "text-zinc-900")}>{room.name}</div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="text-[10px] text-zinc-500 font-medium uppercase">{room.type}</div>
+                                                                        {(!!room.is_allergy_friendly) && (
+                                                                            <div title="Allergikerfreundlich" className={cn("p-0.5 rounded", editingBooking.room_id === room.id ? "bg-emerald-200" : "bg-pink-100")}>
+                                                                                <Flower2 className={cn("w-3 h-3", editingBooking.room_id === room.id ? "text-emerald-700" : "text-pink-500")} />
+                                                                            </div>
+                                                                        )}
+                                                                        {(!!room.is_accessible) && (
+                                                                            <div title="Barrierefrei" className={cn("p-0.5 rounded", editingBooking.room_id === room.id ? "bg-emerald-200" : "bg-blue-100")}>
+                                                                                <Accessibility className={cn("w-3 h-3", editingBooking.room_id === room.id ? "text-emerald-700" : "text-blue-600")} />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <div className={cn("font-bold", editingBooking.room_id === room.id ? "text-emerald-600" : "text-blue-600")}>{room.base_price} €</div>
+                                                                {editingBooking.room_id === room.id && (
+                                                                    <div className="text-[10px] font-bold text-emerald-600 flex items-center justify-end gap-1">
+                                                                        <Check className="w-3 h-3" /> Gewählt
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                                {(editRoomType ? editAllRoomsForType : rooms).filter(r => !checkRoomOverlap(r.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id)).length === 0 && (
+                                                    <div className="text-center py-8 text-zinc-400 text-sm italic">
+                                                        Keine freien Zimmer gefunden.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex-1 min-h-0 flex flex-col pt-4">
+                                {/* Breakfast Content (Preserved) */}
+                                <div className="space-y-4 max-h-full overflow-y-auto pr-2 pb-20">
+                                    {getDaysArray(editingBooking.start_date, editingBooking.end_date).map(day => {
+                                        const dayOptions = breakfastOptions.filter(o => o.date === day);
+                                        return (
+                                            <div key={day} className="p-4 border rounded-2xl bg-zinc-50 dark:bg-zinc-900 shadow-sm space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 italic">
+                                                        {new Date(day).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                                    </div>
+                                                    <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase" onClick={() => addPersonToDay(day)}>
+                                                        <Plus className="w-3 h-3 mr-1" /> Person hinzufügen
+                                                    </Button>
+                                                </div>
+
+                                                {dayOptions.length === 0 ? (
+                                                    <div className="flex items-center justify-center py-4 border-2 border-dashed border-zinc-200 rounded-xl">
+                                                        <button onClick={() => addPersonToDay(day)} className="text-xs text-zinc-400 font-medium hover:text-blue-500 transition-colors">
+                                                            Kein Frühstück geplant. Klicken zum Hinzufügen.
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-3">
+                                                        {dayOptions.map((opt, idx) => (
+                                                            <div key={opt.id} className="bg-white dark:bg-zinc-950 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 space-y-3">
+                                                                <div className="flex items-center justify-between">
+                                                                    <div className="text-[10px] font-black text-zinc-300 uppercase italic">Person {idx + 1}</div>
+                                                                    <button onClick={() => removePersonFromDay(opt.id!)} className="text-zinc-300 hover:text-red-500 transition-colors">
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <div className="space-y-1">
+                                                                        <Label className="text-[10px] uppercase font-bold text-zinc-400">Zeit</Label>
+                                                                        <Input
+                                                                            type="time"
+                                                                            className={cn(
+                                                                                "h-9 text-xs shadow-sm rounded-lg",
+                                                                                pendingBreakfastChanges[opt.id!]?.time && "border-amber-400 ring-1 ring-amber-400/20"
+                                                                            )}
+                                                                            defaultValue={pendingBreakfastChanges[opt.id!]?.time ?? opt.time ?? "08:00"}
+                                                                            onChange={(e) => trackBreakfastChange(opt.id!, 'time', e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <Label className="text-[10px] uppercase font-bold text-zinc-400">Hinweise</Label>
+                                                                        <Input
+                                                                            className={cn(
+                                                                                "h-9 text-xs shadow-sm rounded-lg",
+                                                                                pendingBreakfastChanges[opt.id!]?.comments !== undefined && "border-amber-400 ring-1 ring-amber-400/20"
+                                                                            )}
+                                                                            defaultValue={pendingBreakfastChanges[opt.id!]?.comments ?? opt.comments ?? ""}
+                                                                            placeholder="Allergien..."
+                                                                            onChange={(e) => trackBreakfastChange(opt.id!, 'comments', e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="absolute bottom-6 left-6 right-6 pt-4 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800">
+                                    <Button
+                                        onClick={handleSaveBreakfastChanges}
+                                        disabled={Object.keys(pendingBreakfastChanges).length === 0}
+                                        className="w-full bg-blue-600 font-bold shadow-lg shadow-blue-600/20"
+                                    >
+                                        <Check className="w-4 h-4 mr-2" /> Änderungen speichern
+                                    </Button>
+                                    {Object.keys(pendingBreakfastChanges).length > 0 && (
+                                        <div className="text-center mt-2 text-xs text-amber-600 font-medium animate-pulse">
+                                            Ungespeicherte Änderungen
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )
+                    )}
+
+                    {editTab === 'details' && (
+                        <DialogFooter className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-between shrink-0">
+                            <Button variant="ghost" onClick={() => setIsEditOpen(false)}>Abbrechen</Button>
+                            <Button onClick={updateBooking} className="bg-blue-600 font-bold shadow-lg shadow-blue-600/20">
+                                <Check className="w-4 h-4 mr-2" />
+                                Änderungen speichern
+                            </Button>
+                        </DialogFooter>
                     )}
                 </DialogContent>
             </Dialog>
@@ -2376,6 +2870,16 @@ function BookingsList() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <ConfirmDialog
+                isOpen={deleteConfirm.isOpen}
+                onOpenChange={(open) => setDeleteConfirm(prev => ({ ...prev, isOpen: open }))}
+                onConfirm={deleteConfirm.onConfirm}
+                title={deleteConfirm.title}
+                description={deleteConfirm.description}
+                confirmText={deleteConfirm.confirmText}
+                variant={deleteConfirm.variant as any}
+            />
         </div >
     );
 }
@@ -2394,7 +2898,7 @@ function GuestMaskForm({ guest, onSubmit }: { guest: Guest, onSubmit: (e: React.
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={guest.middle_name} placeholder="Elias" />
+                        <Input id="middle_name" name="middle_name" defaultValue={guest.middle_name} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>

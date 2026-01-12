@@ -7,7 +7,7 @@ import { initDb } from "@/lib/db";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export function MyDayWidget() {
+export function MyDayWidget({ refreshTrigger = 0 }: { refreshTrigger?: number }) {
     const [stats, setStats] = useState({
         checkInsTotal: 0,
         checkInsDone: 0,
@@ -82,7 +82,7 @@ export function MyDayWidget() {
             }
         };
         loadStats();
-    }, []);
+    }, [refreshTrigger]);
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Download, Trash2, Plus, Users, Settings, Clock, Timer, CalendarClock, Check } from "lucide-react";
+import { Download, Trash2, Plus, Users, Settings, Clock, Timer, CalendarClock, Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { savePdfNative } from "@/lib/pdf-export";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Staff {
     id: string;
@@ -136,6 +137,18 @@ export default function CleaningPage() {
     const [newSuggestionFrequency, setNewSuggestionFrequency] = useState<string>("1");
     const [viewedWeekday, setViewedWeekday] = useState<number>(new Date(selectedDate).getDay());
     const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+
+    const [deleteConfirm, setDeleteConfirm] = useState<{
+        isOpen: boolean;
+        title: string;
+        description: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: "",
+        description: "",
+        onConfirm: () => { },
+    });
 
 
     const loadData = useCallback(async () => {
@@ -420,17 +433,24 @@ export default function CleaningPage() {
         }
     };
 
-    const deleteStaff = async (id: string) => {
-        if (!confirm("Personal wirklich löschen?")) return;
-        try {
-            const db = await initDb();
-            if (db) {
-                await db.execute("DELETE FROM staff WHERE id = ?", [id]);
-                await loadData();
+    const deleteStaff = async (id: string, name: string) => {
+        setDeleteConfirm({
+            isOpen: true,
+            title: "Personal löschen",
+            description: `Möchten Sie ${name} wirklich aus dem Team entfernen?`,
+            onConfirm: async () => {
+                try {
+                    const db = await initDb();
+                    if (db) {
+                        await db.execute("DELETE FROM staff WHERE id = ?", [id]);
+                        await loadData();
+                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                    }
+                } catch (error) {
+                    console.error("Failed to delete staff:", error);
+                }
             }
-        } catch (error) {
-            console.error("Failed to delete staff:", error);
-        }
+        });
     };
 
     const addSuggestion = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -457,16 +477,24 @@ export default function CleaningPage() {
         }
     };
 
-    const deleteSuggestion = async (id: string) => {
-        try {
-            const db = await initDb();
-            if (db) {
-                await db.execute("DELETE FROM cleaning_task_suggestions WHERE id = ?", [id]);
-                await loadData();
+    const deleteSuggestion = async (id: string, title: string) => {
+        setDeleteConfirm({
+            isOpen: true,
+            title: "Vorschlag löschen",
+            description: `Möchten Sie den Vorschlag "${title}" wirklich löschen?`,
+            onConfirm: async () => {
+                try {
+                    const db = await initDb();
+                    if (db) {
+                        await db.execute("DELETE FROM cleaning_task_suggestions WHERE id = ?", [id]);
+                        await loadData();
+                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                    }
+                } catch (error) {
+                    console.error("Failed to delete suggestion:", error);
+                }
             }
-        } catch (error) {
-            console.error("Failed to delete suggestion:", error);
-        }
+        });
     };
 
     const updateSuggestion = async (id: string, updates: Partial<TaskSuggestion>) => {
@@ -896,14 +924,20 @@ export default function CleaningPage() {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 className="h-8 w-8 text-zinc-300 hover:text-red-500"
-                                                                onClick={async () => {
-                                                                    if (confirm("Aufgabe wirklich entfernen?")) {
-                                                                        const db = await initDb();
-                                                                        if (db) {
-                                                                            await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [activeTask!.id]);
-                                                                            await loadData();
+                                                                onClick={() => {
+                                                                    setDeleteConfirm({
+                                                                        isOpen: true,
+                                                                        title: "Aufgabe entfernen",
+                                                                        description: "Möchten Sie diese Reinigungsaufgabe wirklich aus dem Plan entfernen?",
+                                                                        onConfirm: async () => {
+                                                                            const db = await initDb();
+                                                                            if (db) {
+                                                                                await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [activeTask!.id]);
+                                                                                await loadData();
+                                                                                setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                                                            }
                                                                         }
-                                                                    }
+                                                                    });
                                                                 }}
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
@@ -1054,7 +1088,7 @@ export default function CleaningPage() {
                             </div>
                             <div className="flex gap-2">
                                 <Button variant="outline" size="sm" onClick={() => setIsSuggestionsOpen(true)} className="h-8">
-                                    <Settings className="w-4 h-4 mr-2" />
+                                    <Pencil className="w-4 h-4 mr-2" />
                                     Vorschläge verwalten
                                 </Button>
                                 <Button variant="outline" size="sm" onClick={() => setIsAddTaskOpen(true)} className="h-8">
@@ -1199,14 +1233,20 @@ export default function CleaningPage() {
                                                             variant="ghost"
                                                             size="sm"
                                                             className="h-8 w-8 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            onClick={async () => {
-                                                                if (confirm("Aufgabe wirklich entfernen?")) {
-                                                                    const db = await initDb();
-                                                                    if (db) {
-                                                                        await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [task.id]);
-                                                                        await loadData();
+                                                            onClick={() => {
+                                                                setDeleteConfirm({
+                                                                    isOpen: true,
+                                                                    title: "Aufgabe entfernen",
+                                                                    description: `Möchten Sie die Aufgabe "${task.title || 'Zusatzaufgabe'}" wirklich entfernen?`,
+                                                                    onConfirm: async () => {
+                                                                        const db = await initDb();
+                                                                        if (db) {
+                                                                            await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [task.id]);
+                                                                            await loadData();
+                                                                            setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                                                        }
                                                                     }
-                                                                }
+                                                                });
                                                             }}
                                                         >
                                                             <Trash2 className="w-4 h-4" />
@@ -1393,7 +1433,7 @@ export default function CleaningPage() {
                                                     </Select>
                                                 </TableCell>
                                                 <TableCell className="text-right pr-6">
-                                                    <Button variant="ghost" size="sm" onClick={() => deleteSuggestion(s.id)} className="text-red-500 hover:text-red-600 hover:bg-red-50">
+                                                    <Button variant="ghost" size="sm" onClick={() => deleteSuggestion(s.id, s.title)} className="text-red-500 hover:text-red-600 hover:bg-red-50">
                                                         <Trash2 className="w-4 h-4" />
                                                     </Button>
                                                 </TableCell>
@@ -1473,13 +1513,13 @@ export default function CleaningPage() {
                                                         setIsAddStaffOpen(true);
                                                     }}
                                                 >
-                                                    <Settings className="w-4 h-4 text-zinc-400" />
+                                                    <Pencil className="w-4 h-4 text-zinc-400" />
                                                 </Button>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
                                                     className="text-red-500"
-                                                    onClick={() => deleteStaff(s.id)}
+                                                    onClick={() => deleteStaff(s.id, s.name)}
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </Button>
@@ -1611,6 +1651,14 @@ export default function CleaningPage() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <ConfirmDialog
+                isOpen={deleteConfirm.isOpen}
+                onOpenChange={(open) => setDeleteConfirm(prev => ({ ...prev, isOpen: open }))}
+                onConfirm={deleteConfirm.onConfirm}
+                title={deleteConfirm.title}
+                description={deleteConfirm.description}
+            />
         </div>
     );
 }

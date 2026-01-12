@@ -43,6 +43,13 @@ export default function BreakfastPage() {
     const todayStr = new Date().toISOString().split('T')[0];
     const [selectedDate, setSelectedDate] = useState(todayStr);
 
+    // New states for pending changes
+    const [pendingChanges, setPendingChanges] = useState<Record<string, { time?: string, comments?: string }>>({});
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
+
+    const hasUnsavedChanges = Object.keys(pendingChanges).length > 0;
+
     const loadData = useCallback(async () => {
         try {
             const db = await initDb();
@@ -80,7 +87,34 @@ export default function BreakfastPage() {
 
     useEffect(() => {
         loadData();
+        setPendingChanges({}); // Reset changes when date changes
     }, [loadData]);
+
+    const handleSaveAll = async () => {
+        if (!hasUnsavedChanges) return;
+        setIsSaving(true);
+        try {
+            const db = await initDb();
+            if (db) {
+                for (const [id, changes] of Object.entries(pendingChanges)) {
+                    const fields = Object.keys(changes);
+                    const values = Object.values(changes);
+                    if (fields.length > 0) {
+                        const setClause = fields.map(f => `${f} = ?`).join(", ");
+                        await db.execute(`UPDATE breakfast_options SET ${setClause} WHERE id = ?`, [...values, id]);
+                    }
+                }
+                setPendingChanges({});
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 3000);
+                await loadData();
+            }
+        } catch (error) {
+            console.error("Failed to save changes:", error);
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const addPerson = async (bookingId: string) => {
         try {
@@ -154,24 +188,15 @@ export default function BreakfastPage() {
         }
     };
 
-    const updateBreakfastDetails = async (breakfastId: string | null, bookingId: string, field: string, value: any) => {
-        try {
-            const db = await initDb();
-            if (db) {
-                if (breakfastId) {
-                    await db.execute(`UPDATE breakfast_options SET ${field} = ? WHERE id = ?`, [value, breakfastId]);
-                } else {
-                    const id = crypto.randomUUID();
-                    await db.execute(
-                        `INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, ${field}, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [id, bookingId, selectedDate, 1, "08:00", 1, 0, "", value, "auto", 0]
-                    );
-                }
-                await loadData();
+    const trackChange = (breakfastId: string | null, field: 'time' | 'comments', value: string) => {
+        if (!breakfastId) return; // Cannot track changes for non-existent entries
+        setPendingChanges(prev => ({
+            ...prev,
+            [breakfastId]: {
+                ...prev[breakfastId],
+                [field]: value
             }
-        } catch (error) {
-            console.error("Failed to update breakfast details:", error);
-        }
+        }));
     };
 
     const togglePrepared = async (breakfastId: string | null, currentStatus: number) => {
@@ -287,6 +312,29 @@ export default function BreakfastPage() {
                         className="w-auto h-10 shadow-sm"
                     />
 
+                    {hasUnsavedChanges && (
+                        <Button
+                            onClick={handleSaveAll}
+                            disabled={isSaving}
+                            className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 animate-in fade-in zoom-in duration-300"
+                        >
+                            {isSaving ? (
+                                <div className="flex items-center gap-2">
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Speichert...
+                                </div>
+                            ) : (
+                                <><Check className="w-4 h-4 mr-2" /> Änderungen speichern</>
+                            )}
+                        </Button>
+                    )}
+
+                    {!hasUnsavedChanges && saveSuccess && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-bold animate-in fade-out duration-1000 fill-mode-forwards">
+                            <CheckCircle2 className="w-4 h-4" /> Gespeichert
+                        </div>
+                    )}
+
                     <Button
                         className={cn(
                             "h-10 shadow-lg transition-all",
@@ -351,8 +399,9 @@ export default function BreakfastPage() {
                                     {data.map((item, index) => {
                                         const isActive = item.is_included === 1 && !!item.booking_id;
                                         const isFirstInRoom = item.room_id !== lastRoomId;
-                                        const isNextSameRoom = index < data.length - 1 && data[index + 1].room_id === item.room_id;
                                         lastRoomId = item.room_id;
+
+                                        const hasPending = item.breakfast_id ? !!pendingChanges[item.breakfast_id] : false;
 
                                         return (
                                             <TableRow
@@ -362,7 +411,8 @@ export default function BreakfastPage() {
                                                     !isActive && "opacity-40 grayscale-[0.5] hover:opacity-100 hover:grayscale-0",
                                                     item.is_prepared === 1 && isActive && "bg-emerald-50/20 dark:bg-emerald-900/10",
                                                     isFirstInRoom && index !== 0 && "border-t border-zinc-100 dark:border-zinc-800",
-                                                    !isFirstInRoom && "bg-zinc-50/30 dark:bg-white/5"
+                                                    !isFirstInRoom && "bg-zinc-50/30 dark:bg-white/5",
+                                                    hasPending && "bg-amber-50/10 dark:bg-amber-900/5"
                                                 )}
                                             >
                                                 <TableCell className="text-center relative">
@@ -432,21 +482,32 @@ export default function BreakfastPage() {
                                                             <Clock className="w-3.5 h-3.5 text-zinc-400" />
                                                             <Input
                                                                 type="time"
-                                                                defaultValue={item.time || "08:00"}
-                                                                className="h-8 w-24 text-xs bg-transparent border-zinc-200 focus:bg-white dark:focus:bg-zinc-800"
-                                                                onBlur={(e) => updateBreakfastDetails(item.breakfast_id, item.booking_id!, 'time', e.target.value)}
+                                                                value={pendingChanges[item.breakfast_id!]?.time ?? (item.time || "08:00")}
+                                                                className={cn(
+                                                                    "h-8 w-24 text-xs bg-transparent border-zinc-200 focus:bg-white dark:focus:bg-zinc-800",
+                                                                    pendingChanges[item.breakfast_id!]?.time && "border-amber-400 ring-1 ring-amber-400/20"
+                                                                )}
+                                                                onChange={(e) => trackChange(item.breakfast_id, 'time', e.target.value)}
                                                             />
                                                         </div>
                                                     ) : "-"}
                                                 </TableCell>
                                                 <TableCell>
                                                     {isActive ? (
-                                                        <Input
-                                                            placeholder="Allergien, Wünsche..."
-                                                            defaultValue={item.comments || ""}
-                                                            className="h-8 text-xs bg-transparent border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 w-full"
-                                                            onBlur={(e) => updateBreakfastDetails(item.breakfast_id, item.booking_id!, 'comments', e.target.value)}
-                                                        />
+                                                        <div className="relative">
+                                                            <Input
+                                                                placeholder="Allergien, Wünsche..."
+                                                                value={pendingChanges[item.breakfast_id!]?.comments ?? (item.comments || "")}
+                                                                className={cn(
+                                                                    "h-8 text-xs bg-transparent border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 w-full",
+                                                                    pendingChanges[item.breakfast_id!]?.comments !== undefined && "border-amber-400 ring-1 ring-amber-400/20"
+                                                                )}
+                                                                onChange={(e) => trackChange(item.breakfast_id, 'comments', e.target.value)}
+                                                            />
+                                                            {pendingChanges[item.breakfast_id!] && (
+                                                                <div className="absolute -right-1 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
+                                                            )}
+                                                        </div>
                                                     ) : (
                                                         <span className="text-zinc-300 text-xs">-</span>
                                                     )}
@@ -484,3 +545,4 @@ export default function BreakfastPage() {
         </div>
     );
 }
+

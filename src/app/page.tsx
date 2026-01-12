@@ -40,10 +40,11 @@ export default function Home() {
   const today = new Date().toISOString().split('T')[0];
   const router = useRouter();
 
-  // State for Check-in Confirmation
+  // State for Check-in/out Confirmation
   const [checkInConfirmOpen, setCheckInConfirmOpen] = useState(false);
   const [pendingCheckIn, setPendingCheckIn] = useState<{ id: string, name: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const loadData = async (dbInstance?: any) => {
     try {
@@ -156,6 +157,7 @@ export default function Home() {
         });
 
         await loadData(db);
+        setRefreshKey(prev => prev + 1);
         setCheckInConfirmOpen(false);
         setPendingCheckIn(null);
       }
@@ -167,7 +169,7 @@ export default function Home() {
     }
   };
 
-  const handleQuickCheckOut = async (e: React.MouseEvent, id: string) => {
+  const handleQuickCheckOut = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
     router.push(`/buchungen?checkout=${id}`);
@@ -201,7 +203,7 @@ export default function Home() {
           <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200">Mein Tag</h3>
           <div className="h-px flex-1 bg-zinc-100 dark:bg-zinc-800" />
         </div>
-        <MyDayWidget />
+        <MyDayWidget refreshTrigger={refreshKey} />
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -231,7 +233,11 @@ export default function Home() {
                 </div>
               ) : (
                 arrivals.map((arrival) => (
-                  <div key={arrival.id} className="p-4 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors flex items-center justify-between group">
+                  <div
+                    key={arrival.id}
+                    className="p-4 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors flex items-center justify-between group cursor-pointer"
+                    onClick={() => router.push(`/buchungen?edit=${arrival.id}`)}
+                  >
                     <div className="flex items-center gap-4">
                       <div className={cn(
                         "w-10 h-10 rounded-full flex items-center justify-center border",
@@ -313,24 +319,22 @@ export default function Home() {
                         </Button>
                       )}
                       {arrival.status === "Draft" && (
-                        <Link href={`/buchungen?edit=${arrival.id}`}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 border-amber-200 text-amber-600 hover:bg-amber-50 text-[10px] font-bold"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            Vervollständigen
-                          </Button>
-                        </Link>
-                      )}
-                      <Link href={`/buchungen?edit=${arrival.id}`}>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Edit2 className="w-4 h-4 text-zinc-400" />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-amber-200 text-amber-600 hover:bg-amber-50 text-[10px] font-bold"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            router.push(`/buchungen?edit=${arrival.id}`);
+                          }}
+                        >
+                          Vervollständigen
                         </Button>
-                      </Link>
+                      )}
                     </div>
                   </div>
+
                 ))
               )}
             </div>
@@ -363,7 +367,11 @@ export default function Home() {
                 </div>
               ) : (
                 departures.map((departure) => (
-                  <div key={departure.id} className="p-4 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors flex items-center justify-between group">
+                  <div
+                    key={departure.id}
+                    className="p-4 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors flex items-center justify-between group cursor-pointer"
+                    onClick={() => router.push(`/buchungen?edit=${departure.id}`)}
+                  >
                     <div className="flex items-center gap-4">
                       <div className={cn(
                         "w-10 h-10 rounded-full flex items-center justify-center border",
@@ -416,13 +424,9 @@ export default function Home() {
                           Check-Out
                         </Button>
                       )}
-                      <Link href={`/buchungen?edit=${departure.id}`}>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Edit2 className="w-4 h-4 text-zinc-400" />
-                        </Button>
-                      </Link>
                     </div>
                   </div>
+
                 ))
               )}
             </div>
