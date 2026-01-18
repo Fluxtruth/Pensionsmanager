@@ -31,7 +31,7 @@ interface Room {
     id: string;
     name: string;
     type: string;
-    base_price: number;
+    // base_price removed
     is_allergy_friendly?: number;
     is_accessible?: number;
     status?: string;
@@ -183,7 +183,7 @@ export default function RoomsPage() {
         const id = formData.get("id") as string;
         const name = formData.get("name") as string;
         const type = formData.get("type") as string;
-        const price = parseFloat(formData.get("price") as string) || 0;
+        // Price removed
         const isAllergyFriendly = formData.get("is_allergy_friendly") === "on" ? 1 : 0;
         const isAccessible = formData.get("is_accessible") === "on" ? 1 : 0;
 
@@ -194,7 +194,7 @@ export default function RoomsPage() {
                     id,
                     name,
                     type,
-                    price,
+                    0, // base_price
                     isAllergyFriendly,
                     isAccessible
                 ]);
@@ -217,7 +217,7 @@ export default function RoomsPage() {
         const newId = formData.get("id") as string;
         const name = formData.get("name") as string;
         const type = formData.get("type") as string;
-        const price = parseFloat(formData.get("price") as string) || 0;
+        // Price removed
         const isAllergyFriendly = formData.get("is_allergy_friendly") === "on" ? 1 : 0;
         const isAccessible = formData.get("is_accessible") === "on" ? 1 : 0;
 
@@ -230,7 +230,7 @@ export default function RoomsPage() {
                     // 1. Create the new room record first
                     await db.execute(
                         "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)",
-                        [newId, name, type, price, isAllergyFriendly, isAccessible]
+                        [newId, name, type, 0, isAllergyFriendly, isAccessible]
                     );
 
                     // 2. Update all related tables that reference this room_id
@@ -244,7 +244,7 @@ export default function RoomsPage() {
                     // Standard update if ID didn't change
                     await db.execute(
                         "UPDATE rooms SET name = ?, type = ?, base_price = ?, is_allergy_friendly = ?, is_accessible = ? WHERE id = ?",
-                        [name, type, price, isAllergyFriendly, isAccessible, editingRoom.id]
+                        [name, type, 0, isAllergyFriendly, isAccessible, editingRoom.id]
                     );
                 }
 
@@ -301,10 +301,7 @@ export default function RoomsPage() {
                                     ))}
                                 </select>
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="price">Standard-Preis / Nacht (€)</Label>
-                                <Input id="price" name="price" type="number" step="0.01" placeholder="85.00" required />
-                            </div>
+                            {/* Price input removed */}
                             <div className="grid grid-cols-2 gap-4 pt-2">
                                 <div className="flex items-center space-x-2">
                                     <Switch id="new-allergy" name="is_allergy_friendly" />
@@ -333,7 +330,7 @@ export default function RoomsPage() {
                                 <TableHead className="w-20 pl-6 font-bold">Nummer</TableHead>
                                 <TableHead className="font-bold">Bezeichnung</TableHead>
                                 <TableHead className="font-bold">Typ</TableHead>
-                                <TableHead className="font-bold">Preis / Nacht</TableHead>
+                                {/* Price Header Removed */}
                                 <TableHead className="font-bold text-center">Status</TableHead>
                                 <TableHead className="font-bold">Gruppe</TableHead>
                                 <TableHead className="font-bold">Frei ab</TableHead>
@@ -396,9 +393,7 @@ export default function RoomsPage() {
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="font-semibold text-zinc-900 dark:text-zinc-100">
-                                            {room.base_price || 0} €
-                                        </TableCell>
+                                        {/* Price Cell Removed */}
                                         <TableCell className="text-center">
                                             <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${(room.status || "Verfügbar") === "Verfügbar"
                                                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
@@ -632,10 +627,7 @@ export default function RoomsPage() {
                                     ))}
                                 </select>
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="edit-price">Standard-Preis / Nacht (€)</Label>
-                                <Input id="edit-price" name="price" type="number" step="0.01" defaultValue={editingRoom.base_price} required />
-                            </div>
+                            {/* Price input removed */}
                             <div className="grid grid-cols-2 gap-4 pt-2">
                                 <div className="flex items-center space-x-2">
                                     <Switch
@@ -672,6 +664,6 @@ export default function RoomsPage() {
                     )}
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }

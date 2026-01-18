@@ -23,13 +23,13 @@ const mockData: Record<string, any[]> = {
       id: "b1", room_id: "101", guest_id: "g1",
       start_date: "2026-01-12", end_date: "2026-01-13",
       status: "Draft", payment_status: "Offen",
-      group_id: "bg1", guests_per_room: 1
+      group_id: "bg1", guests_per_room: 1, is_main_guest: 1
     },
     {
       id: "b2", room_id: "102", guest_id: "g2",
       start_date: "2026-01-12", end_date: "2026-01-13",
       status: "Draft", payment_status: "Offen",
-      group_id: "bg1", guests_per_room: 1
+      group_id: "bg1", guests_per_room: 1, is_main_guest: 0
     }
   ],
   staff: [],
@@ -101,7 +101,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
                   is_family_room: params?.[10], has_dog: params?.[11],
                   is_allergy_friendly: params?.[12], has_mobility_impairment: params?.[13],
                   guests_per_room: params?.[14], stay_type: params?.[15],
-                  dog_count: params?.[16], child_count: params?.[17], extra_bed_count: params?.[18]
+                  dog_count: params?.[16], child_count: params?.[17], extra_bed_count: params?.[18],
+                  is_main_guest: params?.[19]
                 });
               } else if (table === "breakfast_options") {
                 mockData.breakfast_options.push({ id: params?.[0], booking_id: params?.[1], date: params?.[2], is_included: params?.[3], is_prepared: params?.[4] || 0, guest_count: params?.[5] || 1, time: params?.[6], comments: params?.[7], source: params?.[8] || 'auto', is_manual: params?.[9] || 0 });
@@ -199,7 +200,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
                     is_family_room: params?.[9], has_dog: params?.[10],
                     is_allergy_friendly: params?.[11], has_mobility_impairment: params?.[12],
                     guests_per_room: params?.[13], stay_type: params?.[14],
-                    dog_count: params?.[15], child_count: params?.[16], extra_bed_count: params?.[17]
+                    dog_count: params?.[15], child_count: params?.[16], extra_bed_count: params?.[17],
+                    is_main_guest: params?.[18]
                   };
                 } else if (table === "breakfast_options") {
                   mockData.breakfast_options[index] = { ...mockData.breakfast_options[index], is_included: params?.[0], is_prepared: params?.[1], guest_count: params?.[2], time: params?.[3], comments: params?.[4], source: params?.[5], is_manual: params?.[6] };
@@ -335,6 +337,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
         is_allergy_friendly INTEGER DEFAULT 0, has_mobility_impairment INTEGER DEFAULT 0,
         guests_per_room INTEGER DEFAULT 1, stay_type TEXT DEFAULT 'private',
         dog_count INTEGER DEFAULT 0, child_count INTEGER DEFAULT 0, extra_bed_count INTEGER DEFAULT 0,
+        is_main_guest INTEGER DEFAULT 0,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (guest_id) REFERENCES guests(id),
         FOREIGN KEY (occasion_id) REFERENCES occasions(id),
@@ -384,6 +387,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE bookings ADD COLUMN dog_count INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE bookings ADD COLUMN child_count INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE bookings ADD COLUMN extra_bed_count INTEGER DEFAULT 0"); } catch (e) { }
+    try { await db.execute("ALTER TABLE bookings ADD COLUMN is_main_guest INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN comments TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN delayed_from TEXT"); } catch (e) { }

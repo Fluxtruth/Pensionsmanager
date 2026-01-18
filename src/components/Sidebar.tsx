@@ -7,6 +7,7 @@ import {
     Home,
     BedDouble,
     CalendarDays,
+    CalendarRange,
     Users,
     Eraser,
     Coffee,
@@ -21,6 +22,7 @@ import { initDb } from "@/lib/db";
 const navigation = [
     { name: "Dashboard", href: "/", icon: Home },
     { name: "Zimmer", href: "/zimmer", icon: BedDouble },
+    { name: "Kalender", href: "/kalender", icon: CalendarRange },
     { name: "Buchungen", href: "/buchungen", icon: CalendarDays },
     { name: "Gäste", href: "/gaeste", icon: Users },
     { name: "Reinigungsplan", href: "/reinigung", icon: Eraser },

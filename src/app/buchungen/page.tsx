@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -32,7 +32,9 @@ import {
     Mail,
     Phone,
     Building2,
-    User
+    User,
+    Ban,
+    Crown
 } from "lucide-react";
 import { ROOM_TYPES } from "@/lib/constants";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -100,6 +102,7 @@ interface Booking {
     dog_count?: number;
     child_count?: number;
     extra_bed_count?: number;
+    is_main_guest?: number;
 }
 
 interface BookingGroup {
@@ -111,7 +114,7 @@ interface Room {
     id: string;
     name: string;
     type: string;
-    base_price: number;
+    // base_price removed
     is_allergy_friendly?: number;
     is_accessible?: number;
 }
@@ -143,6 +146,65 @@ interface BreakfastOption {
     is_manual?: number;
 }
 
+interface WizardData {
+    guestId: string;
+    guestName: string;
+    startDate: string;
+    endDate: string;
+    roomType: string;
+    roomId: string;
+    occasion: string;
+    arrivalTime: string;
+    groupId: string;
+    newGroupName: string;
+    isFamilyRoom: boolean;
+    isAllergyFriendly: boolean;
+    hasMobilityImpairment: boolean;
+    guestsPerRoom: number;
+    stayType: string;
+    dogCount: number;
+    childCount: number;
+    extraBedCount: number;
+    status: string;
+}
+
+const DEFAULT_WIZARD_DATA: WizardData = {
+    guestId: "",
+    guestName: "",
+    startDate: "",
+    endDate: "",
+    roomType: "",
+    roomId: "",
+    occasion: "Single",
+    arrivalTime: "",
+    groupId: "",
+    newGroupName: "",
+    isFamilyRoom: false,
+    isAllergyFriendly: false,
+    hasMobilityImpairment: false,
+    guestsPerRoom: 1,
+    stayType: "",
+    dogCount: 0,
+    childCount: 0,
+    extraBedCount: 0,
+    status: "Hard-Booked"
+};
+
+interface BookingTab {
+    id: string;
+    label: string;
+    data: WizardData;
+    breakfastData: Record<string, { time: string, comments: string, id: string }[]>;
+}
+
+const getDaysArray = (start: string, end: string) => {
+    const arr = [];
+    for (let dt = new Date(start); dt <= new Date(end); dt.setDate(dt.getDate() + 1)) {
+        arr.push(new Date(dt).toISOString().split('T')[0]);
+    }
+    return arr;
+};
+
 function BookingsList() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -171,7 +233,39 @@ function BookingsList() {
     // UI States
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
-    const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+    const [__legacyBookingState, __setLegacyBookingState] = useState<Booking | null>(null); // Kept for hook order stability
+
+    interface EditTab {
+        id: string;
+        label: string;
+        booking: Booking;
+    }
+    const [editTabs, setEditTabs] = useState<EditTab[]>([]);
+    const [activeEditTabId, setActiveEditTabId] = useState<string>("");
+
+    const editingBookingValue = useMemo(() =>
+        editTabs.find(t => t.id === activeEditTabId)?.booking || null
+        , [editTabs, activeEditTabId]);
+
+    const setEditingBooking = (update: React.SetStateAction<Booking | null>) => {
+        setEditTabs(prev => prev.map(tab => {
+            if (tab.id !== activeEditTabId) return tab;
+            const currentBooking = tab.booking;
+            const newData = typeof update === 'function'
+                ? (update as any)(currentBooking)
+                : update;
+
+            if (!newData) return tab;
+            // Update Booking with new data
+            return { ...tab, booking: newData, label: newData.guest_name || tab.label };
+        }));
+        // Also update legacy state if needed, but we rely on computed. 
+        // Actually, we need to replace usages of 'editingBooking' with 'editingBookingValue' in render?
+        // Or can I name the computed 'editingBooking'? Yes if I remove the state const.
+    };
+
+    // Re-declare editingBooking as the computed value
+    const editingBooking = editingBookingValue;
     const [editTab, setEditTab] = useState<"details" | "breakfast">("details");
     const [breakfastOptions, setBreakfastOptions] = useState<BreakfastOption[]>([]);
     const [editGroupId, setEditGroupId] = useState<string>("none");
@@ -231,7 +325,7 @@ function BookingsList() {
             }
         } catch (error) {
             console.error("Failed to save breakfast changes:", error);
-            alert("Fehler beim Speichern der Änderungen.");
+            alert("Fehler beim Speichern der Ã„nderungen.");
         }
     };
 
@@ -259,33 +353,70 @@ function BookingsList() {
         isOpen: false,
         title: "",
         description: "",
-        confirmText: "Löschen",
+        confirmText: "LÃ¶schen",
         variant: "danger",
         onConfirm: () => { },
     });
 
     // Wizard States
 
-    const [wizardData, setWizardData] = useState({
-        guestId: "",
-        guestName: "",
-        startDate: "",
-        endDate: "",
-        roomType: "",
-        roomId: "",
-        occasion: "",
-        arrivalTime: "",
-        groupId: "",
-        newGroupName: "",
-        isFamilyRoom: false,
-        isAllergyFriendly: false,
-        hasMobilityImpairment: false,
-        guestsPerRoom: 1,
-        stayType: "beruflich", // Defaulting to professional as requested or common in pensions
-        dogCount: 0,
-        childCount: 0,
-        extraBedCount: 0
-    });
+    const [wizardTab, setWizardTab] = useState<"details" | "breakfast">("details");
+    const [editingTabId, setEditingTabId] = useState<string | null>(null);
+    const [activeWizardTabId, setActiveWizardTabId] = useState<string>("tab-1");
+    const [wizardTabs, setWizardTabs] = useState<BookingTab[]>([
+        {
+            id: "tab-1",
+            label: "Hauptgast",
+            data: DEFAULT_WIZARD_DATA,
+            breakfastData: {}
+        }
+    ]);
+
+    const wizardData = useMemo(() =>
+        wizardTabs.find(t => t.id === activeWizardTabId)?.data || DEFAULT_WIZARD_DATA
+        , [wizardTabs, activeWizardTabId]);
+
+    const wizardBreakfastData = useMemo(() =>
+        wizardTabs.find(t => t.id === activeWizardTabId)?.breakfastData || {}
+        , [wizardTabs, activeWizardTabId]);
+
+    const setWizardData = (update: React.SetStateAction<WizardData>) => {
+        setWizardTabs(prevTabs => prevTabs.map((tab, index) => {
+            if (tab.id !== activeWizardTabId) return tab;
+            const newData = typeof update === 'function'
+                ? (update as (prev: WizardData) => WizardData)(tab.data)
+                : update;
+
+            // Automatically update label from placeholder to guest name or vice versa
+            let newLabel = tab.label;
+            const defaultPlaceholder = index === 0 ? "Hauptgast" : `Gast ${index + 1}`;
+            const isPlaceholder = tab.label === "Hauptgast" || tab.label.startsWith("Gast ");
+            const isPreviousGuestName = tab.label === tab.data.guestName && tab.data.guestName !== "";
+
+            if (newData.guestName) {
+                if (isPlaceholder || isPreviousGuestName) {
+                    newLabel = newData.guestName;
+                }
+            } else {
+                // If guestName is cleared, revert to default placeholder if it was the guest name
+                if (isPreviousGuestName) {
+                    newLabel = defaultPlaceholder;
+                }
+            }
+
+            return { ...tab, data: newData, label: newLabel };
+        }));
+    };
+
+    const setWizardBreakfastData = (update: React.SetStateAction<Record<string, { time: string, comments: string, id: string }[]>>) => {
+        setWizardTabs(prevTabs => prevTabs.map(tab => {
+            if (tab.id !== activeWizardTabId) return tab;
+            const newData = typeof update === 'function'
+                ? (update as (prev: Record<string, any>) => Record<string, any>)(tab.breakfastData)
+                : update;
+            return { ...tab, breakfastData: newData };
+        }));
+    };
     const [guestSearch, setGuestSearch] = useState("");
     const [isCreatingGuest, setIsCreatingGuest] = useState(false);
     const [isWizardGroupSearchFocused, setIsWizardGroupSearchFocused] = useState(false);
@@ -395,14 +526,33 @@ function BookingsList() {
     }, [filterParam, today]);
 
     const handleEditClick = useCallback((booking: Booking) => {
-        setEditingBooking(booking);
+        // Load all bookings for this group if exists
+        let groupBookings: Booking[] = [booking];
+        if (booking.group_id) {
+            const groupB = bookings.filter(b => b.group_id === booking.group_id);
+            if (groupB.length > 0) groupBookings = groupB;
+        }
+
+        // Sort by name
+        groupBookings.sort((a, b) => (a.guest_name || "").localeCompare(b.guest_name || ""));
+
+        const tabs: EditTab[] = groupBookings.map(b => ({
+            id: b.id,
+            label: b.guest_name || "Gast",
+            booking: b
+        }));
+
+        setEditTabs(tabs);
+        setActiveEditTabId(booking.id);
+
         loadBreakfast(booking.id);
+
         setEditGroupId(booking.group_id || "none");
         setEditGroupSearch(groups.find(g => g.id === booking.group_id)?.name || "");
         setEditNewGroupName("");
         setIsEditOpen(true);
         setEditTab("details");
-    }, [groups]);
+    }, [bookings, groups]);
 
     useEffect(() => {
         if (editId && bookings.length > 0) {
@@ -452,7 +602,7 @@ function BookingsList() {
         const booking = bookings.find(b => b.id === id);
         if (booking && (newStatus === "Hard-Booked" || newStatus === "Checked-In")) {
             if (checkRoomOverlap(booking.room_id, booking.start_date, booking.end_date, id)) {
-                alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
+                alert("Fehler: Dieser Raum ist im gewÃ¤hlten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
                 return;
             }
         }
@@ -476,18 +626,11 @@ function BookingsList() {
 
     const confirmCheckOut = async () => {
         if (!checkOutBooking) return;
-        const summary = calculateCheckOutSummary(checkOutBooking);
 
         try {
             const db = await initDb();
             if (db) {
-                // 1. Update Guest Revenue
-                await db.execute(
-                    "UPDATE guests SET total_revenue = COALESCE(total_revenue, 0) + ? WHERE id = ?",
-                    [summary.grandTotal, checkOutBooking.guest_id]
-                );
-
-                // 2. Update Booking Status
+                // 1. Update Booking Status (Revenue tracking removed)
                 await db.execute(
                     "UPDATE bookings SET status = 'Checked-Out', actual_checkout_at = ? WHERE id = ?",
                     [new Date().toISOString(), checkOutBooking.id]
@@ -504,25 +647,16 @@ function BookingsList() {
     };
 
     const calculateCheckOutSummary = (booking: Booking) => {
-        const room = rooms.find(r => r.id === booking.room_id);
         const start = new Date(booking.start_date);
         const end = new Date(booking.end_date);
         const nights = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-        const roomTotal = (room?.base_price || 0) * nights;
 
-        // Breakfasts - already loaded via handleCheckOutClick
+        // Breakfasts
         const breakfastCount = breakfastOptions.filter(o => o.is_included === 1).length;
-        const breakfastPrice = 12.50; // Mock price
-        const breakfastTotal = breakfastCount * breakfastPrice;
 
         return {
             nights,
-            roomPrice: room?.base_price || 0,
-            roomTotal,
-            breakfastCount,
-            breakfastPrice,
-            breakfastTotal,
-            grandTotal: roomTotal + breakfastTotal
+            breakfastCount
         };
     };
 
@@ -532,6 +666,15 @@ function BookingsList() {
         if (editingBooking.status === "Hard-Booked" || editingBooking.status === "Checked-In") {
             if (checkRoomOverlap(editingBooking.room_id, editingBooking.start_date, editingBooking.end_date, editingBooking.id)) {
                 alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt.");
+                return;
+            }
+        }
+
+        // New Validation: Every tab must have a room unless it is a Draft
+        for (const tab of editTabs) {
+            const b = tab.booking;
+            if (b.status !== "Draft" && (!b.room_id || b.room_id === "")) {
+                alert(`Fehler: Bitte wählen Sie einen Raum für "${b.guest_name || tab.label}" oder setzen Sie den Status auf 'Entwurf' (Draft).`);
                 return;
             }
         }
@@ -552,34 +695,127 @@ function BookingsList() {
                             finalGroupId = newId;
                         }
                     } else {
-                        finalGroupId = "";
+                        // Inherit from current booking if it has one? Or keep empty? 
+                        // If user added multiple tabs but didn't give a group name, we might have an issue.
+                        // Ideally we force a group name or auto-generate one if multiple tabs exist.
+                        if (editTabs.length > 1) {
+                            const newId = crypto.randomUUID();
+                            const autoName = `Gruppe ${(editingBooking.guest_name || "Gast").split(' ').pop()}`;
+                            await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, autoName]);
+                            finalGroupId = newId;
+                        } else {
+                            finalGroupId = "";
+                        }
                     }
                 }
 
-                await db.execute(
-                    "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ? WHERE id = ?",
-                    [
-                        editingBooking.room_id,
-                        editingBooking.guest_id,
-                        editingBooking.occasion,
-                        editingBooking.start_date,
-                        editingBooking.end_date,
-                        editingBooking.status,
-                        editingBooking.payment_status,
-                        editingBooking.estimated_arrival_time,
-                        (finalGroupId === "none" || !finalGroupId) ? null : finalGroupId,
-                        editingBooking.is_family_room,
-                        editingBooking.has_dog,
-                        editingBooking.is_allergy_friendly,
-                        editingBooking.has_mobility_impairment,
-                        editingBooking.guests_per_room,
-                        editingBooking.stay_type,
-                        editingBooking.dog_count,
-                        editingBooking.child_count,
-                        editingBooking.extra_bed_count,
-                        editingBooking.id
-                    ]
-                );
+                // Refactored Save Loop with Guest Creation
+                for (const tab of editTabs) {
+                    const b = tab.booking;
+                    let thisGuestId = b.guest_id;
+                    const thisGroupId = (finalGroupId === "none" || !finalGroupId) ? null : finalGroupId;
+
+                    // Validate guest
+                    if (!thisGuestId && b.guest_name !== "Neuer Gast") { // Allow if name is set but id is new? No, must resolve.
+                        // But if guest_id is empty, user might have just typed a name?
+                        // If no ID and no Name, error.
+                        // If Name but no ID -> Create?
+                        // The UI sets guest_id="new" if creating.
+                    }
+
+                    // Create Guest if "new" or if we have a name but no ID (and it's not empty)
+                    if (thisGuestId === "new") {
+                        const newGuestName = b.guest_name || tab.label;
+                        const parts = newGuestName.split(' ');
+                        const lastName = parts.pop() || "";
+                        const firstName = parts.join(' ');
+
+                        const newGuestId = crypto.randomUUID();
+                        await db.execute(
+                            "INSERT INTO guests (id, name, first_name, last_name) VALUES (?, ?, ?, ?)",
+                            [newGuestId, newGuestName, firstName, lastName]
+                        );
+                        thisGuestId = newGuestId;
+                    }
+
+                    // Fallback: If no guest selected, try to inherit from "Main Guest" (first tab)
+                    if (!thisGuestId) {
+                        const mainTab = editTabs.find(t => t.booking.guest_id && t.booking.guest_id !== "new");
+                        if (mainTab && mainTab.booking.guest_id) {
+                            thisGuestId = mainTab.booking.guest_id;
+                        } else {
+                            // Only alert if we REALLY can't find a guest ID (neither direct nor inherited)
+                            if (!b.guest_name || b.guest_name === "Neuer Gast") {
+                                alert(`Fehler: Bitte wählen Sie einen Gast für Tab "${tab.label}".`);
+                                return;
+                            }
+                        }
+                    }
+
+                    // Check existence in DB (reliable) or via bookings list (if fresh)
+                    const subExists = bookings.some(existing => existing.id === b.id);
+
+                    if (!subExists) {
+                        if (checkRoomOverlap(b.room_id, b.start_date, b.end_date, b.id)) {
+                            alert(`Fehler: Raum für ${b.guest_name || "Gast"} ist bereits belegt.`);
+                            return; // Abort all
+                        }
+                    }
+
+                    if (subExists) {
+                        await db.execute(
+                            "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ? WHERE id = ?",
+                            [
+                                b.room_id || null,
+                                thisGuestId || null,
+                                b.occasion,
+                                b.start_date,
+                                b.end_date,
+                                b.status,
+                                b.payment_status,
+                                b.estimated_arrival_time,
+                                thisGroupId, // Already handles null
+                                b.is_family_room,
+                                b.has_dog,
+                                b.is_allergy_friendly,
+                                b.has_mobility_impairment,
+                                b.guests_per_room,
+                                b.stay_type,
+                                b.dog_count,
+                                b.child_count,
+                                b.extra_bed_count,
+                                b.id
+                            ]
+                        );
+                    } else {
+                        // INSERT
+                        await db.execute(
+                            "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                b.id,
+                                b.room_id || null,
+                                thisGuestId || null,
+                                b.occasion,
+                                b.start_date,
+                                b.end_date,
+                                b.status,
+                                b.payment_status || "Offen",
+                                b.estimated_arrival_time,
+                                thisGroupId,
+                                b.is_family_room,
+                                b.has_dog,
+                                b.is_allergy_friendly,
+                                b.has_mobility_impairment,
+                                b.guests_per_room,
+                                b.stay_type,
+                                b.dog_count,
+                                b.child_count,
+                                b.extra_bed_count
+                            ]
+                        );
+                    }
+                }
+
                 await loadData();
                 setIsEditOpen(false);
                 setEditingBooking(null);
@@ -593,7 +829,7 @@ function BookingsList() {
         setDeleteConfirm({
             isOpen: true,
             title: "Buchung stornieren",
-            description: "Möchten Sie diese Buchung wirklich stornieren? Der Termin wird für andere Gäste freigegeben.",
+            description: "MÃ¶chten Sie diese Buchung wirklich stornieren? Der Termin wird fÃ¼r andere GÃ¤ste freigegeben.",
             confirmText: "Stornieren",
             variant: "warning",
             onConfirm: async () => {
@@ -614,9 +850,9 @@ function BookingsList() {
     const permanentDeleteBooking = async (id: string) => {
         setDeleteConfirm({
             isOpen: true,
-            title: "Buchung unwiderruflich löschen",
-            description: "Diese Aktion kann nicht rückgängig gemacht werden. Alle Daten zu dieser Buchung werden gelöscht.",
-            confirmText: "Löschen",
+            title: "Buchung unwiderruflich lÃ¶schen",
+            description: "Diese Aktion kann nicht rÃ¼ckgÃ¤ngig gemacht werden. Alle Daten zu dieser Buchung werden gelÃ¶scht.",
+            confirmText: "LÃ¶schen",
             variant: "danger",
             onConfirm: async () => {
                 try {
@@ -778,11 +1014,11 @@ function BookingsList() {
     }).sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
     const groupedData = useMemo(() => {
-        const result: { group: BookingGroup | null, bookings: Booking[] }[] = [];
+        const tempResult: { group: BookingGroup | null, bookings: Booking[], sortDate: string }[] = [];
+        const bookingsByGroup = new Map<string, Booking[]>();
         const individualBookings: Booking[] = [];
 
-        // Group bookings by their group_id
-        const bookingsByGroup = new Map<string, Booking[]>();
+        // 1. Separate bookings into groups and individuals
         filteredBookings.forEach(b => {
             if (b.group_id && b.group_id !== "none") {
                 if (!bookingsByGroup.has(b.group_id)) {
@@ -794,25 +1030,42 @@ function BookingsList() {
             }
         });
 
-        // Add grouped bookings
+        // 2. Add Groups to result
+        // Process known groups
         groups.forEach(group => {
             if (bookingsByGroup.has(group.id)) {
-                result.push({ group, bookings: bookingsByGroup.get(group.id)! });
-                bookingsByGroup.delete(group.id); // Remove processed group
+                const groupBookings = bookingsByGroup.get(group.id)!;
+                // Determine sort date (earliest booking in group)
+                const startDates = groupBookings.map(b => b.start_date);
+                const sortDate = startDates.reduce((min, current) => current < min ? current : min, startDates[0] || "9999-99-99");
+
+                tempResult.push({ group, bookings: groupBookings, sortDate });
+                bookingsByGroup.delete(group.id);
             }
         });
 
-        // Add any remaining grouped bookings whose group might not be in the `groups` state (e.g., if group was deleted but bookings still reference it)
+        // Process remaining (unknown/deleted) groups
         bookingsByGroup.forEach((bookings, groupId) => {
-            result.push({ group: { id: groupId, name: `Unbekannte Gruppe (${groupId.substring(0, 4)}...)` }, bookings });
+            const startDates = bookings.map(b => b.start_date);
+            const sortDate = startDates.reduce((min, current) => current < min ? current : min, startDates[0] || "9999-99-99");
+
+            tempResult.push({
+                group: { id: groupId, name: `Unbekannte Gruppe (${groupId.substring(0, 4)}...)` },
+                bookings,
+                sortDate
+            });
         });
 
-        // Add individual bookings
-        if (individualBookings.length > 0) {
-            result.push({ group: null, bookings: individualBookings });
-        }
+        // 3. Add Individual Bookings as separate items
+        individualBookings.forEach(b => {
+            tempResult.push({ group: null, bookings: [b], sortDate: b.start_date });
+        });
 
-        return result;
+        // 4. Sort everything chronologically
+        tempResult.sort((a, b) => a.sortDate.localeCompare(b.sortDate));
+
+        // 5. Return clean structure
+        return tempResult.map(({ group, bookings }) => ({ group, bookings }));
     }, [filteredBookings, groups]);
 
     const searchSuggestions = useMemo(() => {
@@ -977,114 +1230,132 @@ function BookingsList() {
         }
     };
 
-    const finishWizard = async (status: string = "Draft") => {
+    const finishWizard = async () => {
         try {
             const db = await initDb();
             if (!db) return;
 
-            // Capture current state immediately to prevent race conditions with resetWizard
-            const finalWizardData = { ...wizardData };
+            // 1. Resolve Group ID (Once for all tabs)
+            // Use the first tab as the "Main" source for group info
+            const mainTabData = wizardTabs[0].data;
+            let finalGroupId = mainTabData.groupId;
 
-            let finalGroupId = finalWizardData.groupId;
-            if (finalGroupId === "new" && finalWizardData.newGroupName) {
-                const existingGroup = groups.find(g => g.name.toLowerCase() === finalWizardData.newGroupName.toLowerCase());
+            if (finalGroupId === "new" && mainTabData.newGroupName) {
+                const existingGroup = groups.find(g => g.name.toLowerCase() === mainTabData.newGroupName.toLowerCase());
                 if (existingGroup) {
                     finalGroupId = existingGroup.id;
                 } else {
                     finalGroupId = crypto.randomUUID();
-                    await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [finalGroupId, finalWizardData.newGroupName]);
+                    await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [finalGroupId, mainTabData.newGroupName]);
                 }
             }
 
-            const booking = {
-                id: crypto.randomUUID(),
-                room_id: finalWizardData.roomId,
-                guest_id: finalWizardData.guestId,
-                occasion: finalWizardData.occasion,
-                start_date: finalWizardData.startDate,
-                end_date: finalWizardData.endDate,
-                status: status,
-                payment_status: "Offen",
-                estimated_arrival_time: finalWizardData.arrivalTime,
-                group_id: (finalGroupId === "new" || finalGroupId === "none" || !finalGroupId) ? null : finalGroupId,
-                is_family_room: finalWizardData.isFamilyRoom ? 1 : 0,
-                has_dog: finalWizardData.dogCount > 0 ? 1 : 0,
-                is_allergy_friendly: finalWizardData.isAllergyFriendly ? 1 : 0,
-                has_mobility_impairment: finalWizardData.hasMobilityImpairment ? 1 : 0,
-                guests_per_room: finalWizardData.guestsPerRoom,
-                stay_type: finalWizardData.stayType,
-                dog_count: finalWizardData.dogCount,
-                child_count: finalWizardData.childCount,
-                extra_bed_count: finalWizardData.extraBedCount
-            };
+            const groupIdToUse = (finalGroupId === "new" || finalGroupId === "none" || !finalGroupId) ? null : finalGroupId;
 
-            if (checkRoomOverlap(booking.room_id, booking.start_date, booking.end_date)) {
-                alert("Hinweis: Der Raum ist in diesem Zeitraum bereits belegt oder reserviert.");
-                return;
+            // 2. Validate Data and Pre-Check Overlaps for ALL tabs
+            for (let i = 0; i < wizardTabs.length; i++) {
+                const tab = wizardTabs[i];
+
+                // Main guest MUST be selected
+                if (i === 0 && !tab.data.guestId) {
+                    setActiveWizardTabId(tab.id);
+                    alert(`Bitte wählen Sie einen Gast für "${tab.label}".`);
+                    return;
+                }
+
+                // Room MUST be selected for all
+                if (!tab.data.roomId) {
+                    setActiveWizardTabId(tab.id);
+                    alert(`Bitte wählen Sie ein Zimmer für "${tab.label}".`);
+                    return;
+                }
+
+                if (checkRoomOverlap(tab.data.roomId, tab.data.startDate, tab.data.endDate)) {
+                    setActiveWizardTabId(tab.id);
+                    alert(`Hinweis: Der Raum für "${tab.label}" ist in diesem Zeitraum bereits belegt.`);
+                    return;
+                }
             }
 
-            await db.execute(
-                "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [booking.id, booking.room_id, booking.guest_id, booking.occasion, booking.start_date, booking.end_date, booking.status, booking.payment_status, booking.estimated_arrival_time, booking.group_id, booking.is_family_room, booking.has_dog, booking.is_allergy_friendly, booking.has_mobility_impairment, booking.guests_per_room, booking.stay_type, booking.dog_count, booking.child_count, booking.extra_bed_count]
-            );
+            // 3. Save Bookings
+            const mainGuestId = wizardTabs[0].data.guestId;
 
-            // Wait for DB op to finish before resetting or closing
+            for (const tab of wizardTabs) {
+                const data = tab.data;
+                const bookingId = crypto.randomUUID();
+
+                // Use selected guest OR fallback to main guest
+                const finalGuestId = data.guestId || mainGuestId;
+
+                await db.execute(
+                    "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [bookingId, data.roomId, finalGuestId, data.occasion, data.startDate, data.endDate, data.status || "Draft", "Offen", data.arrivalTime, groupIdToUse, data.isFamilyRoom ? 1 : 0, data.dogCount > 0 ? 1 : 0, data.isAllergyFriendly ? 1 : 0, data.hasMobilityImpairment ? 1 : 0, data.guestsPerRoom, data.stayType, data.dogCount, data.childCount, data.extraBedCount, tab.id === wizardTabs[0].id ? 1 : 0]
+                );
+
+                // Save Breakfast
+                const days = getDaysArray(data.startDate, data.endDate);
+                const tabBreakfastData = tab.breakfastData || {}; // Use tab specific breakfast data
+                for (const day of days) {
+                    const dayOptions = tabBreakfastData[day] || [];
+                    if (dayOptions.length > 0) {
+                        for (const opt of dayOptions) {
+                            await db.execute(
+                                "INSERT INTO breakfast_options (id, booking_id, date, time, comments, is_included, is_prepared, guest_count, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                [crypto.randomUUID(), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1]
+                            );
+                        }
+                    }
+                }
+            }
+
+            // 4. Cleanup & Success
             await loadData();
             setIsBookingOpen(false);
 
-            // Set success data and show modal ONLY for hard bookings (Fest buchen)
-            if (status === "Hard-Booked") {
-                const roomName = rooms.find(r => r.id === booking.room_id)?.name || "Unbekanntes Zimmer";
+            if (wizardTabs.some(t => t.data.status === "Hard-Booked")) {
+                const firstTab = wizardTabs[0];
+                const roomName = rooms.find(r => r.id === firstTab.data.roomId)?.name || "Unbekanntes Zimmer";
+                // Show success for main guest
                 setSuccessBookingData({
-                    guestName: finalWizardData.guestName,
+                    guestName: firstTab.data.guestName,
                     roomName: roomName,
-                    startDate: booking.start_date,
-                    endDate: booking.end_date,
-                    guestCount: booking.guests_per_room,
-                    childCount: booking.child_count,
-                    extraBedCount: booking.extra_bed_count,
-                    dogCount: booking.dog_count,
-                    occasion: booking.occasion || "Standard",
-                    stayType: booking.stay_type || "privat",
-                    arrivalTime: booking.estimated_arrival_time,
-                    isAllergyFriendly: booking.is_allergy_friendly === 1,
-                    hasMobilityImpairment: booking.has_mobility_impairment === 1,
-                    hasDog: booking.has_dog === 1
+                    startDate: firstTab.data.startDate,
+                    endDate: firstTab.data.endDate,
+                    guestCount: wizardTabs.reduce((acc, t) => acc + (t.data.guestsPerRoom || 1), 0),
+                    childCount: firstTab.data.childCount,
+                    extraBedCount: firstTab.data.extraBedCount,
+                    dogCount: firstTab.data.dogCount,
+                    occasion: firstTab.data.occasion || "Standard",
+                    stayType: firstTab.data.stayType || "privat",
+                    arrivalTime: firstTab.data.arrivalTime,
+                    isAllergyFriendly: firstTab.data.isAllergyFriendly,
+                    hasMobilityImpairment: firstTab.data.hasMobilityImpairment,
+                    hasDog: firstTab.data.dogCount > 0
                 });
                 setShowSuccessModal(true);
             }
 
-            // Moved resetWizard to after everything is done, though isBookingOpen(false) might trigger it via onOpenChange also.
             resetWizard();
         } catch (error) {
-            console.error("Failed to add booking:", error);
+            console.error("Failed to add bookings:", error);
         }
     };
 
     const resetWizard = () => {
 
         setIsCreatingGuest(false);
-        setWizardData({
-            guestId: "",
-            guestName: "",
-            startDate: "",
-            endDate: "",
-            roomType: "",
-            roomId: "",
-            occasion: "",
-            arrivalTime: "",
-            groupId: "", // Added for group selection
-            newGroupName: "", // Added for new group creation
-            isFamilyRoom: false,
-            guestsPerRoom: 1,
-            stayType: "beruflich",
-            dogCount: 0,
-            childCount: 0,
-            extraBedCount: 0,
-            isAllergyFriendly: false,
-            hasMobilityImpairment: false
-        });
+        const initialTab: BookingTab = {
+            id: "tab-1",
+            label: "Hauptgast",
+            data: DEFAULT_WIZARD_DATA,
+            breakfastData: {}
+        };
+        setWizardTabs([initialTab]);
+        setActiveWizardTabId("tab-1");
+
+        setWizardTab("details");
         setGuestSearch("");
+        setGroupSearch("");
     };
 
     const handleExport = async () => {
@@ -1216,470 +1487,717 @@ function BookingsList() {
                                 <Plus className="w-4 h-4 mr-2" /> Neue Buchung
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-6">
+                        <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[95vh] flex flex-col p-6 overflow-hidden">
                             <DialogHeader className="mb-4 shrink-0">
-                                <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                                    <div className="p-2 bg-blue-600 rounded-lg text-white">
-                                        <Plus className="w-5 h-5" />
+                                <DialogTitle className="text-2xl font-bold flex flex-col gap-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 bg-blue-600 rounded-lg text-white">
+                                                <Plus className="w-5 h-5" />
+                                            </div>
+                                            Buchungs-Assistent
+                                        </div>
+                                        <div className="flex bg-zinc-100 p-1 rounded-lg">
+                                            <button
+                                                onClick={() => setWizardTab("details")}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-sm font-bold rounded-md transition-all",
+                                                    wizardTab === "details" ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                                )}
+                                            >
+                                                Buchungsdaten
+                                            </button>
+                                            <button
+                                                disabled={!wizardData.startDate || !wizardData.endDate}
+                                                onClick={() => setWizardTab("breakfast")}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-sm font-bold rounded-md transition-all",
+                                                    wizardTab === "breakfast" ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900",
+                                                    (!wizardData.startDate || !wizardData.endDate) && "opacity-50 cursor-not-allowed"
+                                                )}
+                                            >
+                                                Frühstück
+                                            </button>
+                                        </div>
                                     </div>
-                                    Buchungs-Assistent
+
+                                    {/* Group Booking Tabs */}
+                                    <div className="flex items-center gap-2 -mb-2 overflow-x-auto pb-2 scrollbar-thin border-b border-zinc-200">
+                                        {wizardTabs.map(tab => (
+                                            <div
+                                                key={tab.id}
+                                                className={cn(
+                                                    "px-4 py-2 text-sm font-bold rounded-t-lg border-b-2 cursor-pointer transition-colors whitespace-nowrap flex items-center gap-2 select-none",
+                                                    tab.id === activeWizardTabId
+                                                        ? "border-blue-600 text-blue-600 bg-blue-50/50"
+                                                        : "border-transparent text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50"
+                                                )}
+                                                onClick={() => {
+                                                    setActiveWizardTabId(tab.id);
+                                                    if (editingTabId !== tab.id) setEditingTabId(null);
+                                                }}
+                                                onDoubleClick={() => setEditingTabId(tab.id)}
+                                            >
+                                                <div className={cn(
+                                                    "w-2 h-2 rounded-full",
+                                                    tab.data.status === "Hard-Booked" ? "bg-blue-500" :
+                                                        tab.data.status === "Storniert" ? "bg-red-500" :
+                                                            "bg-zinc-300"
+                                                )} />
+                                                {editingTabId === tab.id ? (
+                                                    <input
+                                                        autoFocus
+                                                        className="bg-white border border-blue-300 rounded px-1 py-0.5 text-sm w-24 outline-none text-blue-900"
+                                                        value={tab.label}
+                                                        onChange={(e) => setWizardTabs(prev => prev.map(t => t.id === tab.id ? { ...t, label: e.target.value } : t))}
+                                                        onBlur={() => setEditingTabId(null)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") setEditingTabId(null);
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div className="flex items-center gap-1.5">
+                                                        {tab.id === wizardTabs[0].id && (
+                                                            <Crown className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                                                        )}
+                                                        <span className="truncate max-w-[120px]">{tab.label}</span>
+                                                        {wizardTabs.length > 1 && (
+                                                            <div
+                                                                className="p-0.5 rounded-full hover:bg-zinc-200"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (wizardTabs.length > 1) {
+                                                                        const newTabs = wizardTabs.filter(t => t.id !== tab.id);
+                                                                        setWizardTabs(newTabs);
+                                                                        if (activeWizardTabId === tab.id) {
+                                                                            setActiveWizardTabId(newTabs[0].id);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <XCircle className="w-3.5 h-3.5 opacity-50 hover:opacity-100 hover:text-red-500" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+
+                                        <button
+                                            disabled={(!wizardTabs[0].data.groupId || wizardTabs[0].data.groupId === "none") && (!wizardTabs[0].data.newGroupName)}
+                                            onClick={() => {
+                                                const newId = crypto.randomUUID();
+                                                const mainTab = wizardTabs[0];
+                                                setWizardTabs(prev => [...prev, {
+                                                    id: newId,
+                                                    label: `Gast ${prev.length + 1}`,
+                                                    data: {
+                                                        ...DEFAULT_WIZARD_DATA,
+                                                        roomId: "",
+                                                        guestId: "",
+                                                        guestName: "",
+                                                        // Inherit Group & Dates
+                                                        groupId: mainTab.data.groupId,
+                                                        newGroupName: mainTab.data.newGroupName,
+                                                        startDate: mainTab.data.startDate,
+                                                        endDate: mainTab.data.endDate,
+                                                        arrivalTime: mainTab.data.arrivalTime
+                                                    },
+                                                    breakfastData: {}
+                                                }]);
+                                                setActiveWizardTabId(newId);
+                                            }}
+                                            className="p-1 rounded-full hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed ml-2"
+                                            title={(!wizardTabs[0].data.groupId && !wizardTabs[0].data.newGroupName) ? "Bitte erst eine Gruppe am Hauptgast festlegen" : "Weiteren Gast hinzufügen"}
+                                        >
+                                            <Plus className="w-5 h-5 text-zinc-400" />
+                                        </button>
+                                    </div>
                                 </DialogTitle>
                             </DialogHeader>
 
-                            <div className="flex-1 min-h-0 grid grid-cols-12 gap-6">
-                                {/* SPALTE 1: GAST (3 Spalten) */}
-                                <div className="col-span-3 flex flex-col gap-4 border-r border-zinc-100 pr-6 overflow-y-auto">
-                                    <div>
-                                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3 block">1. Gast wählen</Label>
+                            {wizardTab === "details" ? (
+                                <div className="flex-1 min-h-0 grid grid-cols-12 gap-6">
+                                    {/* SPALTE 1: GAST (3 Spalten) */}
+                                    <div className={cn(
+                                        "col-span-3 transition-all duration-500 min-h-0",
+                                        !wizardData.guestId ? "running-border-container shadow-2xl scale-[1.02]" : "border-r border-zinc-100 pr-6 flex flex-col"
+                                    )}>
+                                        <div className={cn(
+                                            "flex flex-col gap-4 overflow-y-auto flex-1",
+                                            !wizardData.guestId ? "running-border-content p-4" : ""
+                                        )}>
+                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3 block">1. Gast wählen</Label>
 
-                                        {isCreatingGuest ? (
-                                            <form onSubmit={handleCreateGuest} className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30 space-y-3">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="font-bold text-blue-700 dark:text-blue-400 text-sm">Neuer Gast</h4>
-                                                    <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setIsCreatingGuest(false)}>
-                                                        <XCircle className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div className="space-y-1">
-                                                        <Label className="text-[10px]">Vorname</Label>
-                                                        <Input name="first_name" required className="h-8 text-xs" placeholder="Max" />
-                                                    </div>
-                                                    <div className="space-y-1">
-                                                        <Label className="text-[10px]">Nachname</Label>
-                                                        <Input name="last_name" required className="h-8 text-xs" placeholder="Mustermann" />
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px]">E-Mail</Label>
-                                                    <Input name="email" type="email" className="h-8 text-xs" placeholder="max@beispiel.de" />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px]">Telefon</Label>
-                                                    <Input name="phone" type="tel" className="h-8 text-xs" placeholder="+49..." />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px]">Firma</Label>
-                                                    <Input name="company" className="h-8 text-xs" placeholder="Optional" />
-                                                </div>
-                                                <Button type="submit" size="sm" className="w-full bg-blue-600 font-bold text-xs mt-2">Gast speichern</Button>
-                                            </form>
-                                        ) : (
-                                            <>
-                                                <div className="relative mb-3">
-                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                                                    <Input
-                                                        placeholder="Gast suchen..."
-                                                        className="pl-9 h-10 bg-white shadow-sm"
-                                                        value={guestSearch}
-                                                        onChange={(e) => setGuestSearch(e.target.value)}
-                                                    />
-                                                </div>
-
-                                                {wizardData.guestId && (
-                                                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 mb-4 relative group">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            onClick={() => setWizardData(prev => ({ ...prev, guestId: "", guestName: "" }))}
-                                                        >
-                                                            <XCircle className="w-4 h-4 text-blue-400 hover:text-blue-600" />
+                                            {isCreatingGuest ? (
+                                                <form onSubmit={handleCreateGuest} className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30 space-y-3">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <h4 className="font-bold text-blue-700 dark:text-blue-400 text-sm">Neuer Gast</h4>
+                                                        <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setIsCreatingGuest(false)}>
+                                                            <XCircle className="w-4 h-4" />
                                                         </Button>
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
-                                                                {wizardData.guestName.charAt(0)}
-                                                            </div>
-                                                            <div className="overflow-hidden">
-                                                                <div className="text-[10px] text-blue-600 font-bold uppercase">Ausgewählt</div>
-                                                                <div className="font-bold text-sm truncate">{wizardData.guestName}</div>
-                                                            </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div className="space-y-1">
+                                                            <Label className="text-[10px]">Vorname</Label>
+                                                            <Input name="first_name" required className="h-8 text-xs" placeholder="Max" />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <Label className="text-[10px]">Nachname</Label>
+                                                            <Input name="last_name" required className="h-8 text-xs" placeholder="Mustermann" />
                                                         </div>
                                                     </div>
-                                                )}
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px]">E-Mail</Label>
+                                                        <Input name="email" type="email" className="h-8 text-xs" placeholder="max@beispiel.de" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px]">Telefon</Label>
+                                                        <Input name="phone" type="tel" className="h-8 text-xs" placeholder="+49..." />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px]">Firma</Label>
+                                                        <Input name="company" className="h-8 text-xs" placeholder="Optional" />
+                                                    </div>
+                                                    <Button type="submit" size="sm" className="w-full bg-blue-600 font-bold text-xs mt-2">Gast speichern</Button>
+                                                </form>
+                                            ) : (
+                                                <>
+                                                    <div className="relative mb-3">
+                                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                        <Input
+                                                            placeholder="Gast suchen..."
+                                                            className="pl-9 h-10 bg-white shadow-sm"
+                                                            value={guestSearch}
+                                                            onChange={(e) => setGuestSearch(e.target.value)}
+                                                        />
+                                                    </div>
 
-                                                <div className="space-y-1 overflow-y-auto max-h-[400px] pr-1">
-                                                    {filteredWizardGuests.map(g => (
-                                                        <button
-                                                            key={g.id}
-                                                            onClick={() => setWizardData(prev => ({ ...prev, guestId: g.id, guestName: g.name }))}
-                                                            className={cn(
-                                                                "w-full flex items-center justify-between p-2.5 rounded-lg border text-left transition-all",
-                                                                wizardData.guestId === g.id
-                                                                    ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20"
-                                                                    : "border-transparent hover:bg-zinc-50 hover:border-zinc-200"
-                                                            )}
-                                                        >
-                                                            <div className="overflow-hidden">
-                                                                <div className={cn("font-bold text-sm truncate", wizardData.guestId === g.id ? "text-white" : "text-zinc-900")}>{g.name}</div>
-                                                                <div className={cn("text-xs truncate", wizardData.guestId === g.id ? "text-blue-100" : "text-zinc-500")}>{g.company || "Privatgast"}</div>
+                                                    {wizardData.guestId && (
+                                                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 mb-4 relative group">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                onClick={() => setWizardData(prev => ({ ...prev, guestId: "", guestName: "" }))}
+                                                            >
+                                                                <XCircle className="w-4 h-4 text-blue-400 hover:text-blue-600" />
+                                                            </Button>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
+                                                                    {wizardData.guestName.charAt(0)}
+                                                                </div>
+                                                                <div className="overflow-hidden">
+                                                                    <div className="text-[10px] text-blue-600 font-bold uppercase">Ausgewählt</div>
+                                                                    <div className="font-bold text-sm truncate">{wizardData.guestName}</div>
+                                                                </div>
                                                             </div>
-                                                            {wizardData.guestId === g.id && <Check className="w-4 h-4 text-white" />}
-                                                        </button>
-                                                    ))}
+                                                        </div>
+                                                    )}
 
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        className="w-full h-10 border-dashed border-zinc-300 text-zinc-500 hover:border-blue-500 hover:text-blue-600 mt-2"
-                                                        onClick={() => setIsCreatingGuest(true)}
-                                                    >
-                                                        <UserPlus className="w-4 h-4 mr-2" />
-                                                        Neuen Gast anlegen
-                                                    </Button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* SPALTE 2: DETAILS (4 Spalten) */}
-                                <div className="col-span-4 flex flex-col gap-5 border-r border-zinc-100 pr-6 overflow-y-auto">
-                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Zeitraum & Details</Label>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <Label className="text-xs">Anreise</Label>
-                                            <div className="relative">
-                                                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                                                <Input
-                                                    type="date"
-                                                    required
-                                                    className="pl-9 h-10"
-                                                    value={wizardData.startDate}
-                                                    onChange={(e) => setWizardData(prev => ({ ...prev, startDate: e.target.value }))}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label className="text-xs">Abreise</Label>
-                                            <div className="relative">
-                                                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                                                <Input
-                                                    type="date"
-                                                    required
-                                                    className="pl-9 h-10"
-                                                    value={wizardData.endDate}
-                                                    onChange={(e) => setWizardData(prev => ({ ...prev, endDate: e.target.value }))}
-                                                    min={wizardData.startDate}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <Label className="text-xs">Gruppe (Optional)</Label>
-                                        <div className="relative group">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
-                                            <Input
-                                                placeholder="Gruppe suchen oder erstellen..."
-                                                className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
-                                                value={groupSearch}
-                                                onFocus={() => setIsWizardGroupSearchFocused(true)}
-                                                onBlur={() => setTimeout(() => setIsWizardGroupSearchFocused(false), 200)}
-                                                onChange={(e) => {
-                                                    setGroupSearch(e.target.value);
-                                                    if (e.target.value === "") {
-                                                        setWizardData(prev => ({ ...prev, groupId: "none", newGroupName: "" }));
-                                                    } else {
-                                                        const match = groups.find(g => g.name.toLowerCase() === e.target.value.toLowerCase());
-                                                        if (match) {
-                                                            setWizardData(prev => ({ ...prev, groupId: match.id, newGroupName: "" }));
-                                                        } else {
-                                                            setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: e.target.value }));
-                                                        }
-                                                    }
-                                                }}
-                                            />
-
-                                            {isWizardGroupSearchFocused && groupSearch && !groups.some(g => g.name.toLowerCase() === groupSearch.toLowerCase()) && (
-                                                <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
-                                                    <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
-                                                    <button
-                                                        type="button"
-                                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                                                        onClick={() => {
-                                                            setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: groupSearch }));
-                                                            setIsWizardGroupSearchFocused(false);
-                                                        }}
-                                                    >
-                                                        <Plus className="w-4 h-4" /> "{groupSearch}" erstellen
-                                                    </button>
-                                                </div>
-                                            )}
-                                            {isWizardGroupSearchFocused && (
-                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
-                                                    {groups
-                                                        .filter(g => !groupSearch || (g.name.toLowerCase().includes(groupSearch.toLowerCase()) && g.name.toLowerCase() !== groupSearch.toLowerCase()))
-                                                        .map(g => (
+                                                    <div className="space-y-1 overflow-y-auto max-h-[400px] pr-1">
+                                                        {filteredWizardGuests.map(g => (
                                                             <button
                                                                 key={g.id}
-                                                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
-                                                                onClick={() => {
-                                                                    setGroupSearch(g.name);
-                                                                    setWizardData(prev => ({ ...prev, groupId: g.id, newGroupName: "" }));
-                                                                }}
+                                                                onClick={() => setWizardData(prev => ({ ...prev, guestId: g.id, guestName: g.name }))}
+                                                                className={cn(
+                                                                    "w-full flex items-center justify-between p-2.5 rounded-lg border text-left transition-all",
+                                                                    wizardData.guestId === g.id
+                                                                        ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20"
+                                                                        : "border-transparent hover:bg-zinc-50 hover:border-zinc-200"
+                                                                )}
                                                             >
-                                                                <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
-                                                                {groupSearch === g.name && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                                <div className="overflow-hidden">
+                                                                    <div className={cn("font-bold text-sm truncate", wizardData.guestId === g.id ? "text-white" : "text-zinc-900")}>{g.name}</div>
+                                                                    <div className={cn("text-xs truncate", wizardData.guestId === g.id ? "text-blue-100" : "text-zinc-500")}>{g.company || "Privatgast"}</div>
+                                                                </div>
+                                                                {wizardData.guestId === g.id && <Check className="w-4 h-4 text-white" />}
                                                             </button>
-                                                        ))
-                                                    }
-                                                    {groups.length === 0 && (
-                                                        <div className="px-3 py-4 text-xs text-zinc-400 italic text-center">Keine Gruppen vorhanden</div>
-                                                    )}
-                                                </div>
+                                                        ))}
+
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            className="w-full h-10 border-dashed border-zinc-300 text-zinc-500 hover:border-blue-500 hover:text-blue-600 mt-2"
+                                                            onClick={() => setIsCreatingGuest(true)}
+                                                        >
+                                                            <UserPlus className="w-4 h-4 mr-2" />
+                                                            Neuen Gast anlegen
+                                                        </Button>
+                                                    </div>
+                                                </>
                                             )}
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Buchungstyp</Label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
-                                                <Button
-                                                    key={opt}
-                                                    type="button"
-                                                    variant={wizardData.occasion === opt ? "default" : "outline"}
-                                                    className={cn(
-                                                        "h-8 text-xs font-medium",
-                                                        wizardData.occasion === opt ? "bg-blue-600 hover:bg-blue-700" : "text-zinc-600"
-                                                    )}
-                                                    onClick={() => setWizardData(prev => ({ ...prev, occasion: opt }))}
-                                                >
-                                                    {opt}
-                                                </Button>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    {/* SPALTE 2: DETAILS (4 Spalten) */}
+                                    <div className={cn(
+                                        "col-span-4 transition-all duration-500 min-h-0",
+                                        wizardData.guestId && (!wizardData.startDate || !wizardData.endDate) ? "running-border-container shadow-2xl scale-[1.02]" : "border-r border-zinc-100 pr-6 flex flex-col"
+                                    )}>
+                                        <div className={cn(
+                                            "flex flex-col gap-4 overflow-y-auto flex-1",
+                                            wizardData.guestId && (!wizardData.startDate || !wizardData.endDate) ? "running-border-content p-4" : ""
+                                        )}>
+                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Zeitraum & Details</Label>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
-                                            <Input
-                                                type="number"
-                                                min="1"
-                                                className="h-9"
-                                                value={wizardData.guestsPerRoom}
-                                                onChange={(e) => setWizardData(prev => ({ ...prev, guestsPerRoom: parseInt(e.target.value) || 1 }))}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
-                                            <Select
-                                                value={wizardData.stayType}
-                                                onValueChange={(val) => setWizardData(prev => ({ ...prev, stayType: val }))}
-                                            >
-                                                <SelectTrigger className="h-9">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="privat">Privat</SelectItem>
-                                                    <SelectItem value="beruflich">Beruflich</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-4 gap-2">
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                className="h-8 text-xs"
-                                                value={wizardData.dogCount}
-                                                onChange={(e) => setWizardData(prev => ({ ...prev, dogCount: parseInt(e.target.value) || 0 }))}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                className="h-8 text-xs"
-                                                value={wizardData.childCount}
-                                                onChange={(e) => setWizardData(prev => ({ ...prev, childCount: parseInt(e.target.value) || 0 }))}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                className="h-8 text-xs"
-                                                value={wizardData.extraBedCount}
-                                                onChange={(e) => setWizardData(prev => ({ ...prev, extraBedCount: parseInt(e.target.value) || 0 }))}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
-                                            <Input
-                                                type="time"
-                                                className="h-8 text-xs"
-                                                value={wizardData.arrivalTime}
-                                                onChange={(e) => setWizardData(prev => ({ ...prev, arrivalTime: e.target.value }))}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-2 pt-2">
-                                        <div className="flex items-center space-x-2">
-                                            <Switch
-                                                id="wizard-allergy"
-                                                checked={wizardData.isAllergyFriendly}
-                                                onCheckedChange={(val) => setWizardData(prev => ({ ...prev, isAllergyFriendly: val }))}
-                                            />
-                                            <Label htmlFor="wizard-allergy" className="text-xs font-medium">Allergikerfreundlich benötigt</Label>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                            <Switch
-                                                id="wizard-mobility"
-                                                checked={wizardData.hasMobilityImpairment}
-                                                onCheckedChange={(val) => setWizardData(prev => ({ ...prev, hasMobilityImpairment: val }))}
-                                            />
-                                            <Label htmlFor="wizard-mobility" className="text-xs font-medium">Barrierefreiheit benötigt</Label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* SPALTE 3: ZIMMER (5 Spalten) */}
-                                <div className="col-span-5 flex flex-col gap-4 overflow-y-auto">
-                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">3. Zimmer wählen</Label>
-
-                                    <div className="space-y-3">
-                                        <div className="text-sm font-medium mb-1">Zimmertyp filtern</div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {roomTypes.map(type => {
-                                                const availableCount = roomTypeAvailability[type] || 0;
-                                                const isDisabled = availableCount === 0;
-                                                return (
-                                                    <button
-                                                        key={type}
-                                                        disabled={isDisabled}
-                                                        onClick={() => {
-                                                            setWizardData(prev => ({
-                                                                ...prev,
-                                                                roomType: prev.roomType === type ? "" : type, // Toggle 
-                                                                roomId: "" // Reset selection on change
-                                                            }))
-                                                        }}
-                                                        className={cn(
-                                                            "flex flex-col items-start p-2 rounded-lg border transition-all text-left",
-                                                            wizardData.roomType === type
-                                                                ? "bg-blue-600 border-blue-600 text-white shadow-md ring-2 ring-blue-600/20"
-                                                                : isDisabled
-                                                                    ? "opacity-50 cursor-not-allowed bg-zinc-50 border-zinc-200"
-                                                                    : "border-zinc-200 hover:border-blue-400 hover:bg-blue-50"
-                                                        )}
-                                                    >
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            {getRoomIcon(type, cn("w-4 h-4", wizardData.roomType === type ? "text-white" : "text-zinc-400"))}
-                                                            <span className={cn("font-bold text-xs truncate", wizardData.roomType === type ? "text-white" : "text-zinc-900")}>{type}</span>
-                                                        </div>
-                                                        <span className={cn("text-[9px] font-bold uppercase",
-                                                            wizardData.roomType === type ? "text-blue-100" : (isDisabled ? "text-red-500" : "text-emerald-600")
-                                                        )}>
-                                                            {(wizardData.startDate && wizardData.endDate) && (
-                                                                isDisabled ? "Voll" : `${availableCount} verfügbar`
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs flex items-center">Anreise <span className="text-red-500 ml-1 font-bold">*</span></Label>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                        <Input
+                                                            type="date"
+                                                            required
+                                                            className={cn(
+                                                                "pl-9 h-10 transition-all",
+                                                                wizardData.guestId && !wizardData.startDate ? "field-active-highlight" : ""
                                                             )}
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })}
+                                                            value={wizardData.startDate}
+                                                            onChange={(e) => setWizardData(prev => ({ ...prev, startDate: e.target.value }))}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs flex items-center">Abreise <span className="text-red-500 ml-1 font-bold">*</span></Label>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                        <Input
+                                                            type="date"
+                                                            required
+                                                            className={cn(
+                                                                "pl-9 h-10 transition-all",
+                                                                wizardData.guestId && !wizardData.endDate ? "field-active-highlight" : ""
+                                                            )}
+                                                            value={wizardData.endDate}
+                                                            onChange={(e) => setWizardData(prev => ({ ...prev, endDate: e.target.value }))}
+                                                            min={wizardData.startDate}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <Label className="text-xs">Gruppe (Optional)</Label>
+                                            <div className="relative group">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                                <Input
+                                                    placeholder="Gruppe suchen oder erstellen..."
+                                                    className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
+                                                    value={groupSearch}
+                                                    onFocus={() => setIsWizardGroupSearchFocused(true)}
+                                                    onBlur={() => setTimeout(() => setIsWizardGroupSearchFocused(false), 200)}
+                                                    onChange={(e) => {
+                                                        setGroupSearch(e.target.value);
+                                                        if (e.target.value === "") {
+                                                            setWizardData(prev => ({ ...prev, groupId: "none", newGroupName: "" }));
+                                                        } else {
+                                                            const match = groups.find(g => g.name.toLowerCase() === e.target.value.toLowerCase());
+                                                            if (match) {
+                                                                setWizardData(prev => ({ ...prev, groupId: match.id, newGroupName: "" }));
+                                                            } else {
+                                                                setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: e.target.value }));
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+
+                                                {isWizardGroupSearchFocused && groupSearch && !groups.some(g => g.name.toLowerCase() === groupSearch.toLowerCase()) && (
+                                                    <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
+                                                        <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
+                                                        <button
+                                                            type="button"
+                                                            className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                                                            onClick={() => {
+                                                                setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: groupSearch }));
+                                                                setIsWizardGroupSearchFocused(false);
+                                                            }}
+                                                        >
+                                                            <Plus className="w-4 h-4" /> "{groupSearch}" erstellen
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {isWizardGroupSearchFocused && (
+                                                    <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                        {groups
+                                                            .filter(g => !groupSearch || (g.name.toLowerCase().includes(groupSearch.toLowerCase()) && g.name.toLowerCase() !== groupSearch.toLowerCase()))
+                                                            .map(g => (
+                                                                <button
+                                                                    key={g.id}
+                                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                    onClick={() => {
+                                                                        setGroupSearch(g.name);
+                                                                        setWizardData(prev => ({ ...prev, groupId: g.id, newGroupName: "" }));
+                                                                    }}
+                                                                >
+                                                                    <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
+                                                                    {groupSearch === g.name && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                                </button>
+                                                            ))
+                                                        }
+                                                        {groups.length === 0 && (
+                                                            <div className="px-3 py-4 text-xs text-zinc-400 italic text-center">Keine Gruppen vorhanden</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs">Buchungstyp</Label>
+                                                <div className="grid grid-cols-4 gap-2">
+                                                    {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
+                                                        <Button
+                                                            key={opt}
+                                                            type="button"
+                                                            variant={wizardData.occasion === opt ? "default" : "outline"}
+                                                            className={cn(
+                                                                "h-8 text-[10px] font-medium px-1",
+                                                                wizardData.occasion === opt ? "bg-blue-600 hover:bg-blue-700" : "text-zinc-600"
+                                                            )}
+                                                            onClick={() => setWizardData(prev => ({ ...prev, occasion: opt }))}
+                                                        >
+                                                            {opt}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="1"
+                                                        className="h-9"
+                                                        value={wizardData.guestsPerRoom}
+                                                        onChange={(e) => setWizardData(prev => ({ ...prev, guestsPerRoom: parseInt(e.target.value) || 1 }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
+                                                    <Select
+                                                        value={wizardData.stayType}
+                                                        onValueChange={(val) => setWizardData(prev => ({ ...prev, stayType: val }))}
+                                                    >
+                                                        <SelectTrigger className="h-9">
+                                                            <SelectValue placeholder="Wählen..." />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="privat">Privat</SelectItem>
+                                                            <SelectItem value="beruflich">Beruflich</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-4 gap-2">
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="h-8 text-xs"
+                                                        value={wizardData.dogCount}
+                                                        onChange={(e) => setWizardData(prev => ({ ...prev, dogCount: parseInt(e.target.value) || 0 }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="h-8 text-xs"
+                                                        value={wizardData.childCount}
+                                                        onChange={(e) => setWizardData(prev => ({ ...prev, childCount: parseInt(e.target.value) || 0 }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="h-8 text-xs"
+                                                        value={wizardData.extraBedCount}
+                                                        onChange={(e) => setWizardData(prev => ({ ...prev, extraBedCount: parseInt(e.target.value) || 0 }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
+                                                    <Input
+                                                        type="time"
+                                                        className="h-8 text-xs"
+                                                        value={wizardData.arrivalTime}
+                                                        onChange={(e) => setWizardData(prev => ({ ...prev, arrivalTime: e.target.value }))}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2 pt-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <Switch
+                                                        id="wizard-allergy"
+                                                        checked={wizardData.isAllergyFriendly}
+                                                        onCheckedChange={(val) => setWizardData(prev => ({ ...prev, isAllergyFriendly: val }))}
+                                                    />
+                                                    <Label htmlFor="wizard-allergy" className="text-xs font-medium">Allergikerfreundlich benötigt</Label>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <Switch
+                                                        id="wizard-mobility"
+                                                        checked={wizardData.hasMobilityImpairment}
+                                                        onCheckedChange={(val) => setWizardData(prev => ({ ...prev, hasMobilityImpairment: val }))}
+                                                    />
+                                                    <Label htmlFor="wizard-mobility" className="text-xs font-medium">Barrierefreiheit benötigt</Label>
+                                                </div>
+                                            </div>
+
                                         </div>
                                     </div>
 
-                                    <div className="flex-1 min-h-[200px] bg-zinc-50/50 dark:bg-zinc-900/20 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 overflow-y-auto">
-                                        {!wizardData.startDate || !wizardData.endDate ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-center text-zinc-400">
-                                                <Calendar className="w-8 h-8 mb-2 opacity-50" />
-                                                <p className="text-sm">Bitte erst Zeitraum wählen</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="text-xs font-bold text-zinc-500 uppercase">
-                                                        Verfügbare Zimmer {wizardData.roomType ? `(${wizardData.roomType})` : ""}
-                                                    </div>
-                                                    {wizardData.roomType && (
-                                                        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setWizardData(prev => ({ ...prev, roomType: "" }))}>
-                                                            Filter löschen
-                                                        </Button>
-                                                    )}
-                                                </div>
+                                    {/* SPALTE 3: ZIMMER (5 Spalten) */}
+                                    <div className={cn(
+                                        "col-span-5 transition-all duration-500 min-h-0",
+                                        wizardData.guestId && wizardData.startDate && wizardData.endDate && !wizardData.roomId ? "running-border-container shadow-2xl scale-[1.02]" : "flex flex-col"
+                                    )}>
+                                        <div className={cn(
+                                            "flex flex-col gap-4 overflow-y-auto flex-1",
+                                            wizardData.guestId && wizardData.startDate && wizardData.endDate && !wizardData.roomId ? "running-border-content p-4" : ""
+                                        )}>
+                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">3. Zimmer wählen</Label>
 
-                                                <div className="grid grid-cols-1 gap-2">
-                                                    {(wizardData.roomType ? allRoomsForType : rooms).map(room => {
-                                                        const isOccupied = checkRoomOverlap(room.id, wizardData.startDate, wizardData.endDate);
-
-                                                        // Filter manually if no type selected, but we want to show all available
-                                                        if (!wizardData.roomType && isOccupied) return null; // Hide occupied freely? Or show inactive? Let's show all if specific type not selected, but maybe sorted.
-
-                                                        // Actually let's just map all rooms effectively if no type filter
-                                                        if (!wizardData.roomType && typeof isOccupied === 'boolean' && isOccupied) return null; // Hide occupied when viewing "all" to reduce noise? Or better show lightly.
-
+                                            <div className="space-y-3">
+                                                <div className="text-sm font-medium mb-1">Zimmertyp filtern</div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {roomTypes.map(type => {
+                                                        const availableCount = roomTypeAvailability[type] || 0;
+                                                        const isDisabled = availableCount === 0;
                                                         return (
                                                             <button
-                                                                key={room.id}
-                                                                disabled={isOccupied}
-                                                                onClick={() => setWizardData(prev => ({ ...prev, roomId: room.id, roomType: room.type }))} // Set type if selecting from all
+                                                                key={type}
+                                                                disabled={isDisabled}
+                                                                onClick={() => {
+                                                                    setWizardData(prev => ({
+                                                                        ...prev,
+                                                                        roomType: prev.roomType === type ? "" : type, // Toggle 
+                                                                        roomId: "" // Reset selection on change
+                                                                    }))
+                                                                }}
                                                                 className={cn(
-                                                                    "p-3 rounded-xl border transition-all text-left flex items-center justify-between group",
-                                                                    wizardData.roomId === room.id
-                                                                        ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600 shadow-md"
-                                                                        : isOccupied
-                                                                            ? "hidden" // Hide occupied ones to keep list clean? Or opacity-50
-                                                                            : "border-zinc-100 bg-white hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm"
+                                                                    "flex items-center gap-2 p-1.5 rounded-lg border transition-all text-left",
+                                                                    wizardData.roomType === type
+                                                                        ? "bg-blue-600 border-blue-600 text-white shadow-md ring-2 ring-blue-600/20"
+                                                                        : isDisabled
+                                                                            ? "opacity-50 cursor-not-allowed bg-zinc-50 border-zinc-200"
+                                                                            : "border-zinc-200 hover:border-blue-400 hover:bg-blue-50"
                                                                 )}
                                                             >
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className={cn(
-                                                                        "w-8 h-8 rounded-lg flex items-center justify-center",
-                                                                        wizardData.roomId === room.id ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"
-                                                                    )}>
-                                                                        {getRoomIcon(room.type, "w-4 h-4")}
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className={cn("font-bold text-sm", wizardData.roomId === room.id ? "text-emerald-900" : "text-zinc-900")}>{room.name}</div>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <div className="text-[10px] text-zinc-500 font-medium uppercase">{room.type}</div>
-
-                                                                            {(!!room.is_allergy_friendly) && (
-                                                                                <div title="Allergikerfreundlich" className={cn("p-0.5 rounded", wizardData.roomId === room.id ? "bg-emerald-200" : "bg-pink-100")}>
-                                                                                    <Flower2 className={cn("w-3 h-3", wizardData.roomId === room.id ? "text-emerald-700" : "text-pink-500")} />
-                                                                                </div>
-                                                                            )}
-                                                                            {(!!room.is_accessible) && (
-                                                                                <div title="Barrierefrei" className={cn("p-0.5 rounded", wizardData.roomId === room.id ? "bg-emerald-200" : "bg-blue-100")}>
-                                                                                    <Accessibility className={cn("w-3 h-3", wizardData.roomId === room.id ? "text-emerald-700" : "text-blue-600")} />
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
+                                                                <div className="shrink-0">
+                                                                    {getRoomIcon(type, cn("w-4 h-4", wizardData.roomType === type ? "text-white" : "text-zinc-400"))}
                                                                 </div>
-                                                                <div className="text-right">
-                                                                    <div className={cn("font-bold", wizardData.roomId === room.id ? "text-emerald-600" : "text-blue-600")}>{room.base_price} €</div>
-                                                                    {wizardData.roomId === room.id && (
-                                                                        <div className="text-[10px] font-bold text-emerald-600 flex items-center justify-end gap-1">
-                                                                            <Check className="w-3 h-3" /> Gewählt
-                                                                        </div>
-                                                                    )}
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className={cn("font-bold text-[10px] truncate", wizardData.roomType === type ? "text-white" : "text-zinc-900")}>{type}</span>
+                                                                    <span className={cn("text-[8px] font-bold uppercase",
+                                                                        wizardData.roomType === type ? "text-blue-100" : (isDisabled ? "text-red-500" : "text-emerald-600")
+                                                                    )}>
+                                                                        {(wizardData.startDate && wizardData.endDate) && (
+                                                                            isDisabled ? "Voll" : `${availableCount}`
+                                                                        )}
+                                                                    </span>
                                                                 </div>
                                                             </button>
                                                         );
                                                     })}
-                                                    {(wizardData.roomType ? allRoomsForType : rooms).filter(r => !checkRoomOverlap(r.id, wizardData.startDate, wizardData.endDate)).length === 0 && (
-                                                        <div className="text-center py-8 text-zinc-400 text-sm italic">
-                                                            Keine freien Zimmer gefunden.
+                                                </div>
+                                            </div>
+
+                                            <div className="flex-1 min-h-[200px] bg-zinc-50/50 dark:bg-zinc-900/20 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 overflow-y-auto">
+                                                {!wizardData.startDate || !wizardData.endDate ? (
+                                                    <div className="h-full flex flex-col items-center justify-center text-center text-zinc-400">
+                                                        <Calendar className="w-8 h-8 mb-2 opacity-50" />
+                                                        <p className="text-sm">Bitte erst Zeitraum wählen</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="text-xs font-bold text-zinc-500 uppercase">
+                                                                Verfügbare Zimmer {wizardData.roomType ? `(${wizardData.roomType})` : ""}
+                                                            </div>
+                                                            {wizardData.roomType && (
+                                                                <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setWizardData(prev => ({ ...prev, roomType: "" }))}>
+                                                                    Filter löschen
+                                                                </Button>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {(wizardData.roomType ? allRoomsForType : rooms).map(room => {
+                                                                const isOccupied = checkRoomOverlap(room.id, wizardData.startDate, wizardData.endDate);
+                                                                const isSelectedInOtherTab = wizardTabs.some(t => t.id !== activeWizardTabId && t.data.roomId === room.id);
+
+                                                                if (isOccupied && !isSelectedInOtherTab) return null; // Hide normally occupied rooms? Or show them disabled? Current logic seemed to hide them or show specific style. 
+                                                                // Logic above was: isOccupied ? "hidden" (if we want to hide) or disabled style. 
+                                                                // Let's stick to showing available ones primarily, but for "Other Tab" we want to show and disable.
+
+                                                                return (
+                                                                    <button
+                                                                        key={room.id}
+                                                                        type="button"
+                                                                        disabled={isOccupied || isSelectedInOtherTab}
+                                                                        onClick={() => setWizardData(prev => ({ ...prev, roomId: room.id }))}
+                                                                        className={cn(
+                                                                            "p-2 rounded-xl border text-left transition-all relative overflow-hidden",
+                                                                            wizardData.roomId === room.id
+                                                                                ? "bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 shadow-md shadow-emerald-500/10"
+                                                                                : isSelectedInOtherTab
+                                                                                    ? "bg-amber-50/50 border-amber-200 border-dashed opacity-80"
+                                                                                    : isOccupied
+                                                                                        ? "opacity-50 grayscale cursor-not-allowed bg-zinc-50 border-zinc-200"
+                                                                                        : "border-zinc-100 bg-white hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm"
+                                                                        )}
+                                                                    >
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className={cn(
+                                                                                "w-7 h-7 shrink-0 rounded-lg flex items-center justify-center",
+                                                                                wizardData.roomId === room.id ? "bg-emerald-100 text-emerald-700" :
+                                                                                    isSelectedInOtherTab ? "bg-amber-100 text-amber-600" : "bg-zinc-100 text-zinc-500"
+                                                                            )}>
+                                                                                {getRoomIcon(room.type, "w-3.5 h-3.5")}
+                                                                            </div>
+                                                                            <div className="min-w-0">
+                                                                                <div className={cn("font-bold text-xs truncate", wizardData.roomId === room.id ? "text-emerald-900" : "text-zinc-900")}>{room.name}</div>
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <div className="text-[9px] text-zinc-500 font-medium uppercase truncate">{room.type}</div>
+
+                                                                                    {(!!room.is_allergy_friendly) && (
+                                                                                        <div title="Allergikerfreundlich" className={cn("p-0.5 rounded", wizardData.roomId === room.id ? "bg-emerald-200" : "bg-pink-100")}>
+                                                                                            <Flower2 className={cn("w-2.5 h-2.5", wizardData.roomId === room.id ? "text-emerald-700" : "text-pink-500")} />
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {(!!room.is_accessible) && (
+                                                                                        <div title="Barrierefrei" className={cn("p-0.5 rounded", wizardData.roomId === room.id ? "bg-emerald-200" : "bg-blue-100")}>
+                                                                                            <Accessibility className={cn("w-2.5 h-2.5", wizardData.roomId === room.id ? "text-emerald-700" : "text-blue-600")} />
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        {(wizardData.roomId === room.id || isSelectedInOtherTab) && (
+                                                                            <div className="text-right mt-0.5">
+                                                                                {wizardData.roomId === room.id && (
+                                                                                    <div className="text-[8px] font-bold text-emerald-600 flex items-center justify-end gap-0.5">
+                                                                                        <Check className="w-2.5 h-2.5" /> Gewählt
+                                                                                    </div>
+                                                                                )}
+                                                                                {isSelectedInOtherTab && (
+                                                                                    <div className="text-[8px] font-bold text-amber-600 flex items-center justify-end gap-0.5">
+                                                                                        <Ban className="w-2.5 h-2.5" /> Belegt
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                            {(wizardData.roomType ? allRoomsForType : rooms).filter(r => !checkRoomOverlap(r.id, wizardData.startDate, wizardData.endDate)).length === 0 && (
+                                                                <div className="text-center py-8 text-zinc-400 text-sm italic">
+                                                                    Keine freien Zimmer gefunden.
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex-1 min-h-0 flex flex-col pt-4">
+                                    <div className="space-y-4 max-h-full overflow-y-auto pr-2 pb-20">
+                                        {getDaysArray(wizardData.startDate, wizardData.endDate).map(day => {
+                                            const dayOptions = wizardBreakfastData[day] || [];
+                                            return (
+                                                <div key={day} className="p-4 border rounded-2xl bg-zinc-50 dark:bg-zinc-900 shadow-sm space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 italic">
+                                                            {new Date(day).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                                        </div>
+                                                        <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase" onClick={() => {
+                                                            const newItem = { id: crypto.randomUUID(), time: "08:00", comments: "" };
+                                                            setWizardBreakfastData(prev => ({
+                                                                ...prev,
+                                                                [day]: [...(prev[day] || []), newItem]
+                                                            }));
+                                                        }}>
+                                                            <Plus className="w-3 h-3 mr-1" /> Person hinzufügen
+                                                        </Button>
+                                                    </div>
+
+                                                    {dayOptions.length === 0 ? (
+                                                        <div className="flex items-center justify-center py-4 border-2 border-dashed border-zinc-200 rounded-xl">
+                                                            <button onClick={() => {
+                                                                const newItem = { id: crypto.randomUUID(), time: "08:00", comments: "" };
+                                                                setWizardBreakfastData(prev => ({
+                                                                    ...prev,
+                                                                    [day]: [...(prev[day] || []), newItem]
+                                                                }));
+                                                            }} className="text-xs text-zinc-400 font-medium hover:text-blue-500 transition-colors">
+                                                                Kein Frühstück geplant. Klicken zum Hinzufügen.
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            {dayOptions.map((opt, idx) => (
+                                                                <div key={opt.id} className="bg-white dark:bg-zinc-950 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 space-y-3">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <div className="text-[10px] font-black text-zinc-300 uppercase italic">Person {idx + 1}</div>
+                                                                        <button onClick={() => {
+                                                                            setWizardBreakfastData(prev => ({
+                                                                                ...prev,
+                                                                                [day]: prev[day].filter(item => item.id !== opt.id)
+                                                                            }));
+                                                                        }} className="text-zinc-300 hover:text-red-500 transition-colors">
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-3">
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-[10px] uppercase font-bold text-zinc-400">Zeit</Label>
+                                                                            <Input
+                                                                                type="time"
+                                                                                className="h-9 text-xs shadow-sm rounded-lg"
+                                                                                value={opt.time}
+                                                                                onChange={(e) => {
+                                                                                    setWizardBreakfastData(prev => ({
+                                                                                        ...prev,
+                                                                                        [day]: prev[day].map(item => item.id === opt.id ? { ...item, time: e.target.value } : item)
+                                                                                    }));
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-[10px] uppercase font-bold text-zinc-400">Hinweise</Label>
+                                                                            <Input
+                                                                                className="h-9 text-xs shadow-sm rounded-lg"
+                                                                                value={opt.comments}
+                                                                                placeholder="Allergien..."
+                                                                                onChange={(e) => {
+                                                                                    setWizardBreakfastData(prev => ({
+                                                                                        ...prev,
+                                                                                        [day]: prev[day].map(item => item.id === opt.id ? { ...item, comments: e.target.value } : item)
+                                                                                    }));
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     )}
                                                 </div>
-                                            </div>
-                                        )}
+                                            );
+                                        })}
                                     </div>
                                 </div>
-                            </div >
+                            )}
 
                             <DialogFooter className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-between shrink-0">
                                 <div className="text-xs text-zinc-500">
@@ -1689,27 +2207,42 @@ function BookingsList() {
                                         </span>
                                     )}
                                 </div>
+                                <div className="flex bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-1">
+                                    <button
+                                        onClick={() => setWizardData(prev => ({ ...prev, status: "Draft" }))}
+                                        className={cn(
+                                            "px-3 py-1 text-xs font-bold rounded-md transition-all",
+                                            wizardData.status === "Draft" ? "bg-white dark:bg-zinc-800 text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+                                        )}
+                                    >
+                                        Entwurf
+                                    </button>
+                                    <button
+                                        onClick={() => setWizardData(prev => ({ ...prev, status: "Hard-Booked" }))}
+                                        className={cn(
+                                            "px-3 py-1 text-xs font-bold rounded-md transition-all",
+                                            wizardData.status === "Hard-Booked" ? "bg-emerald-600 text-white shadow-sm" : "text-zinc-500 hover:text-emerald-600"
+                                        )}
+                                    >
+                                        Fest buchen
+                                    </button>
+                                </div>
                                 <div className="flex gap-3">
                                     <Button variant="ghost" onClick={() => setIsBookingOpen(false)}>Abbrechen</Button>
                                     <Button
-                                        variant="outline"
-                                        disabled={!wizardData.guestId || !wizardData.roomId || !wizardData.startDate}
-                                        onClick={() => finishWizard("Draft")}
-                                        className="border-dashed border-2 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50"
+                                        disabled={wizardTabs.some(t => !t.data.guestId && t.id === wizardTabs[0].id) || wizardTabs.some(t => !t.data.roomId || !t.data.startDate)}
+                                        className={cn(
+                                            "min-w-[200px] font-bold text-white shadow-lg transition-all",
+                                            wizardData.status === "Hard-Booked" ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20" : "bg-zinc-600 hover:bg-zinc-700 shadow-zinc-500/20"
+                                        )}
+                                        onClick={() => finishWizard()}
                                     >
-                                        Als Entwurf speichern
-                                    </Button>
-                                    <Button
-                                        disabled={!wizardData.guestId || !wizardData.roomId || !wizardData.startDate}
-                                        className="bg-emerald-600 hover:bg-emerald-700 min-w-[150px] font-bold text-white shadow-lg shadow-emerald-500/20"
-                                        onClick={() => finishWizard("Hard-Booked")}
-                                    >
-                                        Fest buchen <Check className="w-4 h-4 ml-2" />
+                                        {wizardData.status === "Hard-Booked" ? "Buchung abschließen" : "Entwurf speichern"} <Check className="w-4 h-4 ml-2" />
                                     </Button>
                                 </div>
                             </DialogFooter>
-                        </DialogContent >
-                    </Dialog >
+                        </DialogContent>
+                    </Dialog>
                     <BookingSuccessModal
                         isOpen={showSuccessModal}
                         onClose={() => setShowSuccessModal(false)}
@@ -1719,8 +2252,8 @@ function BookingsList() {
             </div>
 
             <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
-                <CardContent className="py-2.5 px-4">
-                    <div className="flex flex-wrap items-end gap-4">
+                <CardContent className="py-2.5 px-4 overflow-x-auto scrollbar-none">
+                    <div className="flex flex-nowrap items-end gap-4 min-w-max pb-1">
                         {/* Customer Search Filter */}
                         <div className="space-y-0.5 w-[180px] relative">
                             <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kunde suchen</Label>
@@ -1857,15 +2390,15 @@ function BookingsList() {
             </Card>
 
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-                <Table>
+                <Table className="table-fixed w-full">
                     <TableHeader>
                         <TableRow className="bg-zinc-50/50 dark:bg-zinc-800/50 border-none">
-                            <TableHead className="font-bold h-12">Gast / Gruppe</TableHead>
-                            <TableHead className="font-bold h-12">Zimmer</TableHead>
-                            <TableHead className="font-bold h-12">Zeitraum</TableHead>
-                            <TableHead className="font-bold h-12 text-center">Datenqualität</TableHead>
-                            <TableHead className="font-bold h-12">Status</TableHead>
-                            <TableHead className="text-right font-bold h-12 px-6">Aktionen</TableHead>
+                            <TableHead className="font-bold h-12 w-[30%]">Gast / Gruppe</TableHead>
+                            <TableHead className="font-bold h-12 w-[15%]">Zimmer</TableHead>
+                            <TableHead className="font-bold h-12 w-[20%]">Zeitraum</TableHead>
+                            <TableHead className="font-bold h-12 w-[10%] text-center">Datenqualität</TableHead>
+                            <TableHead className="font-bold h-12 w-[10%]">Status</TableHead>
+                            <TableHead className="text-right font-bold h-12 px-6 w-[15%]">Aktionen</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1879,7 +2412,7 @@ function BookingsList() {
                                 const isExpanded = !group || expandedGroups.has(group.id);
 
                                 return (
-                                    <React.Fragment key={group?.id || "individual"}>
+                                    <React.Fragment key={group ? group.id : groupBookings[0].id}>
                                         {isGroup && (
                                             <TableRow
                                                 className="bg-blue-50/50 hover:bg-blue-50 cursor-pointer border-l-4 border-l-blue-500"
@@ -2004,12 +2537,17 @@ function BookingsList() {
                                                                 }
                                                             }}
                                                             className={cn(
-                                                                "font-bold transition-colors cursor-pointer decoration-blue-200/50 hover:underline underline-offset-4",
+                                                                "font-bold transition-colors cursor-pointer decoration-blue-200/50 hover:underline underline-offset-4 truncate flex items-center",
                                                                 booking.status === "Storniert"
                                                                     ? "line-through text-zinc-500 decoration-red-500/70 decoration-2"
                                                                     : "text-zinc-900 hover:text-blue-600"
                                                             )}
                                                         >
+                                                            {booking.is_main_guest === 1 && (
+                                                                <span title="Hauptgast" className="flex items-center">
+                                                                    <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 mr-1.5 shrink-0" />
+                                                                </span>
+                                                            )}
                                                             {booking.guest_name}
                                                         </div>
                                                         {booking.occasion && (
@@ -2220,6 +2758,89 @@ function BookingsList() {
                         </div>
                     </DialogHeader>
 
+                    {/* Group Booking Tabs in Edit Mode */}
+                    <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 scrollbar-thin border-b border-zinc-200 px-6 -mx-6">
+                        {editTabs.map(tab => (
+                            <div
+                                key={tab.id}
+                                className={cn(
+                                    "px-4 py-2 text-sm font-bold rounded-t-lg border-b-2 cursor-pointer transition-colors whitespace-nowrap flex items-center gap-2 select-none",
+                                    tab.id === activeEditTabId
+                                        ? "border-blue-600 text-blue-600 bg-blue-50/50"
+                                        : "border-transparent text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50"
+                                )}
+                                onClick={() => {
+                                    setActiveEditTabId(tab.id);
+                                    loadBreakfast(tab.id); // Reload breakfast for the new tab
+                                }}
+                            >
+                                {tab.label}
+                            </div>
+                        ))}
+                        <button
+                            onClick={() => {
+                                const newId = crypto.randomUUID();
+                                // Determine group ID: use existing, or create new "virtual" one if none exists
+                                let groupId = editGroupId;
+                                let groupName = editGroupSearch;
+
+                                if (!groupId || groupId === "none") {
+                                    // If we are adding a tab to a single booking, we effective create a group
+                                    groupId = "new";
+                                    // Maybe ask for name? Or default to "Gruppe [First Guest]"?
+                                    // For now let's keep it "new" aka pending creation, and maybe auto-set group name if empty
+                                    if (!editNewGroupName) {
+                                        // If we have a guest name on the first tab, use that?
+                                        const firstGuestName = editTabs[0]?.booking?.guest_name?.split(' ').pop() || "Gast";
+                                        setEditNewGroupName(`Gruppe ${firstGuestName}`);
+                                    }
+                                }
+
+                                const newBooking: Booking = {
+                                    id: newId,
+                                    room_id: "",
+                                    guest_id: "",
+                                    start_date: editingBooking?.start_date || today, // inherit dates
+                                    end_date: editingBooking?.end_date || new Date(Date.now() + 86400000).toISOString().split('T')[0],
+                                    status: "Draft",
+                                    payment_status: "Offen",
+                                    group_id: groupId,
+                                    // Inherit other defaults
+                                    is_family_room: 0,
+                                    has_dog: 0,
+                                    is_allergy_friendly: 0,
+                                    has_mobility_impairment: 0,
+                                    guests_per_room: 1,
+                                    stay_type: "privat",
+                                    dog_count: 0,
+                                    child_count: 0,
+                                    extra_bed_count: 0
+                                };
+
+                                setEditTabs(prev => [...prev, {
+                                    id: newId,
+                                    label: "Neuer Gast",
+                                    booking: newBooking
+                                }]);
+                                setActiveEditTabId(newId);
+
+                                // Also update the CURRENT booking's group ID in state if it was "none"
+                                if (editGroupId === "none") {
+                                    setEditGroupId("new");
+                                    // Update all existing tabs in state to have this new group marker? 
+                                    // Not strictly necessary for their `booking` object until save, 
+                                    // but UI might need to know they are grouped.
+                                    // The `editGroupId` state is central for the dialog, so that covers it.
+                                }
+                            }}
+                            disabled={(!editGroupId || editGroupId === "none") && !editNewGroupName}
+                            className={`p-1 rounded-full ml-2 ${(!editGroupId || editGroupId === "none") && !editNewGroupName ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-100'}`}
+                            title={(!editGroupId || editGroupId === "none") && !editNewGroupName ? "Bitte erstellen Sie zuerst eine Gruppe oder geben Sie einen Gruppennamen ein" : "Weiteren Gast hinzufügen"}
+                        >
+                            <Plus className="w-5 h-5 text-zinc-400" />
+                        </button>
+                    </div>
+
                     {editingBooking && (
                         editTab === "details" ? (
                             <div className="flex-1 min-h-0 grid grid-cols-12 gap-6 overflow-hidden">
@@ -2228,17 +2849,80 @@ function BookingsList() {
                                     <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">1. Gast</Label>
 
                                     {/* Selected Guest Display */}
-                                    {editingBooking.guest_id && (
+                                    {editingBooking.guest_id ? (
                                         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 mb-2 relative group">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
                                                     {editingBooking.guest_name?.charAt(0) || "G"}
                                                 </div>
-                                                <div className="overflow-hidden">
+                                                <div className="overflow-hidden flex-1">
                                                     <div className="text-[10px] text-blue-600 font-bold uppercase">Aktueller Gast</div>
                                                     <div className="font-bold text-sm truncate">{editingBooking.guest_name}</div>
                                                 </div>
+                                                <button
+                                                    onClick={() => setEditingBooking(prev => prev ? ({ ...prev, guest_id: "", guest_name: "", guest_email: "", guest_phone: "" }) : null)}
+                                                    className="p-1 rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700 transition-colors"
+                                                    title="Gast entfernen"
+                                                >
+                                                    <XCircle className="w-4 h-4" />
+                                                </button>
                                             </div>
+                                        </div>
+                                    ) : (
+                                        <div className="relative group mb-4">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                            <Input
+                                                placeholder="Gast suchen oder erstellen..."
+                                                className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
+                                                value={editGuestSearch}
+                                                onFocus={() => setIsEditGuestSearchFocused(true)}
+                                                onBlur={() => setTimeout(() => setIsEditGuestSearchFocused(false), 200)}
+                                                onChange={(e) => {
+                                                    setEditGuestSearch(e.target.value);
+                                                    if (e.target.value === "") {
+                                                        // clear
+                                                    }
+                                                }}
+                                            />
+                                            {isEditGuestSearchFocused && (
+                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[200px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                    {editGuestSearch && !guests.some(g => g.name.toLowerCase() === editGuestSearch.toLowerCase()) && (
+                                                        <button
+                                                            type="button"
+                                                            className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors mb-1"
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                setEditingBooking(prev => prev ? ({ ...prev, guest_id: "new", guest_name: editGuestSearch }) : null);
+                                                                setIsEditGuestSearchFocused(false);
+                                                            }}
+                                                        >
+                                                            <Plus className="w-4 h-4" /> "{editGuestSearch}" neu erstellen
+                                                        </button>
+                                                    )}
+                                                    {guests
+                                                        .filter(g => !editGuestSearch || g.name.toLowerCase().includes(editGuestSearch.toLowerCase()))
+                                                        .slice(0, 10)
+                                                        .map(g => (
+                                                            <button
+                                                                type="button"
+                                                                key={g.id}
+                                                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                onMouseDown={(e) => {
+                                                                    e.preventDefault();
+                                                                    setEditingBooking(prev => prev ? ({ ...prev, guest_id: g.id, guest_name: g.name, guest_email: g.email, guest_phone: g.phone }) : null);
+                                                                    setEditGuestSearch("");
+                                                                    setIsEditGuestSearchFocused(false);
+                                                                }}
+                                                            >
+                                                                <div>
+                                                                    <div className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</div>
+                                                                    {(g.email || g.phone) && <div className="text-[9px] text-zinc-400">{g.email} {g.phone}</div>}
+                                                                </div>
+                                                            </button>
+                                                        ))
+                                                    }
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -2333,12 +3017,21 @@ function BookingsList() {
                                                 }}
                                             />
 
-                                            {editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
+                                            {isEditGroupSearchFocused && editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
                                                 <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
                                                     <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
-                                                    <div className="flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm">
+                                                    <button
+                                                        type="button"
+                                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault(); // Prevent blur
+                                                            setEditGroupId("new");
+                                                            setEditNewGroupName(editGroupSearch);
+                                                            setIsEditGroupSearchFocused(false);
+                                                        }}
+                                                    >
                                                         <Plus className="w-4 h-4" /> "{editGroupSearch}" erstellen
-                                                    </div>
+                                                    </button>
                                                 </div>
                                             )}
                                             {isEditGroupSearchFocused && (
@@ -2350,10 +3043,12 @@ function BookingsList() {
                                                                 type="button"
                                                                 key={g.id}
                                                                 className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
-                                                                onClick={() => {
+                                                                onMouseDown={(e) => {
+                                                                    e.preventDefault(); // Prevent blur
                                                                     setEditGroupSearch(g.name);
                                                                     setEditGroupId(g.id);
                                                                     setEditNewGroupName("");
+                                                                    setIsEditGroupSearchFocused(false); // Close dropdown
                                                                 }}
                                                             >
                                                                 <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
@@ -2579,7 +3274,7 @@ function BookingsList() {
                                                                 </div>
                                                             </div>
                                                             <div className="text-right">
-                                                                <div className={cn("font-bold", editingBooking.room_id === room.id ? "text-emerald-600" : "text-blue-600")}>{room.base_price} €</div>
+                                                                {/* Price removed */}
                                                                 {editingBooking.room_id === room.id && (
                                                                     <div className="text-[10px] font-bold text-emerald-600 flex items-center justify-end gap-1">
                                                                         <Check className="w-3 h-3" /> Gewählt
@@ -2740,36 +3435,26 @@ function BookingsList() {
                                                     </span>
                                                 </div>
 
-                                                <div className="space-y-2.5">
-                                                    <div className="flex justify-between items-center text-sm">
-                                                        <div className="flex flex-col">
-                                                            <span className="font-bold text-zinc-900 dark:text-zinc-100">{summary.nights} Übernachtungen</span>
-                                                            <span className="text-[10px] text-zinc-400 font-medium tracking-tight">Preis pro Nacht: {summary.roomPrice.toFixed(2)}€</span>
-                                                        </div>
-                                                        <span className="font-black text-zinc-900 dark:text-zinc-100">{summary.roomTotal.toFixed(2)} €</span>
+                                                <div className="space-y-4">
+                                                    <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                                        <span className="font-bold text-zinc-900 dark:text-zinc-100">Übernachtungen</span>
+                                                        <Badge variant="outline" className="bg-white dark:bg-zinc-900 font-bold text-base px-3 py-1">
+                                                            {summary.nights}x
+                                                        </Badge>
                                                     </div>
 
                                                     {summary.breakfastCount > 0 && (
-                                                        <div className="flex justify-between items-center text-sm">
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-blue-600">{summary.breakfastCount}x Frühstück</span>
-                                                                <span className="text-[10px] text-zinc-400 font-medium tracking-tight">Preis pro Person: {summary.breakfastPrice.toFixed(2)}€</span>
-                                                            </div>
-                                                            <span className="font-black text-blue-600">{summary.breakfastTotal.toFixed(2)} €</span>
+                                                        <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                                            <span className="font-bold text-zinc-900 dark:text-zinc-100">Frühstück (Anzahl)</span>
+                                                            <Badge variant="outline" className="bg-white dark:bg-zinc-900 font-bold text-base px-3 py-1 text-blue-600 border-blue-200">
+                                                                {summary.breakfastCount}x
+                                                            </Badge>
                                                         </div>
                                                     )}
                                                 </div>
 
-                                                <div className="pt-4 border-t border-dashed border-zinc-200 dark:border-zinc-700 mt-4">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100 uppercase tracking-tighter">Gesamtsumme</span>
-                                                        <div className="text-right">
-                                                            <div className="text-3xl font-black text-blue-600 font-mono italic tracking-tighter">
-                                                                {summary.grandTotal.toFixed(2)} €
-                                                            </div>
-                                                            <div className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase mb-1">Endrechnungsbetrag</div>
-                                                        </div>
-                                                    </div>
+                                                <div className="mt-4 text-center text-xs text-zinc-400">
+                                                    <p>Preise werden nicht mehr berechnet.</p>
                                                 </div>
                                             </>
                                         );
