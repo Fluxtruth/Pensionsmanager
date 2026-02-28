@@ -62,17 +62,21 @@ function getDaysArray(startDate: Date, days: number = 14): DateCell[] {
     return dates;
 }
 
-function getStatusColor(status: string): string {
+function getStatusColor(status?: string): string {
+    if (!status) return 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300';
     switch (status) {
         case 'Eingecheckt':
+        case 'Checked-In':
             return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300';
         case 'Ausgecheckt':
+        case 'Checked-Out':
             return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300';
         case 'Storniert':
             return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300';
         case 'Fest gebucht':
+        case 'Hard-Booked':
             return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300';
-        default: // 'Entwurf' or others
+        default: // 'Entwurf', 'Draft' or others
             return 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300';
     }
 }

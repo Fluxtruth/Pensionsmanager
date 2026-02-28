@@ -166,52 +166,44 @@ export async function initDb(): Promise<DatabaseMock | null> {
             return { rowsAffected: 1, lastInsertId: 0 };
           }
 
-          const match = upperQuery.match(/UPDATE (\w+)/);
+          const match = upperQuery.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+|$)/i);
           if (match) {
             const table = match[1].toLowerCase();
-            const id = params?.[params.length - 1];
+            const setPhrase = match[2];
+
+            // Extract all assigned columns: `col1 = ?, col2 = ?, col3 = 'val'`
+            const assignments = setPhrase.split(',').map(s => s.trim());
+
+            const id = params?.[params.length - 1]; // Assuming WHERE ID = ? is the last parameter
             if (mockData[table]) {
               const index = mockData[table].findIndex(item => item.id === id);
               if (index !== -1) {
-                if (table === "guests") {
-                  mockData.guests[index] = {
-                    ...mockData.guests[index],
-                    name: params?.[0], first_name: params?.[1], middle_name: params?.[2],
-                    last_name: params?.[3], email: params?.[4], phone: params?.[5],
-                    company: params?.[6], notes: params?.[7], contact_info: params?.[8],
-                    nationality: params?.[9]
-                  };
-                } else if (table === "rooms") {
-                  mockData.rooms[index] = {
-                    ...mockData.rooms[index],
-                    name: params?.[0],
-                    type: params?.[1],
-                    base_price: params?.[2],
-                    is_allergy_friendly: params?.[3],
-                    is_accessible: params?.[4]
-                  };
-                } else if (table === "bookings") {
-                  mockData.bookings[index] = {
-                    ...mockData.bookings[index],
-                    room_id: params?.[0], guest_id: params?.[1], occasion: params?.[2],
-                    start_date: params?.[3], end_date: params?.[4], status: params?.[5],
-                    payment_status: params?.[6], estimated_arrival_time: params?.[7],
-                    group_id: params?.[8],
-                    is_family_room: params?.[9], has_dog: params?.[10],
-                    is_allergy_friendly: params?.[11], has_mobility_impairment: params?.[12],
-                    guests_per_room: params?.[13], stay_type: params?.[14],
-                    dog_count: params?.[15], child_count: params?.[16], extra_bed_count: params?.[17],
-                    is_main_guest: params?.[18]
-                  };
-                } else if (table === "breakfast_options") {
-                  mockData.breakfast_options[index] = { ...mockData.breakfast_options[index], is_included: params?.[0], is_prepared: params?.[1], guest_count: params?.[2], time: params?.[3], comments: params?.[4], source: params?.[5], is_manual: params?.[6] };
-                } else if (table === "booking_groups") {
-                  mockData.booking_groups[index] = { ...mockData.booking_groups[index], name: params?.[0] };
-                } else if (table === "cleaning_tasks") {
-                  mockData.cleaning_tasks[index] = { ...mockData.cleaning_tasks[index], status: params?.[0], staff_id: params?.[1], comments: params?.[2] };
-                } else if (table === "cleaning_task_suggestions") {
-                  mockData.cleaning_task_suggestions[index] = { ...mockData.cleaning_task_suggestions[index], title: params?.[0], weekday: params?.[1], frequency_weeks: params?.[2] };
+                // Initialize a partial updates object
+                const updates: any = {};
+                let paramIndex = 0;
+
+                for (const assignment of assignments) {
+                  const parts = assignment.split('=');
+                  if (parts.length === 2) {
+                    const col = parts[0].trim().toLowerCase();
+                    const valExpr = parts[1].trim();
+                    if (valExpr === '?') {
+                      updates[col] = params?.[paramIndex++];
+                    } else {
+                      // Direct string/number assignment 'foo' -> foo
+                      updates[col] = valExpr.replace(/^['"]|['"]$/g, '');
+                    }
+                  }
                 }
+
+                // Keep ID immutable
+                delete updates["id"];
+
+                // Apply ONLY the requested dynamic updates to the object
+                mockData[table][index] = {
+                  ...mockData[table][index],
+                  ...updates
+                };
               }
             }
           }

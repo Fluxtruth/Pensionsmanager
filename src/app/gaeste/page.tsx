@@ -114,7 +114,7 @@ function GuestsList() {
         // Construct visual full name
         const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
         const contactInfo = [email, phone].filter(Boolean).join(" / ");
-        const id = crypto.randomUUID();
+        const id = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
 
         try {
             const db = await initDb();

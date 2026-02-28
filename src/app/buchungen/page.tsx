@@ -325,7 +325,7 @@ function BookingsList() {
             }
         } catch (error) {
             console.error("Failed to save breakfast changes:", error);
-            alert("Fehler beim Speichern der Ã„nderungen.");
+            alert("Fehler beim Speichern der Änderungen.");
         }
     };
 
@@ -353,7 +353,7 @@ function BookingsList() {
         isOpen: false,
         title: "",
         description: "",
-        confirmText: "LÃ¶schen",
+        confirmText: "Löschen",
         variant: "danger",
         onConfirm: () => { },
     });
@@ -602,7 +602,7 @@ function BookingsList() {
         const booking = bookings.find(b => b.id === id);
         if (booking && (newStatus === "Hard-Booked" || newStatus === "Checked-In")) {
             if (checkRoomOverlap(booking.room_id, booking.start_date, booking.end_date, id)) {
-                alert("Fehler: Dieser Raum ist im gewÃ¤hlten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
+                alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
                 return;
             }
         }
@@ -690,7 +690,7 @@ function BookingsList() {
                         if (existingGroup) {
                             finalGroupId = existingGroup.id;
                         } else {
-                            const newId = crypto.randomUUID();
+                            const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
                             await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, newName]);
                             finalGroupId = newId;
                         }
@@ -699,7 +699,7 @@ function BookingsList() {
                         // If user added multiple tabs but didn't give a group name, we might have an issue.
                         // Ideally we force a group name or auto-generate one if multiple tabs exist.
                         if (editTabs.length > 1) {
-                            const newId = crypto.randomUUID();
+                            const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
                             const autoName = `Gruppe ${(editingBooking.guest_name || "Gast").split(' ').pop()}`;
                             await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, autoName]);
                             finalGroupId = newId;
@@ -730,7 +730,7 @@ function BookingsList() {
                         const lastName = parts.pop() || "";
                         const firstName = parts.join(' ');
 
-                        const newGuestId = crypto.randomUUID();
+                        const newGuestId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
                         await db.execute(
                             "INSERT INTO guests (id, name, first_name, last_name) VALUES (?, ?, ?, ?)",
                             [newGuestId, newGuestName, firstName, lastName]
@@ -810,7 +810,8 @@ function BookingsList() {
                                 b.stay_type,
                                 b.dog_count,
                                 b.child_count,
-                                b.extra_bed_count
+                                b.extra_bed_count,
+                                b.id
                             ]
                         );
                     }
@@ -829,7 +830,7 @@ function BookingsList() {
         setDeleteConfirm({
             isOpen: true,
             title: "Buchung stornieren",
-            description: "MÃ¶chten Sie diese Buchung wirklich stornieren? Der Termin wird fÃ¼r andere GÃ¤ste freigegeben.",
+            description: "Möchten Sie diese Buchung wirklich stornieren? Der Termin wird für andere Gäste freigegeben.",
             confirmText: "Stornieren",
             variant: "warning",
             onConfirm: async () => {
@@ -850,9 +851,9 @@ function BookingsList() {
     const permanentDeleteBooking = async (id: string) => {
         setDeleteConfirm({
             isOpen: true,
-            title: "Buchung unwiderruflich lÃ¶schen",
-            description: "Diese Aktion kann nicht rÃ¼ckgÃ¤ngig gemacht werden. Alle Daten zu dieser Buchung werden gelÃ¶scht.",
-            confirmText: "LÃ¶schen",
+            title: "Buchung unwiderruflich löschen",
+            description: "Diese Aktion kann nicht rückgängig gemacht werden. Alle Daten zu dieser Buchung werden gelöscht.",
+            confirmText: "Löschen",
             variant: "danger",
             onConfirm: async () => {
                 try {
@@ -926,7 +927,7 @@ function BookingsList() {
                 } else if (updates.is_included !== 0) {
                     await db.execute(
                         "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), editingBooking.id, date, updates.is_included ?? 0, updates.time ?? "08:00", updates.guest_count ?? 1, updates.comments ?? "", 0, "auto", 0]
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, updates.is_included ?? 0, updates.time ?? "08:00", updates.guest_count ?? 1, updates.comments ?? "", 0, "auto", 0]
                     );
                 }
                 await loadBreakfast(editingBooking.id);
@@ -943,7 +944,7 @@ function BookingsList() {
             if (db) {
                 await db.execute(
                     "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [crypto.randomUUID(), editingBooking.id, date, 1, "08:00", 1, "", 0, "manuell", 1]
+                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, 1, "08:00", 1, "", 0, "manuell", 1]
                 );
                 await loadBreakfast(editingBooking.id);
             }
@@ -1211,7 +1212,7 @@ function BookingsList() {
         const email = formData.get("email") as string;
         const phone = formData.get("phone") as string;
         const company = formData.get("company") as string;
-        const id = crypto.randomUUID();
+        const id = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
 
         try {
             const db = await initDb();
@@ -1245,7 +1246,7 @@ function BookingsList() {
                 if (existingGroup) {
                     finalGroupId = existingGroup.id;
                 } else {
-                    finalGroupId = crypto.randomUUID();
+                    finalGroupId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
                     await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [finalGroupId, mainTabData.newGroupName]);
                 }
             }
@@ -1282,7 +1283,7 @@ function BookingsList() {
 
             for (const tab of wizardTabs) {
                 const data = tab.data;
-                const bookingId = crypto.randomUUID();
+                const bookingId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
 
                 // Use selected guest OR fallback to main guest
                 const finalGuestId = data.guestId || mainGuestId;
@@ -1301,7 +1302,7 @@ function BookingsList() {
                         for (const opt of dayOptions) {
                             await db.execute(
                                 "INSERT INTO breakfast_options (id, booking_id, date, time, comments, is_included, is_prepared, guest_count, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                [crypto.randomUUID(), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1]
+                                [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1]
                             );
                         }
                     }
@@ -1586,7 +1587,7 @@ function BookingsList() {
                                         <button
                                             disabled={(!wizardTabs[0].data.groupId || wizardTabs[0].data.groupId === "none") && (!wizardTabs[0].data.newGroupName)}
                                             onClick={() => {
-                                                const newId = crypto.randomUUID();
+                                                const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
                                                 const mainTab = wizardTabs[0];
                                                 setWizardTabs(prev => [...prev, {
                                                     id: newId,
@@ -2121,7 +2122,7 @@ function BookingsList() {
                                                             {new Date(day).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
                                                         </div>
                                                         <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase" onClick={() => {
-                                                            const newItem = { id: crypto.randomUUID(), time: "08:00", comments: "" };
+                                                            const newItem = { id: (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), time: "08:00", comments: "" };
                                                             setWizardBreakfastData(prev => ({
                                                                 ...prev,
                                                                 [day]: [...(prev[day] || []), newItem]
@@ -2134,7 +2135,7 @@ function BookingsList() {
                                                     {dayOptions.length === 0 ? (
                                                         <div className="flex items-center justify-center py-4 border-2 border-dashed border-zinc-200 rounded-xl">
                                                             <button onClick={() => {
-                                                                const newItem = { id: crypto.randomUUID(), time: "08:00", comments: "" };
+                                                                const newItem = { id: (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), time: "08:00", comments: "" };
                                                                 setWizardBreakfastData(prev => ({
                                                                     ...prev,
                                                                     [day]: [...(prev[day] || []), newItem]
@@ -2484,7 +2485,7 @@ function BookingsList() {
                                                                     {status === "Hard-Booked" ? "FEST" :
                                                                         status === "Checked-In" ? "EINGECHECKT" :
                                                                             status === "Checked-Out" ? "OUT" :
-                                                                                status.toUpperCase()}
+                                                                                (status || "Entwurf").toUpperCase()}
                                                                 </Badge>
                                                             );
                                                         }
@@ -2647,7 +2648,7 @@ function BookingsList() {
                                                             booking.end_date < today ? "ABGESCHLOSSEN" :
                                                                 booking.status === "Hard-Booked" ? "FEST GEBUCHT" :
                                                                     booking.status === "Checked-In" ? "EINGECHECKT" :
-                                                                        booking.status === "Checked-Out" ? "ABGEREIST" : booking.status.toUpperCase()}
+                                                                        booking.status === "Checked-Out" ? "ABGEREIST" : (booking.status || "Entwurf").toUpperCase()}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right px-6">
@@ -2729,37 +2730,48 @@ function BookingsList() {
                     router.push('/buchungen', { scroll: false });
                 }
             }}>
-                <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-6">
-                    <DialogHeader className="mb-4 shrink-0 flex flex-row items-center justify-between">
-                        <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                            Buchung verwalten
-                            {editingBooking?.guest_name && <span className="text-zinc-400 font-normal text-lg">| {editingBooking.guest_name}</span>}
-                        </DialogTitle>
+                <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-6 overflow-hidden">
+                    <DialogHeader className="pb-4 border-b border-zinc-100 shrink-0">
+                        <DialogTitle className="flex flex-col gap-4">
+                            <div className="flex items-center justify-between px-1">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-blue-600 rounded-lg text-white">
+                                        <Pencil className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-zinc-900">Buchung verwalten</h2>
+                                        <p className="text-xs text-zinc-500 font-medium italic">
+                                            {editingBooking?.guest_name ? `Bearbeitung für ${editingBooking.guest_name}` : "Bestehende Buchung anpassen"}
+                                        </p>
+                                    </div>
+                                </div>
 
-                        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
-                            <button
-                                onClick={() => setEditTab("details")}
-                                className={cn(
-                                    "px-4 py-1.5 text-xs font-bold rounded-md transition-all",
-                                    editTab === "details" ? "bg-white dark:bg-zinc-950 text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
-                                )}
-                            >
-                                Details
-                            </button>
-                            <button
-                                onClick={() => setEditTab("breakfast")}
-                                className={cn(
-                                    "px-4 py-1.5 text-xs font-bold rounded-md transition-all",
-                                    editTab === "breakfast" ? "bg-white dark:bg-zinc-950 text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
-                                )}
-                            >
-                                Frühstück
-                            </button>
-                        </div>
+                                <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg">
+                                    <button
+                                        onClick={() => setEditTab("details")}
+                                        className={cn(
+                                            "px-4 py-1.5 text-sm font-bold rounded-md transition-all",
+                                            editTab === "details" ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                        )}
+                                    >
+                                        Buchungsdaten
+                                    </button>
+                                    <button
+                                        onClick={() => setEditTab("breakfast")}
+                                        className={cn(
+                                            "px-4 py-1.5 text-sm font-bold rounded-md transition-all",
+                                            editTab === "breakfast" ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                        )}
+                                    >
+                                        Frühstück
+                                    </button>
+                                </div>
+                            </div>
+                        </DialogTitle>
                     </DialogHeader>
 
                     {/* Group Booking Tabs in Edit Mode */}
-                    <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 scrollbar-thin border-b border-zinc-200 px-6 -mx-6">
+                    <div className="flex items-center gap-2 mb-2 overflow-x-auto pb-2 scrollbar-thin border-b border-zinc-200 shrink-0">
                         {editTabs.map(tab => (
                             <div
                                 key={tab.id}
@@ -2774,23 +2786,23 @@ function BookingsList() {
                                     loadBreakfast(tab.id); // Reload breakfast for the new tab
                                 }}
                             >
+                                <div className={cn(
+                                    "w-2 h-2 rounded-full",
+                                    tab.booking.status === "Hard-Booked" ? "bg-blue-500" :
+                                        tab.booking.status === "Storniert" ? "bg-red-500" :
+                                            "bg-zinc-300"
+                                )} />
                                 {tab.label}
                             </div>
                         ))}
                         <button
                             onClick={() => {
-                                const newId = crypto.randomUUID();
+                                const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
                                 // Determine group ID: use existing, or create new "virtual" one if none exists
                                 let groupId = editGroupId;
-                                let groupName = editGroupSearch;
-
                                 if (!groupId || groupId === "none") {
-                                    // If we are adding a tab to a single booking, we effective create a group
                                     groupId = "new";
-                                    // Maybe ask for name? Or default to "Gruppe [First Guest]"?
-                                    // For now let's keep it "new" aka pending creation, and maybe auto-set group name if empty
                                     if (!editNewGroupName) {
-                                        // If we have a guest name on the first tab, use that?
                                         const firstGuestName = editTabs[0]?.booking?.guest_name?.split(' ').pop() || "Gast";
                                         setEditNewGroupName(`Gruppe ${firstGuestName}`);
                                     }
@@ -2805,7 +2817,6 @@ function BookingsList() {
                                     status: "Draft",
                                     payment_status: "Offen",
                                     group_id: groupId,
-                                    // Inherit other defaults
                                     is_family_room: 0,
                                     has_dog: 0,
                                     is_allergy_friendly: 0,
@@ -2824,581 +2835,631 @@ function BookingsList() {
                                 }]);
                                 setActiveEditTabId(newId);
 
-                                // Also update the CURRENT booking's group ID in state if it was "none"
                                 if (editGroupId === "none") {
                                     setEditGroupId("new");
-                                    // Update all existing tabs in state to have this new group marker? 
-                                    // Not strictly necessary for their `booking` object until save, 
-                                    // but UI might need to know they are grouped.
-                                    // The `editGroupId` state is central for the dialog, so that covers it.
                                 }
                             }}
                             disabled={(!editGroupId || editGroupId === "none") && !editNewGroupName}
                             className={`p-1 rounded-full ml-2 ${(!editGroupId || editGroupId === "none") && !editNewGroupName ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-100'}`}
                             title={(!editGroupId || editGroupId === "none") && !editNewGroupName ? "Bitte erstellen Sie zuerst eine Gruppe oder geben Sie einen Gruppennamen ein" : "Weiteren Gast hinzufügen"}
                         >
-                            <Plus className="w-5 h-5 text-zinc-400" />
                         </button>
                     </div>
 
-                    {editingBooking && (
-                        editTab === "details" ? (
-                            <div className="flex-1 min-h-0 grid grid-cols-12 gap-6 overflow-hidden">
-                                {/* SPALTE 1: GAST (3 Spalten) */}
-                                <div className="col-span-3 flex flex-col gap-4 border-r border-zinc-100 pr-6 overflow-y-auto">
-                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">1. Gast</Label>
-
-                                    {/* Selected Guest Display */}
-                                    {editingBooking.guest_id ? (
-                                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 mb-2 relative group">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
-                                                    {editingBooking.guest_name?.charAt(0) || "G"}
-                                                </div>
-                                                <div className="overflow-hidden flex-1">
-                                                    <div className="text-[10px] text-blue-600 font-bold uppercase">Aktueller Gast</div>
-                                                    <div className="font-bold text-sm truncate">{editingBooking.guest_name}</div>
-                                                </div>
-                                                <button
-                                                    onClick={() => setEditingBooking(prev => prev ? ({ ...prev, guest_id: "", guest_name: "", guest_email: "", guest_phone: "" }) : null)}
-                                                    className="p-1 rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700 transition-colors"
-                                                    title="Gast entfernen"
-                                                >
-                                                    <XCircle className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="relative group mb-4">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
-                                            <Input
-                                                placeholder="Gast suchen oder erstellen..."
-                                                className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
-                                                value={editGuestSearch}
-                                                onFocus={() => setIsEditGuestSearchFocused(true)}
-                                                onBlur={() => setTimeout(() => setIsEditGuestSearchFocused(false), 200)}
-                                                onChange={(e) => {
-                                                    setEditGuestSearch(e.target.value);
-                                                    if (e.target.value === "") {
-                                                        // clear
-                                                    }
-                                                }}
-                                            />
-                                            {isEditGuestSearchFocused && (
-                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[200px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
-                                                    {editGuestSearch && !guests.some(g => g.name.toLowerCase() === editGuestSearch.toLowerCase()) && (
+                    {
+                        editingBooking && (
+                            editTab === "details" ? (
+                                <div className="flex-1 min-h-0 grid grid-cols-12 gap-6">
+                                    {/* SPALTE 1: GAST (3 Spalten) */}
+                                    <div className="col-span-3 border-r border-zinc-100 pr-6 flex flex-col min-h-0">
+                                        <div className="flex flex-col gap-4 overflow-y-auto flex-1">
+                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">1. Gast</Label>
+                                            {/* Unified Guest Display (Wizard Style) */}
+                                            {editingBooking.guest_id ? (
+                                                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 relative group">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
+                                                            {editingBooking.guest_name?.charAt(0) || "G"}
+                                                        </div>
+                                                        <div className="overflow-hidden flex-1">
+                                                            <div className="text-[10px] text-blue-600 font-bold uppercase">Aktueller Gast</div>
+                                                            <div className="font-bold text-sm truncate">{editingBooking.guest_name}</div>
+                                                        </div>
                                                         <button
-                                                            type="button"
-                                                            className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors mb-1"
-                                                            onMouseDown={(e) => {
-                                                                e.preventDefault();
-                                                                setEditingBooking(prev => prev ? ({ ...prev, guest_id: "new", guest_name: editGuestSearch }) : null);
-                                                                setIsEditGuestSearchFocused(false);
-                                                            }}
+                                                            onClick={() => setEditingBooking(prev => prev ? ({ ...prev, guest_id: "", guest_name: "", guest_email: "", guest_phone: "" }) : null)}
+                                                            className="p-1 rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700 transition-colors"
+                                                            title="Gast entfernen"
                                                         >
-                                                            <Plus className="w-4 h-4" /> "{editGuestSearch}" neu erstellen
+                                                            <XCircle className="w-4 h-4" />
                                                         </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="relative group mb-4">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                                    <Input
+                                                        placeholder="Gast suchen oder erstellen..."
+                                                        className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
+                                                        value={editGuestSearch}
+                                                        onFocus={() => setIsEditGuestSearchFocused(true)}
+                                                        onBlur={() => setTimeout(() => setIsEditGuestSearchFocused(false), 200)}
+                                                        onChange={(e) => setEditGuestSearch(e.target.value)}
+                                                    />
+                                                    {isEditGuestSearchFocused && (
+                                                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[200px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                            {editGuestSearch && !guests.some(g => g.name.toLowerCase() === editGuestSearch.toLowerCase()) && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors mb-1"
+                                                                    onMouseDown={(e) => {
+                                                                        e.preventDefault();
+                                                                        setEditingBooking(prev => prev ? ({ ...prev, guest_id: "new", guest_name: editGuestSearch }) : null);
+                                                                        setIsEditGuestSearchFocused(false);
+                                                                    }}
+                                                                >
+                                                                    <Plus className="w-4 h-4" /> "{editGuestSearch}" neu erstellen
+                                                                </button>
+                                                            )}
+                                                            {guests
+                                                                .filter(g => !editGuestSearch || g.name.toLowerCase().includes(editGuestSearch.toLowerCase()))
+                                                                .slice(0, 10)
+                                                                .map(g => (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={g.id}
+                                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                        onMouseDown={(e) => {
+                                                                            e.preventDefault();
+                                                                            setEditingBooking(prev => prev ? ({ ...prev, guest_id: g.id, guest_name: g.name, guest_email: g.email, guest_phone: g.phone }) : null);
+                                                                            setEditGuestSearch("");
+                                                                            setIsEditGuestSearchFocused(false);
+                                                                        }}
+                                                                    >
+                                                                        <div>
+                                                                            <div className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</div>
+                                                                            {(g.email || g.phone) && <div className="text-[9px] text-zinc-400">{g.email} {g.phone}</div>}
+                                                                        </div>
+                                                                    </button>
+                                                                ))
+                                                            }
+                                                        </div>
                                                     )}
-                                                    {guests
-                                                        .filter(g => !editGuestSearch || g.name.toLowerCase().includes(editGuestSearch.toLowerCase()))
-                                                        .slice(0, 10)
-                                                        .map(g => (
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* SPALTE 2: DETAILS (4 Spalten) */}
+                                    <div className="col-span-4 border-r border-zinc-100 pr-6 flex flex-col min-h-0">
+                                        <div className="flex flex-col gap-4 overflow-y-auto flex-1">
+                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Zeitraum & Details</Label>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs flex items-center">Anreise <span className="text-red-500 ml-1 font-bold">*</span></Label>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                        <Input
+                                                            type="date"
+                                                            required
+                                                            className="pl-9 h-10 transition-all font-medium"
+                                                            value={editingBooking.start_date}
+                                                            onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, start_date: e.target.value }) : null)}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs flex items-center">Abreise <span className="text-red-500 ml-1 font-bold">*</span></Label>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                                        <Input
+                                                            type="date"
+                                                            required
+                                                            className="pl-9 h-10 transition-all font-medium"
+                                                            value={editingBooking.end_date}
+                                                            onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, end_date: e.target.value }) : null)}
+                                                            min={editingBooking.start_date}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs">Gruppe (Optional)</Label>
+                                                <div className="relative group">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                                    <Input
+                                                        placeholder="Gruppe suchen oder erstellen..."
+                                                        className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
+                                                        value={editGroupSearch}
+                                                        onFocus={() => setIsEditGroupSearchFocused(true)}
+                                                        onBlur={() => setTimeout(() => setIsEditGroupSearchFocused(false), 200)}
+                                                        onChange={(e) => {
+                                                            setEditGroupSearch(e.target.value);
+                                                            if (e.target.value === "") {
+                                                                setEditGroupId("none");
+                                                                setEditNewGroupName("");
+                                                            } else {
+                                                                const match = groups.find(g => g.name.toLowerCase() === e.target.value.toLowerCase());
+                                                                if (match) {
+                                                                    setEditGroupId(match.id);
+                                                                    setEditNewGroupName("");
+                                                                } else {
+                                                                    setEditGroupId("new");
+                                                                    setEditNewGroupName(e.target.value);
+                                                                }
+                                                            }
+                                                        }}
+                                                    />
+
+                                                    {isEditGroupSearchFocused && editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
+                                                        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
+                                                            <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
                                                             <button
                                                                 type="button"
-                                                                key={g.id}
-                                                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
                                                                 onMouseDown={(e) => {
                                                                     e.preventDefault();
-                                                                    setEditingBooking(prev => prev ? ({ ...prev, guest_id: g.id, guest_name: g.name, guest_email: g.email, guest_phone: g.phone }) : null);
-                                                                    setEditGuestSearch("");
-                                                                    setIsEditGuestSearchFocused(false);
+                                                                    setEditGroupId("new");
+                                                                    setEditNewGroupName(editGroupSearch);
+                                                                    setIsEditGroupSearchFocused(false);
                                                                 }}
                                                             >
-                                                                <div>
-                                                                    <div className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</div>
-                                                                    {(g.email || g.phone) && <div className="text-[9px] text-zinc-400">{g.email} {g.phone}</div>}
-                                                                </div>
+                                                                <Plus className="w-4 h-4" /> "{editGroupSearch}" erstellen
                                                             </button>
-                                                        ))
-                                                    }
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-1 mt-4">
-                                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Status</Label>
-                                        <Select
-                                            value={editingBooking.status ?? "Draft"}
-                                            onValueChange={(val) => setEditingBooking({ ...editingBooking, status: val })}
-                                        >
-                                            <SelectTrigger
-                                                className={cn(
-                                                    "h-10 transition-all font-bold border-0 ring-1 ring-inset",
-                                                    editingBooking.status === "Draft" && "bg-zinc-100 text-zinc-700 ring-zinc-200 hover:bg-zinc-200",
-                                                    editingBooking.status === "Hard-Booked" && "bg-blue-600 text-white ring-blue-600 hover:bg-blue-700",
-                                                    editingBooking.status === "Checked-In" && "bg-emerald-600 text-white ring-emerald-600 hover:bg-emerald-700",
-                                                    editingBooking.status === "Checked-Out" && "bg-orange-500 text-white ring-orange-500 hover:bg-orange-600",
-                                                    editingBooking.status === "Storniert" && "bg-red-600 text-white ring-red-600 hover:bg-red-700",
-                                                    !editingBooking.status && "bg-zinc-100 text-zinc-700 ring-zinc-200"
-                                                )}
-                                            >
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="Draft" className="font-medium text-zinc-600">Draft (Entwurf)</SelectItem>
-                                                <SelectItem value="Hard-Booked" className="font-bold text-blue-600">Fest gebucht</SelectItem>
-                                                <SelectItem value="Checked-In" className="font-bold text-emerald-600">Eingecheckt</SelectItem>
-                                                <SelectItem value="Checked-Out" className="font-bold text-orange-600">Abgereist</SelectItem>
-                                                <SelectItem value="Storniert" className="font-bold text-red-600">Storniert</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                </div>
-
-                                {/* SPALTE 2: DETAILS (4 Spalten) */}
-                                <div className="col-span-4 flex flex-col gap-5 border-r border-zinc-100 pr-6 overflow-y-auto">
-                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Details</Label>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <Label className="text-xs">Anreise</Label>
-                                            <div className="relative">
-                                                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                                                <Input
-                                                    type="date"
-                                                    className="pl-9 h-10"
-                                                    value={editingBooking.start_date}
-                                                    onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, start_date: e.target.value }) : null)}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label className="text-xs">Abreise</Label>
-                                            <div className="relative">
-                                                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                                                <Input
-                                                    type="date"
-                                                    className="pl-9 h-10"
-                                                    value={editingBooking.end_date}
-                                                    onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, end_date: e.target.value }) : null)}
-                                                    min={editingBooking.start_date}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <Label className="text-xs">Gruppe (Optional)</Label>
-                                        <div className="relative group">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
-                                            <Input
-                                                placeholder="Gruppe suchen oder erstellen..."
-                                                className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
-                                                value={editGroupSearch}
-                                                onFocus={() => setIsEditGroupSearchFocused(true)}
-                                                onBlur={() => setTimeout(() => setIsEditGroupSearchFocused(false), 200)}
-                                                onChange={(e) => {
-                                                    setEditGroupSearch(e.target.value);
-                                                    if (e.target.value === "") {
-                                                        setEditGroupId("none");
-                                                        setEditNewGroupName("");
-                                                    } else {
-                                                        const match = groups.find(g => g.name.toLowerCase() === e.target.value.toLowerCase());
-                                                        if (match) {
-                                                            setEditGroupId(match.id);
-                                                            setEditNewGroupName("");
-                                                        } else {
-                                                            setEditGroupId("new");
-                                                            setEditNewGroupName(e.target.value);
-                                                        }
-                                                    }
-                                                }}
-                                            />
-
-                                            {isEditGroupSearchFocused && editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
-                                                <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
-                                                    <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
-                                                    <button
-                                                        type="button"
-                                                        className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                                                        onMouseDown={(e) => {
-                                                            e.preventDefault(); // Prevent blur
-                                                            setEditGroupId("new");
-                                                            setEditNewGroupName(editGroupSearch);
-                                                            setIsEditGroupSearchFocused(false);
-                                                        }}
-                                                    >
-                                                        <Plus className="w-4 h-4" /> "{editGroupSearch}" erstellen
-                                                    </button>
-                                                </div>
-                                            )}
-                                            {isEditGroupSearchFocused && (
-                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
-                                                    {groups
-                                                        .filter(g => !editGroupSearch || (g.name.toLowerCase().includes(editGroupSearch.toLowerCase()) && g.name.toLowerCase() !== editGroupSearch.toLowerCase()))
-                                                        .map(g => (
-                                                            <button
-                                                                type="button"
-                                                                key={g.id}
-                                                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
-                                                                onMouseDown={(e) => {
-                                                                    e.preventDefault(); // Prevent blur
-                                                                    setEditGroupSearch(g.name);
-                                                                    setEditGroupId(g.id);
-                                                                    setEditNewGroupName("");
-                                                                    setIsEditGroupSearchFocused(false); // Close dropdown
-                                                                }}
-                                                            >
-                                                                <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
-                                                                {editGroupSearch === g.name && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                                                            </button>
-                                                        ))
-                                                    }
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Buchungstyp</Label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
-                                                <Button
-                                                    key={opt}
-                                                    type="button" // Prevent form submit
-                                                    variant={editingBooking.occasion === opt ? "default" : "outline"}
-                                                    className={cn(
-                                                        "h-8 text-xs font-medium",
-                                                        editingBooking.occasion === opt ? "bg-blue-600 hover:bg-blue-700" : "text-zinc-600"
-                                                    )}
-                                                    onClick={() => setEditingBooking(prev => prev ? ({ ...prev, occasion: opt }) : null)}
-                                                >
-                                                    {opt}
-                                                </Button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
-                                            <Input
-                                                type="number"
-                                                min="1"
-                                                className="h-9"
-                                                value={editingBooking.guests_per_room || 1}
-                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, guests_per_room: parseInt(e.target.value) || 1 }) : null)}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
-                                            <Select
-                                                value={editingBooking.stay_type || "privat"}
-                                                onValueChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, stay_type: val }) : null)}
-                                            >
-                                                <SelectTrigger className="h-9">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="privat">Privat</SelectItem>
-                                                    <SelectItem value="beruflich">Beruflich</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-4 gap-2">
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                className="h-8 text-xs"
-                                                value={editingBooking.dog_count || 0}
-                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, dog_count: parseInt(e.target.value) || 0 }) : null)}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                className="h-8 text-xs"
-                                                value={editingBooking.child_count || 0}
-                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, child_count: parseInt(e.target.value) || 0 }) : null)}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                className="h-8 text-xs"
-                                                value={editingBooking.extra_bed_count || 0}
-                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, extra_bed_count: parseInt(e.target.value) || 0 }) : null)}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
-                                            <Input
-                                                type="time"
-                                                className="h-8 text-xs"
-                                                value={editingBooking.estimated_arrival_time || ""}
-                                                onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, estimated_arrival_time: e.target.value }) : null)}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 pt-2">
-                                        <div className="flex items-center space-x-2">
-                                            <Switch
-                                                id="edit-allergy"
-                                                checked={editingBooking.is_allergy_friendly === 1}
-                                                onCheckedChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, is_allergy_friendly: val ? 1 : 0 }) : null)}
-                                            />
-                                            <Label htmlFor="edit-allergy" className="text-xs font-medium">Allergikerfreundlich benötigt</Label>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                            <Switch
-                                                id="edit-mobility"
-                                                checked={editingBooking.has_mobility_impairment === 1}
-                                                onCheckedChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, has_mobility_impairment: val ? 1 : 0 }) : null)}
-                                            />
-                                            <Label htmlFor="edit-mobility" className="text-xs font-medium">Barrierefreiheit benötigt</Label>
-                                        </div>
-                                    </div>
-
-                                </div>
-
-                                {/* SPALTE 3: ZIMMER (5 Spalten) */}
-                                <div className="col-span-5 flex flex-col gap-4 overflow-y-auto">
-                                    <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">3. Zimmer wählen</Label>
-
-                                    <div className="space-y-3">
-                                        <div className="text-sm font-medium mb-1">Zimmertyp filtern</div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {roomTypes.map(type => {
-                                                const availableCount = editRoomTypeAvailability[type] || 0;
-                                                const isDisabled = availableCount === 0;
-                                                return (
-                                                    <button
-                                                        key={type}
-                                                        type="button"
-                                                        // Disable only if 0 available AND not currently selected (so you can see it's full but maybe we want to allow overbooking in admin? No, let's keep it safe. But wait, if *current* room is this type, `availableCount` includes it because we excluded the booking ID in the availability check. So `availableCount` should be > 0 if we are keeping the same room.)
-                                                        disabled={isDisabled}
-                                                        onClick={() => setEditRoomType(prev => prev === type ? "" : type)}
-                                                        className={cn(
-                                                            "flex flex-col items-start p-2 rounded-lg border transition-all text-left",
-                                                            editRoomType === type
-                                                                ? "bg-blue-600 border-blue-600 text-white shadow-md ring-2 ring-blue-600/20"
-                                                                : isDisabled
-                                                                    ? "opacity-50 cursor-not-allowed bg-zinc-50 border-zinc-200"
-                                                                    : "border-zinc-200 hover:border-blue-400 hover:bg-blue-50"
-                                                        )}
-                                                    >
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            {getRoomIcon(type, cn("w-4 h-4", editRoomType === type ? "text-white" : "text-zinc-400"))}
-                                                            <span className={cn("font-bold text-xs truncate", editRoomType === type ? "text-white" : "text-zinc-900")}>{type}</span>
                                                         </div>
-                                                        <span className={cn("text-[9px] font-bold uppercase",
-                                                            editRoomType === type ? "text-blue-100" : (isDisabled ? "text-red-500" : "text-emerald-600")
-                                                        )}>
-                                                            {isDisabled ? "Voll" : `${availableCount} verfügbar`}
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 min-h-[200px] bg-zinc-50/50 dark:bg-zinc-900/20 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 overflow-y-auto">
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="text-xs font-bold text-zinc-500 uppercase">
-                                                    Verfügbare Zimmer {editRoomType ? `(${editRoomType})` : ""}
-                                                </div>
-                                                {editRoomType && (
-                                                    <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setEditRoomType("")}>
-                                                        Filter löschen
-                                                    </Button>
-                                                )}
-                                            </div>
-
-                                            <div className="grid grid-cols-1 gap-2">
-                                                {(editRoomType ? editAllRoomsForType : rooms).map(room => {
-                                                    const isOccupied = checkRoomOverlap(room.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id);
-
-                                                    // In Admin mode (Booking Edit), we might want to see occupied rooms but disabled?
-                                                    // Or just hide them like Assistant.
-                                                    // The Assistant logic:
-                                                    if (!editRoomType && typeof isOccupied === 'boolean' && isOccupied) return null;
-
-                                                    return (
-                                                        <button
-                                                            key={room.id}
-                                                            type="button"
-                                                            disabled={isOccupied}
-                                                            onClick={() => setEditingBooking(prev => prev ? ({ ...prev, room_id: room.id, room_name: room.name }) : null)}
-                                                            className={cn(
-                                                                "p-3 rounded-xl border transition-all text-left flex items-center justify-between group",
-                                                                editingBooking.room_id === room.id
-                                                                    ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600 shadow-md"
-                                                                    : isOccupied
-                                                                        ? "hidden"
-                                                                        : "border-zinc-100 bg-white hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm"
-                                                            )}
-                                                        >
-                                                            <div className="flex items-center gap-3">
-                                                                <div className={cn(
-                                                                    "w-8 h-8 rounded-lg flex items-center justify-center",
-                                                                    editingBooking.room_id === room.id ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"
-                                                                )}>
-                                                                    {getRoomIcon(room.type, "w-4 h-4")}
-                                                                </div>
-                                                                <div>
-                                                                    <div className={cn("font-bold text-sm", editingBooking.room_id === room.id ? "text-emerald-900" : "text-zinc-900")}>{room.name}</div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <div className="text-[10px] text-zinc-500 font-medium uppercase">{room.type}</div>
-                                                                        {(!!room.is_allergy_friendly) && (
-                                                                            <div title="Allergikerfreundlich" className={cn("p-0.5 rounded", editingBooking.room_id === room.id ? "bg-emerald-200" : "bg-pink-100")}>
-                                                                                <Flower2 className={cn("w-3 h-3", editingBooking.room_id === room.id ? "text-emerald-700" : "text-pink-500")} />
-                                                                            </div>
-                                                                        )}
-                                                                        {(!!room.is_accessible) && (
-                                                                            <div title="Barrierefrei" className={cn("p-0.5 rounded", editingBooking.room_id === room.id ? "bg-emerald-200" : "bg-blue-100")}>
-                                                                                <Accessibility className={cn("w-3 h-3", editingBooking.room_id === room.id ? "text-emerald-700" : "text-blue-600")} />
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <div className="text-right">
-                                                                {/* Price removed */}
-                                                                {editingBooking.room_id === room.id && (
-                                                                    <div className="text-[10px] font-bold text-emerald-600 flex items-center justify-end gap-1">
-                                                                        <Check className="w-3 h-3" /> Gewählt
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {(editRoomType ? editAllRoomsForType : rooms).filter(r => !checkRoomOverlap(r.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id)).length === 0 && (
-                                                    <div className="text-center py-8 text-zinc-400 text-sm italic">
-                                                        Keine freien Zimmer gefunden.
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex-1 min-h-0 flex flex-col pt-4">
-                                {/* Breakfast Content (Preserved) */}
-                                <div className="space-y-4 max-h-full overflow-y-auto pr-2 pb-20">
-                                    {getDaysArray(editingBooking.start_date, editingBooking.end_date).map(day => {
-                                        const dayOptions = breakfastOptions.filter(o => o.date === day);
-                                        return (
-                                            <div key={day} className="p-4 border rounded-2xl bg-zinc-50 dark:bg-zinc-900 shadow-sm space-y-4">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 italic">
-                                                        {new Date(day).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
-                                                    </div>
-                                                    <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase" onClick={() => addPersonToDay(day)}>
-                                                        <Plus className="w-3 h-3 mr-1" /> Person hinzufügen
-                                                    </Button>
-                                                </div>
-
-                                                {dayOptions.length === 0 ? (
-                                                    <div className="flex items-center justify-center py-4 border-2 border-dashed border-zinc-200 rounded-xl">
-                                                        <button onClick={() => addPersonToDay(day)} className="text-xs text-zinc-400 font-medium hover:text-blue-500 transition-colors">
-                                                            Kein Frühstück geplant. Klicken zum Hinzufügen.
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-3">
-                                                        {dayOptions.map((opt, idx) => (
-                                                            <div key={opt.id} className="bg-white dark:bg-zinc-950 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 space-y-3">
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="text-[10px] font-black text-zinc-300 uppercase italic">Person {idx + 1}</div>
-                                                                    <button onClick={() => removePersonFromDay(opt.id!)} className="text-zinc-300 hover:text-red-500 transition-colors">
-                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    )}
+                                                    {isEditGroupSearchFocused && (
+                                                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                            {groups
+                                                                .filter(g => !editGroupSearch || (g.name.toLowerCase().includes(editGroupSearch.toLowerCase()) && g.name.toLowerCase() !== editGroupSearch.toLowerCase()))
+                                                                .map(g => (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={g.id}
+                                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
+                                                                        onMouseDown={(e) => {
+                                                                            e.preventDefault();
+                                                                            setEditGroupSearch(g.name);
+                                                                            setEditGroupId(g.id);
+                                                                            setEditNewGroupName("");
+                                                                            setIsEditGroupSearchFocused(false);
+                                                                        }}
+                                                                    >
+                                                                        <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
+                                                                        {editGroupSearch === g.name && <Check className="w-3.5 h-3.5 text-blue-600" />}
                                                                     </button>
-                                                                </div>
-                                                                <div className="grid grid-cols-2 gap-3">
-                                                                    <div className="space-y-1">
-                                                                        <Label className="text-[10px] uppercase font-bold text-zinc-400">Zeit</Label>
-                                                                        <Input
-                                                                            type="time"
-                                                                            className={cn(
-                                                                                "h-9 text-xs shadow-sm rounded-lg",
-                                                                                pendingBreakfastChanges[opt.id!]?.time && "border-amber-400 ring-1 ring-amber-400/20"
-                                                                            )}
-                                                                            defaultValue={pendingBreakfastChanges[opt.id!]?.time ?? opt.time ?? "08:00"}
-                                                                            onChange={(e) => trackBreakfastChange(opt.id!, 'time', e.target.value)}
-                                                                        />
-                                                                    </div>
-                                                                    <div className="space-y-1">
-                                                                        <Label className="text-[10px] uppercase font-bold text-zinc-400">Hinweise</Label>
-                                                                        <Input
-                                                                            className={cn(
-                                                                                "h-9 text-xs shadow-sm rounded-lg",
-                                                                                pendingBreakfastChanges[opt.id!]?.comments !== undefined && "border-amber-400 ring-1 ring-amber-400/20"
-                                                                            )}
-                                                                            defaultValue={pendingBreakfastChanges[opt.id!]?.comments ?? opt.comments ?? ""}
-                                                                            placeholder="Allergien..."
-                                                                            onChange={(e) => trackBreakfastChange(opt.id!, 'comments', e.target.value)}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                                ))
+                                                            }
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        );
-                                    })}
+
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs">Buchungstyp</Label>
+                                                <div className="grid grid-cols-4 gap-2">
+                                                    {["Single", "Pärchen", "Familie", "Monteur"].map((opt) => (
+                                                        <Button
+                                                            key={opt}
+                                                            type="button"
+                                                            variant={editingBooking.occasion === opt ? "default" : "outline"}
+                                                            className={cn(
+                                                                "h-8 text-[10px] font-medium px-1",
+                                                                editingBooking.occasion === opt ? "bg-blue-600 hover:bg-blue-700" : "text-zinc-600"
+                                                            )}
+                                                            onClick={() => setEditingBooking(prev => prev ? ({ ...prev, occasion: opt }) : null)}
+                                                        >
+                                                            {opt}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="1"
+                                                        className="h-9"
+                                                        value={editingBooking.guests_per_room || 1}
+                                                        onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, guests_per_room: parseInt(e.target.value) || 1 }) : null)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
+                                                    <Select
+                                                        value={editingBooking.stay_type || "privat"}
+                                                        onValueChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, stay_type: val }) : null)}
+                                                    >
+                                                        <SelectTrigger className="h-9">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="privat">Privat</SelectItem>
+                                                            <SelectItem value="beruflich">Beruflich</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-4 gap-2">
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="h-8 text-xs"
+                                                        value={editingBooking.dog_count || 0}
+                                                        onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, dog_count: parseInt(e.target.value) || 0 }) : null)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="h-8 text-xs"
+                                                        value={editingBooking.child_count || 0}
+                                                        onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, child_count: parseInt(e.target.value) || 0 }) : null)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="h-8 text-xs"
+                                                        value={editingBooking.extra_bed_count || 0}
+                                                        onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, extra_bed_count: parseInt(e.target.value) || 0 }) : null)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
+                                                    <Input
+                                                        type="time"
+                                                        className="h-8 text-xs"
+                                                        value={editingBooking.estimated_arrival_time || ""}
+                                                        onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, estimated_arrival_time: e.target.value }) : null)}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 pt-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <Switch
+                                                        id="edit-allergy"
+                                                        checked={editingBooking.is_allergy_friendly === 1}
+                                                        onCheckedChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, is_allergy_friendly: val ? 1 : 0 }) : null)}
+                                                    />
+                                                    <Label htmlFor="edit-allergy" className="text-xs font-medium">Allergikerfreundlich benötigt</Label>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <Switch
+                                                        id="edit-mobility"
+                                                        checked={editingBooking.has_mobility_impairment === 1}
+                                                        onCheckedChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, has_mobility_impairment: val ? 1 : 0 }) : null)}
+                                                    />
+                                                    <Label htmlFor="edit-mobility" className="text-xs font-medium">Barrierefreiheit benötigt</Label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* SPALTE 3: ZIMMER (5 Spalten) */}
+                                    <div className="col-span-5 flex flex-col min-h-0">
+                                        <div className="flex flex-col gap-4 overflow-y-auto flex-1">
+                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">3. Zimmer wählen</Label>
+
+                                            <div className="space-y-3">
+                                                <div className="text-sm font-medium mb-1">Zimmertyp filtern</div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {roomTypes.map(type => {
+                                                        const availableCount = editRoomTypeAvailability[type] || 0;
+                                                        const isDisabled = availableCount === 0;
+                                                        return (
+                                                            <button
+                                                                key={type}
+                                                                type="button"
+                                                                disabled={isDisabled}
+                                                                onClick={() => setEditRoomType(prev => prev === type ? "" : type)}
+                                                                className={cn(
+                                                                    "flex items-center gap-2 p-1.5 rounded-lg border transition-all text-left",
+                                                                    editRoomType === type
+                                                                        ? "bg-blue-600 border-blue-600 text-white shadow-md ring-2 ring-blue-600/20"
+                                                                        : isDisabled
+                                                                            ? "opacity-50 cursor-not-allowed bg-zinc-50 border-zinc-200"
+                                                                            : "border-zinc-200 hover:border-blue-400 hover:bg-blue-50"
+                                                                )}
+                                                            >
+                                                                <div className="shrink-0">
+                                                                    {getRoomIcon(type, cn("w-4 h-4", editRoomType === type ? "text-white" : "text-zinc-400"))}
+                                                                </div>
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className={cn("font-bold text-[10px] truncate", editRoomType === type ? "text-white" : "text-zinc-900")}>{type}</span>
+                                                                    <span className={cn("text-[8px] font-bold uppercase",
+                                                                        editRoomType === type ? "text-blue-100" : (isDisabled ? "text-red-500" : "text-emerald-600")
+                                                                    )}>
+                                                                        {isDisabled ? "Voll" : `${availableCount}`}
+                                                                    </span>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex-1 min-h-[200px] bg-zinc-50/50 dark:bg-zinc-900/20 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 overflow-y-auto">
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="text-xs font-bold text-zinc-500 uppercase">
+                                                            Verfügbare Zimmer {editRoomType ? `(${editRoomType})` : ""}
+                                                        </div>
+                                                        {editRoomType && (
+                                                            <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setEditRoomType("")}>
+                                                                Filter löschen
+                                                            </Button>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {(editRoomType ? editAllRoomsForType : rooms).map(room => {
+                                                            const isOccupied = checkRoomOverlap(room.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id);
+                                                            const isSelectedInOtherTab = editTabs.some(t => t.id !== activeEditTabId && t.booking.room_id === room.id);
+
+                                                            if (isOccupied && !isSelectedInOtherTab) return null;
+
+                                                            return (
+                                                                <button
+                                                                    key={room.id}
+                                                                    type="button"
+                                                                    disabled={isOccupied || isSelectedInOtherTab}
+                                                                    onClick={() => setEditingBooking(prev => prev ? ({ ...prev, room_id: room.id, room_name: room.name }) : null)}
+                                                                    className={cn(
+                                                                        "p-2 rounded-xl border text-left transition-all relative overflow-hidden",
+                                                                        editingBooking.room_id === room.id
+                                                                            ? "bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 shadow-md"
+                                                                            : isSelectedInOtherTab
+                                                                                ? "bg-amber-50/50 border-amber-200 border-dashed opacity-80"
+                                                                                : isOccupied
+                                                                                    ? "opacity-50 grayscale cursor-not-allowed bg-zinc-50 border-zinc-200"
+                                                                                    : "border-zinc-100 bg-white hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm"
+                                                                    )}
+                                                                >
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className={cn(
+                                                                            "w-7 h-7 shrink-0 rounded-lg flex items-center justify-center",
+                                                                            editingBooking.room_id === room.id ? "bg-emerald-100 text-emerald-700" :
+                                                                                isSelectedInOtherTab ? "bg-amber-100 text-amber-600" : "bg-zinc-100 text-zinc-500"
+                                                                        )}>
+                                                                            {getRoomIcon(room.type, "w-3.5 h-3.5")}
+                                                                        </div>
+                                                                        <div className="min-w-0">
+                                                                            <div className={cn("font-bold text-xs truncate", editingBooking.room_id === room.id ? "text-emerald-900" : "text-zinc-900")}>{room.name}</div>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <div className="text-[9px] text-zinc-500 font-medium uppercase truncate">{room.type}</div>
+                                                                                {(!!room.is_allergy_friendly) && (
+                                                                                    <div title="Allergikerfreundlich" className={cn("p-0.5 rounded", editingBooking.room_id === room.id ? "bg-emerald-200" : "bg-pink-100")}>
+                                                                                        <Flower2 className={cn("w-2.5 h-2.5", editingBooking.room_id === room.id ? "text-emerald-700" : "text-pink-500")} />
+                                                                                    </div>
+                                                                                )}
+                                                                                {(!!room.is_accessible) && (
+                                                                                    <div title="Barrierefrei" className={cn("p-0.5 rounded", editingBooking.room_id === room.id ? "bg-emerald-200" : "bg-blue-100")}>
+                                                                                        <Accessibility className={cn("w-2.5 h-2.5", editingBooking.room_id === room.id ? "text-emerald-700" : "text-blue-600")} />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    {(editingBooking.room_id === room.id || isSelectedInOtherTab) && (
+                                                                        <div className="absolute bottom-1.5 right-2">
+                                                                            {editingBooking.room_id === room.id && (
+                                                                                <div className="text-[8px] font-bold text-emerald-600 flex items-center justify-end gap-0.5">
+                                                                                    <Check className="w-2.5 h-2.5" /> Gewählt
+                                                                                </div>
+                                                                            )}
+                                                                            {isSelectedInOtherTab && (
+                                                                                <div className="text-[8px] font-bold text-amber-600 flex items-center justify-end gap-0.5">
+                                                                                    <Ban className="w-2.5 h-2.5" /> Belegt
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                        {(editRoomType ? editAllRoomsForType : rooms).filter(r => !checkRoomOverlap(r.id, editingBooking.start_date, editingBooking.end_date, editingBooking.id)).length === 0 && (
+                                                            <div className="text-center py-8 text-zinc-400 text-sm italic">
+                                                                Keine freien Zimmer gefunden.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="absolute bottom-6 left-6 right-6 pt-4 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800">
+                            ) : (
+                                <div className="flex-1 min-h-0 flex flex-col pt-4 overflow-hidden relative">
+                                    {/* Breakfast Content (Preserved) */}
+                                    <div className="space-y-4 overflow-y-auto pr-2 pb-6">
+                                        {getDaysArray(editingBooking.start_date, editingBooking.end_date).map(day => {
+                                            const dayOptions = breakfastOptions.filter(o => o.date === day);
+                                            return (
+                                                <div key={day} className="p-4 border rounded-2xl bg-zinc-50 dark:bg-zinc-900 shadow-sm space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100 italic">
+                                                            {new Date(day).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                                        </div>
+                                                        <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase" onClick={() => addPersonToDay(day)}>
+                                                            <Plus className="w-3 h-3 mr-1" /> Person hinzufügen
+                                                        </Button>
+                                                    </div>
+
+                                                    {dayOptions.length === 0 ? (
+                                                        <div className="flex items-center justify-center py-4 border-2 border-dashed border-zinc-200 rounded-xl">
+                                                            <button onClick={() => addPersonToDay(day)} className="text-xs text-zinc-400 font-medium hover:text-blue-500 transition-colors">
+                                                                Kein Frühstück geplant. Klicken zum Hinzufügen.
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            {dayOptions.map((opt, idx) => (
+                                                                <div key={opt.id} className="bg-white dark:bg-zinc-950 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 space-y-3">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <div className="text-[10px] font-black text-zinc-300 uppercase italic">Person {idx + 1}</div>
+                                                                        <button onClick={() => removePersonFromDay(opt.id!)} className="text-zinc-300 hover:text-red-500 transition-colors">
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-3">
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-[10px] uppercase font-bold text-zinc-400">Zeit</Label>
+                                                                            <Input
+                                                                                type="time"
+                                                                                className={cn(
+                                                                                    "h-9 text-xs shadow-sm rounded-lg",
+                                                                                    pendingBreakfastChanges[opt.id!]?.time && "border-amber-400 ring-1 ring-amber-400/20"
+                                                                                )}
+                                                                                defaultValue={pendingBreakfastChanges[opt.id!]?.time ?? opt.time ?? "08:00"}
+                                                                                onChange={(e) => trackBreakfastChange(opt.id!, 'time', e.target.value)}
+                                                                            />
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <Label className="text-[10px] uppercase font-bold text-zinc-400">Hinweise</Label>
+                                                                            <Input
+                                                                                className={cn(
+                                                                                    "h-9 text-xs shadow-sm rounded-lg",
+                                                                                    pendingBreakfastChanges[opt.id!]?.comments !== undefined && "border-amber-400 ring-1 ring-amber-400/20"
+                                                                                )}
+                                                                                defaultValue={pendingBreakfastChanges[opt.id!]?.comments ?? opt.comments ?? ""}
+                                                                                placeholder="Allergien..."
+                                                                                onChange={(e) => trackBreakfastChange(opt.id!, 'comments', e.target.value)}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )
+                        )
+                    }
+
+                    <DialogFooter className="mt-auto pt-6 border-t border-zinc-100 flex items-center justify-between shrink-0 px-6 -mx-6 bg-white dark:bg-zinc-950 rounded-b-lg">
+                        {editTab === 'details' ? (
+                            <>
+                                <div className="flex items-center gap-6">
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Buchungsstatus</Label>
+                                        <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg">
+                                            {[
+                                                { id: "Draft", label: "Entwurf", color: "white" },
+                                                { id: "Hard-Booked", label: "Fest buchen", color: "blue" }
+                                            ].map((s) => (
+                                                <button
+                                                    key={s.id}
+                                                    type="button"
+                                                    onClick={() => setEditingBooking(prev => prev ? ({ ...prev, status: s.id }) : null)}
+                                                    className={cn(
+                                                        "px-4 py-1.5 text-[10px] font-bold rounded-md transition-all",
+                                                        editingBooking?.status === s.id
+                                                            ? s.color === "blue" ? "bg-blue-600 text-white shadow-sm" : "bg-white text-zinc-900 shadow-sm"
+                                                            : "text-zinc-500 hover:text-zinc-700"
+                                                    )}
+                                                >
+                                                    {s.label}
+                                                </button>
+                                            ))}
+                                            {editingBooking?.status !== "Draft" && editingBooking?.status !== "Hard-Booked" && (
+                                                <div className="px-4 py-1.5 text-[10px] font-bold rounded-md bg-emerald-600 text-white shadow-sm ml-1 flex items-center">
+                                                    {editingBooking?.status}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="h-10 w-px bg-zinc-100" />
+
+                                    <div className="flex flex-col gap-0.5">
+                                        <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Aufenthaltsdauer</div>
+                                        <div className="text-sm font-bold text-zinc-900 flex items-center gap-1.5">
+                                            <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                                            {editingBooking?.start_date && editingBooking?.end_date ? (
+                                                `${Math.ceil((new Date(editingBooking.end_date).getTime() - new Date(editingBooking.start_date).getTime()) / (1000 * 60 * 60 * 24))} Nächte`
+                                            ) : "---"}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-3">
                                     <Button
-                                        onClick={handleSaveBreakfastChanges}
-                                        disabled={Object.keys(pendingBreakfastChanges).length === 0}
-                                        className="w-full bg-blue-600 font-bold shadow-lg shadow-blue-600/20"
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                                        onClick={() => setIsEditOpen(false)}
                                     >
-                                        <Check className="w-4 h-4 mr-2" /> Änderungen speichern
+                                        Abbrechen
                                     </Button>
+                                    <Button
+                                        type="button"
+                                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
+                                        onClick={updateBooking}
+                                    >
+                                        <Check className="w-4 h-4 mr-2" />
+                                        Änderungen speichern
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="flex items-center gap-4">
                                     {Object.keys(pendingBreakfastChanges).length > 0 && (
-                                        <div className="text-center mt-2 text-xs text-amber-600 font-medium animate-pulse">
+                                        <div className="flex items-center gap-2 text-amber-600 font-bold text-xs animate-pulse">
+                                            <div className="w-2 h-2 rounded-full bg-amber-500" />
                                             Ungespeicherte Änderungen
                                         </div>
                                     )}
                                 </div>
-                            </div>
-                        )
-                    )}
-
-                    {editTab === 'details' && (
-                        <DialogFooter className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-between shrink-0">
-                            <Button variant="ghost" onClick={() => setIsEditOpen(false)}>Abbrechen</Button>
-                            <Button onClick={updateBooking} className="bg-blue-600 font-bold shadow-lg shadow-blue-600/20">
-                                <Check className="w-4 h-4 mr-2" />
-                                Änderungen speichern
-                            </Button>
-                        </DialogFooter>
-                    )}
-                </DialogContent>
-            </Dialog>
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                                        onClick={() => setEditTab("details")}
+                                    >
+                                        Zurück
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        disabled={Object.keys(pendingBreakfastChanges).length === 0}
+                                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
+                                        onClick={handleSaveBreakfastChanges}
+                                    >
+                                        <Check className="w-4 h-4 mr-2" />
+                                        Frühstück speichern
+                                    </Button>
+                                </div>
+                            </>
+                        )}
+                    </DialogFooter>
+                </DialogContent >
+            </Dialog >
 
             {/* Check-Out Summary Dialog */}
-            <Dialog open={isCheckOutOpen} onOpenChange={(open) => {
+            < Dialog open={isCheckOutOpen} onOpenChange={(open) => {
                 setIsCheckOutOpen(open);
                 if (!open) {
                     setCheckOutBooking(null);
                     router.push('/buchungen', { scroll: false });
                 }
-            }}>
+            }
+            }>
                 <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -3485,9 +3546,9 @@ function BookingsList() {
                         </div>
                     )}
                 </DialogContent>
-            </Dialog>
+            </Dialog >
             {/* Guest Edit Mask */}
-            <Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen}>
+            < Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen} >
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
@@ -3496,10 +3557,10 @@ function BookingsList() {
                         <GuestMaskForm guest={editingGuestForMask} onSubmit={updateGuestInMask} />
                     )}
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Group Deletion Dialog */}
-            <Dialog open={isGroupDeleteOpen} onOpenChange={setIsGroupDeleteOpen}>
+            < Dialog open={isGroupDeleteOpen} onOpenChange={setIsGroupDeleteOpen} >
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Gruppe "{deletingGroup?.name}" verwalten</DialogTitle>
@@ -3554,7 +3615,7 @@ function BookingsList() {
                         </div>
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             <ConfirmDialog
                 isOpen={deleteConfirm.isOpen}

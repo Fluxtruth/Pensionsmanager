@@ -122,7 +122,7 @@ export default function BreakfastPage() {
             if (db) {
                 await db.execute(
                     "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [crypto.randomUUID(), bookingId, selectedDate, 1, "08:00", 1, 0, "", "manuell", 1]
+                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), bookingId, selectedDate, 1, "08:00", 1, 0, "", "manuell", 1]
                 );
                 await loadData();
             }
@@ -145,7 +145,7 @@ export default function BreakfastPage() {
                 for (const item of missing) {
                     await db.execute(
                         "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0]
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0]
                     );
                 }
                 await loadData();
@@ -178,7 +178,7 @@ export default function BreakfastPage() {
                 } else {
                     await db.execute(
                         "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), row.booking_id, selectedDate, newIncluded, "08:00", 1, 0, "", "auto", 0]
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), row.booking_id, selectedDate, newIncluded, "08:00", 1, 0, "", "auto", 0]
                     );
                 }
                 await loadData();

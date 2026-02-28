@@ -215,7 +215,7 @@ export default function CleaningPage() {
                     for (const booking of checkInsToGenerate) {
                         await db.execute(
                             "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            [crypto.randomUUID(), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
+                            [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
                         );
                     }
                     // Refetch tasks after generation
@@ -251,7 +251,7 @@ export default function CleaningPage() {
                 if (isActive) {
                     await db.execute(
                         "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), roomId, selectedDate, "Offen", 1, 'Manuell', type]
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), roomId, selectedDate, "Offen", 1, 'Manuell', type]
                     );
                 } else {
                     await db.execute(
@@ -272,7 +272,7 @@ export default function CleaningPage() {
             if (db) {
                 await db.execute(
                     "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [crypto.randomUUID(), null, selectedDate, "Offen", 1, 'Manuell', title]
+                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), null, selectedDate, "Offen", 1, 'Manuell', title]
                 );
                 await loadData();
             }
@@ -287,7 +287,7 @@ export default function CleaningPage() {
             if (db) {
                 await db.execute(
                     "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [crypto.randomUUID(), null, selectedDate, "Offen", 1, 'Vorschlag', suggestion.title]
+                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), null, selectedDate, "Offen", 1, 'Vorschlag', suggestion.title]
                 );
                 await loadData();
             }
@@ -342,7 +342,7 @@ export default function CleaningPage() {
                 for (const roomId of roomsToClean) {
                     await db.execute(
                         "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), roomId, selectedDate, "Offen", 0, 'Auto', 'cleaning']
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), roomId, selectedDate, "Offen", 0, 'Auto', 'cleaning']
                     );
                 }
 
@@ -357,7 +357,7 @@ export default function CleaningPage() {
                 for (const booking of checkInsToGenerate) {
                     await db.execute(
                         "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [crypto.randomUUID(), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
                     );
                 }
 
@@ -421,7 +421,7 @@ export default function CleaningPage() {
                 } else {
                     await db.execute(
                         "INSERT INTO staff (id, name, role, daily_capacity) VALUES (?, ?, ?, ?)",
-                        [crypto.randomUUID(), name, role, capacity]
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), name, role, capacity]
                     );
                 }
                 await loadData();
@@ -465,7 +465,7 @@ export default function CleaningPage() {
             if (db) {
                 await db.execute(
                     "INSERT INTO cleaning_task_suggestions (id, title, weekday, frequency_weeks) VALUES (?, ?, ?, ?)",
-                    [crypto.randomUUID(), title, weekday, frequency]
+                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), title, weekday, frequency]
                 );
                 await loadData();
                 (e.target as HTMLFormElement).reset();
