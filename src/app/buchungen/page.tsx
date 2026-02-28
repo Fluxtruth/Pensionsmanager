@@ -2081,7 +2081,7 @@ function BookingsList() {
                                                                             </div>
                                                                         </div>
                                                                         {(wizardData.roomId === room.id || isSelectedInOtherTab) && (
-                                                                            <div className="text-right mt-0.5">
+                                                                            <div className="absolute bottom-1.5 right-2">
                                                                                 {wizardData.roomId === room.id && (
                                                                                     <div className="text-[8px] font-bold text-emerald-600 flex items-center justify-end gap-0.5">
                                                                                         <Check className="w-2.5 h-2.5" /> Gewählt

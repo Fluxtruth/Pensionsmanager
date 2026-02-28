@@ -315,6 +315,8 @@ export default function KalenderPage() {
         fetchData();
     }, []);
 
+    const [blockingIds, setBlockingIds] = useState<string[]>([]); // State for highlighting overlapping bookings
+
     const handleDragStart = (event: DragStartEvent) => {
         const { active } = event;
         setActiveId(active.id as string);
@@ -334,10 +336,13 @@ export default function KalenderPage() {
 
     const handleDragOver = (event: DragEndEvent) => { // Using DragEndEvent type for convenience as it has active/over
         const { active, over } = event;
-        if (!over) return;
+        if (!over) {
+            setBlockingIds([]);
+            return;
+        }
 
         // Parse target
-        const [_, targetDateStr] = (over.id as string).split('::');
+        const [targetRoomId, targetDateStr] = (over.id as string).split('::');
 
         // --- Dynamic Auto-Scroll Logic ---
         if (targetDateStr) {
@@ -364,14 +369,13 @@ export default function KalenderPage() {
 
         // Handle Live Resize Feedback
         if ((active.id as string).startsWith('resize-')) {
+            // ... (keep resize logic, ignoring for blocking visual for now or implement if needed)
+            // Existing logic...
             const resizeId = active.id as string;
             const isTop = resizeId.startsWith('resize-top-');
             const bookingId = resizeId.replace(isTop ? 'resize-top-' : 'resize-bottom-', '');
-
             const booking = bookings.find(b => b.id === bookingId);
-            if (!booking) return;
-
-            if (!targetDateStr) return;
+            if (!booking || !targetDateStr) return;
 
             const addDays = (dateS: string, days: number) => {
                 const d = new Date(dateS);
@@ -384,16 +388,49 @@ export default function KalenderPage() {
 
             if (isTop) {
                 newStart = targetDateStr;
-                if (newStart >= newEnd) return; // Ignore invalid
+                if (newStart >= newEnd) return;
             } else {
                 newEnd = addDays(targetDateStr, 1);
-                if (newEnd <= newStart) return; // Ignore invalid
+                if (newEnd <= newStart) return;
             }
 
-            // Only update state if changed (optimization)
             if (resizingState?.newStart !== newStart || resizingState?.newEnd !== newEnd) {
                 setResizingState({ bookingId, newStart, newEnd });
             }
+            return;
+        }
+
+        // --- Check for Overlap (Move) ---
+        // Need to calculate where the booking WOULD be
+        if (activeBooking && targetDateStr && targetRoomId) {
+            const duration = getDaysCount(activeBooking.start_date, activeBooking.end_date);
+            const newStartDateStr = targetDateStr;
+
+            // Calculate new end date
+            const d = new Date(newStartDateStr);
+            d.setDate(d.getDate() + duration);
+            const newEndDateStr = d.toISOString().split('T')[0];
+
+            // Check collisions
+            const overlaps = bookings.filter(b => {
+                if (b.id === activeBooking.id) return false;
+                if (b.room_id !== targetRoomId) return false;
+                // Intersection
+                return (newStartDateStr < b.end_date) && (newEndDateStr > b.start_date);
+            });
+
+            const blockers = overlaps.filter(b => {
+                // Block if NOT Draft/Storno
+                const isAllowed = ['Storniert', 'Draft', 'Entwurf'].includes(b.status);
+                return !isAllowed;
+            }).map(b => b.id);
+
+            // Only update if changed to avoid render loop
+            if (blockers.length !== blockingIds.length || !blockers.every(id => blockingIds.includes(id))) {
+                setBlockingIds(blockers);
+            }
+        } else {
+            setBlockingIds([]);
         }
     };
 
@@ -402,6 +439,7 @@ export default function KalenderPage() {
         setActiveId(null);
         setActiveBooking(null);
         setResizingState(null); // Clear resize state
+        setBlockingIds([]); // Clear visual blocking feedback
 
         if (!over) return;
 
@@ -438,15 +476,12 @@ export default function KalenderPage() {
                 // Validate: newStart must be < end_date
                 if (newStart >= newEnd) {
                     // Invalid: Cannot move start past end. 
-                    // Could maybe clamp or swap, but for now just ignore/alert?
-                    // Ignoring is safer UX than swapping implicitly.
                     return;
                 }
             } else {
                 // Resize Bottom: Changing End Date
                 // The drop target is the NEW "Last Night". 
                 // So end_date (checkout) should be target + 1 day
-                // Example: Drag to Jan 3. Means staying night of Jan 3. Checkout Jan 4.
                 newEnd = addDays(targetDateStr, 1);
 
                 // Validate: newEnd > start_date
@@ -454,6 +489,9 @@ export default function KalenderPage() {
                     return;
                 }
             }
+
+            // TODO: Check for overlap on Resize? User asked for "ziehen" (Move), but resize matters too.
+            // For now, implementing robustness for Move as requested.
 
             // Optimistic Update
             const updatedBooking = {
@@ -520,12 +558,17 @@ export default function KalenderPage() {
 
         const isBlocking = overlappingBookings.some(b => {
             // Allow overlap if booking is Storniert or Draft
-            const isAllowed = b.status === "Storniert" || b.status === "Draft" || b.status === "Entwurf";
+            // Refined check
+            const isAllowed = ['Storniert', 'Draft', 'Entwurf'].includes(b.status);
             return !isAllowed;
         });
 
         if (isBlocking) {
-            // Trigger Shake
+            // Trigger Shake on the dragged item locally to show rejection?
+            // User asked for "wackeln am element".
+            // Since we cleared `blockingIds`, the blocking elements stop shaking.
+            // But dragging failed.
+            // Trigger shake on self to verify "Rejection".
             setShakeId(booking.id);
             setTimeout(() => setShakeId(null), 500);
             return; // Abort update
@@ -697,7 +740,7 @@ export default function KalenderPage() {
                                                             booking={b}
                                                             durationDays={daysRemaining}
                                                             isContinued={true}
-                                                            isShaking={shakeId === b.id}
+                                                            isShaking={shakeId === b.id || blockingIds.includes(b.id)}
                                                         />
                                                     );
                                                 })}
@@ -726,7 +769,7 @@ export default function KalenderPage() {
                                                             booking={b}
                                                             durationDays={duration}
                                                             topOffsetDays={topOffset}
-                                                            isShaking={shakeId === b.id}
+                                                            isShaking={shakeId === b.id || blockingIds.includes(b.id)}
                                                         />
                                                     );
                                                 })}
