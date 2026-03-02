@@ -17,3 +17,16 @@ pub fn run() {
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_initialization() {
+        // Since there are no custom Tauri commands right now,
+        // we set up a dummy test as a placeholder for future business logic.
+        assert_eq!(2 + 2, 4);
+    }
+}
+
