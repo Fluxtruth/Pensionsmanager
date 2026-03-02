@@ -1,7 +1,8 @@
 name: Release
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   release-tauri:
@@ -24,6 +25,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
       - name: Install dependencies (npm)
         run: npm install
@@ -32,9 +35,37 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'App v__VERSION__'
+          releaseName: 'Pensionsmanager ${{ github.ref_name }}'
           releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
+
+      - name: Generate update.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}".Substring(1)
+          $SIG_PATH = "src-tauri/target/release/bundle/nsis/pensionsmanager_${VERSION}_x64-setup.nsis.zip.sig"
+          if (Test-Path $SIG_PATH) {
+            $SIG = Get-Content $SIG_PATH
+            $JSON = @{
+              version = $VERSION
+              pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ").ToString()
+              platforms = @{
+                "windows-x86_64" = @{
+                  signature = $SIG
+                  url = "https://github.com/Fluxtruth/Pensionsmanager/releases/download/${{ github.ref_name }}/pensionsmanager_${VERSION}_x64-setup.nsis.zip"
+                }
+              }
+            } | ConvertTo-Json -Depth 5
+            Set-Content update.json $JSON
+            gh release upload ${{ github.ref_name }} update.json --clobber
+          } else {
+            Write-Error "Signature file not found at $SIG_PATH"
+          }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,11 +14,14 @@ import {
     BarChart3,
     Settings,
     Database,
-    Palette
+    Palette,
+    Download
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
+import { check } from "@tauri-apps/plugin-updater";
 
+// ... existing navigation const ...
 const navigation = [
     { name: "Dashboard", href: "/", icon: Home },
     { name: "Zimmer", href: "/zimmer", icon: BedDouble },
@@ -35,6 +38,7 @@ export function Sidebar() {
     const pathname = usePathname();
     const [title, setTitle] = useState("Pensionsmanager");
     const [logo, setLogo] = useState("/logo.jpg");
+    const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
 
     React.useEffect(() => {
         const loadSettings = async () => {
@@ -48,6 +52,20 @@ export function Sidebar() {
             }
         };
         loadSettings();
+
+        // Check for updates
+        const checkForUpdatesInfo = async () => {
+            if (!('__TAURI_INTERNALS__' in window)) return;
+            try {
+                const update = await check();
+                if (update) {
+                    setUpdateAvailable(update.version);
+                }
+            } catch (error) {
+                // Ignore errors here, they are handled by the main Updater component
+            }
+        };
+        checkForUpdatesInfo();
     }, []);
 
     return (
@@ -81,10 +99,19 @@ export function Sidebar() {
                     </Link>
                 ))}
             </nav>
-            <div className="px-7 pb-2">
+            <div className="px-7 pb-2 flex items-center justify-between">
                 <span className="text-xs text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
                     v.1.0.1
                 </span>
+                {updateAvailable && (
+                    <span
+                        title={`Update auf ${updateAvailable} verfügbar! Starte das Update beim nächsten Neustart der App.`}
+                        className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 px-2 py-0.5 rounded-full animate-pulse cursor-help"
+                    >
+                        <Download className="w-3 h-3" />
+                        Update
+                    </span>
+                )}
             </div>
             <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
                 <Link

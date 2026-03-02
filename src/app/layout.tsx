@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 import { Sidebar } from "@/components/Sidebar";
+import { Updater } from "@/components/Updater";
 
 export default function RootLayout({
   children,
@@ -29,6 +30,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-full bg-zinc-50 dark:bg-zinc-950`}
       >
+        <Updater />
         <div className="flex h-full">
           <Sidebar />
           <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
