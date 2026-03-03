@@ -1,29 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { saveMasterKey, loadMasterKey, clearMasterKey } from './keystore';
 import { generateMasterKey } from './crypto';
-import { LazyStore } from '@tauri-apps/plugin-store';
 
-// Mock Tauri LazyStore
+// Use hoisted to share mock state between tests
+const { globalMemoryStore } = vi.hoisted(() => ({
+    globalMemoryStore: {} as Record<string, any>
+}));
+
+// Mock Tauri LazyStore class correctly
 vi.mock('@tauri-apps/plugin-store', () => {
     return {
-        LazyStore: vi.fn().mockImplementation(() => {
-            let memoryStore: Record<string, any> = {};
-            return {
-                set: vi.fn(async (key, value) => {
-                    memoryStore[key] = value;
-                }),
-                get: vi.fn(async (key) => {
-                    return memoryStore[key] || null;
-                }),
-                delete: vi.fn(async (key) => {
-                    delete memoryStore[key];
-                }),
-                save: vi.fn(async () => {
-                    // simulate disk save
-                }),
-                _clearMock: () => { memoryStore = {}; }
-            };
-        })
+        LazyStore: class {
+            async set(key: string, value: any) { globalMemoryStore[key] = value; }
+            async get(key: string) { return globalMemoryStore[key] || null; }
+            async delete(key: string) { delete globalMemoryStore[key]; }
+            async save() { }
+        }
     };
 });
 
@@ -39,6 +31,8 @@ describe('Keystore Utilities (PEN-9)', () => {
     afterEach(() => {
         (window as any).__TAURI_INTERNALS__ = tauriOriginal;
         vi.clearAllMocks();
+        // Clear hoisted memory store
+        Object.keys(globalMemoryStore).forEach(k => delete globalMemoryStore[k]);
     });
 
     it('should save and load a valid CryptoKey back and forth', async () => {

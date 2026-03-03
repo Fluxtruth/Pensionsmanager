@@ -19,7 +19,7 @@ export async function saveMasterKey(key: CryptoKey): Promise<void> {
         throw new Error("Crytography API is not available in this environment");
     }
 
-    if (!document || !window.__TAURI_INTERNALS__) {
+    if (!document || !(window as any).__TAURI_INTERNALS__) {
         console.warn("Not running in a Tauri environment. Mocking storage.");
         // Fallback or skip if not in Tauri
         return;
@@ -42,7 +42,7 @@ export async function loadMasterKey(): Promise<CryptoKey | null> {
         throw new Error("Crytography API is not available in this environment");
     }
 
-    if (!document || !window.__TAURI_INTERNALS__) {
+    if (!document || !(window as any).__TAURI_INTERNALS__) {
         console.warn("Not running in a Tauri environment. Returning null.");
         return null; // fallback for non-Tauri
     }
@@ -68,7 +68,7 @@ export async function loadMasterKey(): Promise<CryptoKey | null> {
  * Irreversibly deletes the Master Key from the secure device store.
  */
 export async function clearMasterKey(): Promise<void> {
-    if (!document || !window.__TAURI_INTERNALS__) {
+    if (!document || !(window as any).__TAURI_INTERNALS__) {
         return;
     }
 
