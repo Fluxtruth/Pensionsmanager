@@ -32,7 +32,6 @@ const navigation = [
     { name: "Reinigungsplan", href: "/reinigung", icon: Eraser },
     { name: "Frühstück", href: "/fruehstueck", icon: Coffee },
     { name: "Tourismusmeldung", href: "/tourismusmeldung", icon: BarChart3 },
-    { name: "Datenbank", href: "/admin/database", icon: Database },
 ];
 
 export function Sidebar() {
@@ -126,6 +125,18 @@ export function Sidebar() {
                 >
                     <Palette className="w-4 h-4" />
                     Konfiguration
+                </Link>
+                <Link
+                    href="/admin/database"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+                        pathname === "/admin/database"
+                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                            : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                    )}
+                >
+                    <Database className="w-4 h-4" />
+                    Datenbank
                 </Link>
                 <Link
                     href="/account"
