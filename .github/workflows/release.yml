@@ -49,23 +49,32 @@ jobs:
         shell: pwsh
         run: |
           $VERSION = "${{ github.ref_name }}".Substring(1)
-          $SIG_PATH = "src-tauri/target/release/bundle/nsis/pensionsmanager_${VERSION}_x64-setup.nsis.zip.sig"
-          if (Test-Path $SIG_PATH) {
+          
+          Write-Host "Looking for signature files in bundle directories..."
+          $SIG_FILE = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.sig" | Select-Object -First 1
+          
+          if ($SIG_FILE) {
+            $SIG_PATH = $SIG_FILE.FullName
             $SIG = Get-Content $SIG_PATH
+            $ASSET_NAME = $SIG_FILE.Name.Replace(".sig", "")
+            Write-Host "Found signature for asset: $ASSET_NAME"
+            
             $JSON = @{
               version = $VERSION
               pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ").ToString()
               platforms = @{
                 "windows-x86_64" = @{
                   signature = $SIG
-                  url = "https://github.com/Fluxtruth/Pensionsmanager/releases/download/${{ github.ref_name }}/pensionsmanager_${VERSION}_x64-setup.nsis.zip"
+                  url = "https://github.com/Fluxtruth/Pensionsmanager/releases/download/${{ github.ref_name }}/$ASSET_NAME"
                 }
               }
             } | ConvertTo-Json -Depth 5
             Set-Content update.json $JSON
             gh release upload ${{ github.ref_name }} update.json --clobber
           } else {
-            Write-Error "Signature file not found at $SIG_PATH"
+            Write-Error "Signature file not found in bundle directory! Showing all files:"
+            Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse
+            exit 1
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
