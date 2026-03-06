@@ -101,7 +101,7 @@ export function Sidebar() {
             </nav>
             <div className="px-7 pb-2 flex items-center justify-between">
                 <span className="text-xs text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-                    v.1.0.1
+                    v.1.0.2
                 </span>
                 {updateAvailable && (
                     <span
