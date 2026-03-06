@@ -38,10 +38,19 @@ const mockData: Record<string, any[]> = {
 
   breakfast_options: [],
   settings: [
-    { key: "branding_title", value: "Pensionsmanager" },
-    { key: "branding_logo", value: "/logo.jpg" }
+    { key: "branding_title", value: "Pensionsmanager", updated_at: "2026-01-01T00:00:00", synced_at: null },
+    { key: "branding_logo", value: "/logo.jpg", updated_at: "2026-01-01T00:00:00", synced_at: null }
   ]
 };
+
+// Helper to ensure mock rows have sync metadata
+Object.keys(mockData).forEach(table => {
+  mockData[table] = mockData[table].map(item => ({
+    updated_at: "2026-01-01T00:00:00",
+    synced_at: null,
+    ...item
+  }));
+});
 
 export const tableNames = Object.keys(mockData);
 
@@ -166,17 +175,20 @@ export async function initDb(): Promise<DatabaseMock | null> {
             return { rowsAffected: 1, lastInsertId: 0 };
           }
 
-          const match = upperQuery.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+|$)/i);
+          const match = upperQuery.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+)|$)/i);
           if (match) {
             const table = match[1].toLowerCase();
             const setPhrase = match[2];
+            const wherePhrase = match[3] || "";
 
             // Extract all assigned columns: `col1 = ?, col2 = ?, col3 = 'val'`
             const assignments = setPhrase.split(',').map(s => s.trim());
 
-            const id = params?.[params.length - 1]; // Assuming WHERE ID = ? is the last parameter
             if (mockData[table]) {
-              const index = mockData[table].findIndex(item => item.id === id);
+              // Try to find the identifier in the WHERE clause
+              const idField = table === 'settings' ? 'key' : 'id';
+              const idValue = params?.[params.length - 1]; // Assuming ID is the last param
+              const index = mockData[table].findIndex(item => item[idField] === idValue);
               if (index !== -1) {
                 // Initialize a partial updates object
                 const updates: any = {};
@@ -258,7 +270,22 @@ export async function initDb(): Promise<DatabaseMock | null> {
             }
 
             if (upperQuery.includes("COUNT(*)")) {
+              if (upperQuery.includes("SYNCED_AT IS NULL")) {
+                const pending = mockData[table].filter(item => 
+                  item.synced_at === null || (item.updated_at && item.synced_at && item.updated_at > item.synced_at)
+                );
+                return [{ count: pending.length }] as unknown as T;
+              }
               return [{ count: mockData[table].length }] as unknown as T;
+            }
+
+            if (upperQuery.includes("MAX(SYNCED_AT)")) {
+              const maxSync = mockData[table].reduce((max, item) => {
+                if (!item.synced_at) return max;
+                if (!max || item.synced_at > max) return item.synced_at;
+                return max;
+              }, null as string | null);
+              return [{ max_sync: maxSync }] as unknown as T;
             }
 
             return mockData[table] as unknown as T;
