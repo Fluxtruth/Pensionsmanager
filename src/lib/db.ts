@@ -281,17 +281,23 @@ export async function initDb(): Promise<DatabaseMock | null> {
         type TEXT NOT NULL,
         base_price REAL DEFAULT 0,
         is_allergy_friendly INTEGER DEFAULT 0,
-        is_accessible INTEGER DEFAULT 0
+        is_accessible INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
       );
     `);
     try { await db.execute("ALTER TABLE rooms ADD COLUMN base_price REAL DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE rooms ADD COLUMN is_allergy_friendly INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE rooms ADD COLUMN is_accessible INTEGER DEFAULT 0"); } catch (e) { }
+    try { await db.execute("ALTER TABLE rooms ADD COLUMN updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))"); } catch (e) { }
+    try { await db.execute("ALTER TABLE rooms ADD COLUMN synced_at TEXT"); } catch (e) { }
 
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS room_configs (
+       CREATE TABLE IF NOT EXISTS room_configs (
         id TEXT PRIMARY KEY, room_id TEXT NOT NULL, attributes TEXT, base_price REAL,
         available_from TEXT, available_until TEXT, is_default INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id)
       );
 
@@ -299,7 +305,9 @@ export async function initDb(): Promise<DatabaseMock | null> {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, first_name TEXT, middle_name TEXT,
         last_name TEXT, email TEXT, phone TEXT, company TEXT, notes TEXT,
         contact_info TEXT, identity_doc_info TEXT, preferences TEXT,
-        relationships TEXT, total_revenue REAL DEFAULT 0
+        relationships TEXT, total_revenue REAL DEFAULT 0,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
       );
     `);
 
@@ -309,14 +317,18 @@ export async function initDb(): Promise<DatabaseMock | null> {
     }
 
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS booking_groups (
+       CREATE TABLE IF NOT EXISTS booking_groups (
         id TEXT PRIMARY KEY,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS occasions (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, type TEXT, status TEXT,
         main_guest_id TEXT, room_suggestions TEXT,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT,
         FOREIGN KEY (main_guest_id) REFERENCES guests(id)
       );
 
@@ -330,6 +342,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
         guests_per_room INTEGER DEFAULT 1, stay_type TEXT DEFAULT 'private',
         dog_count INTEGER DEFAULT 0, child_count INTEGER DEFAULT 0, extra_bed_count INTEGER DEFAULT 0,
         is_main_guest INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (guest_id) REFERENCES guests(id),
         FOREIGN KEY (occasion_id) REFERENCES occasions(id),
@@ -337,31 +351,41 @@ export async function initDb(): Promise<DatabaseMock | null> {
       );
       
       CREATE TABLE IF NOT EXISTS staff (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT, daily_capacity INTEGER
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT, daily_capacity INTEGER,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS cleaning_tasks (
         id TEXT PRIMARY KEY, room_id TEXT, staff_id TEXT, date TEXT, status TEXT,
         is_exception INTEGER DEFAULT 0, original_date TEXT, title TEXT,
         task_type TEXT DEFAULT 'cleaning',
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (staff_id) REFERENCES staff(id)
       );
 
       CREATE TABLE IF NOT EXISTS cleaning_task_suggestions (
-        id TEXT PRIMARY KEY, title TEXT NOT NULL, weekday INTEGER, frequency_weeks INTEGER DEFAULT 1
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, weekday INTEGER, frequency_weeks INTEGER DEFAULT 1,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS breakfast_options (
         id TEXT PRIMARY KEY, booking_id TEXT, date TEXT, is_included INTEGER DEFAULT 0,
         is_prepared INTEGER DEFAULT 0, guest_count INTEGER DEFAULT 1, time TEXT,
         comments TEXT,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT,
         FOREIGN KEY (booking_id) REFERENCES bookings(id)
       );
 
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
-        value TEXT
+        value TEXT,
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
       );
     `);
 
@@ -388,6 +412,25 @@ export async function initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN task_type TEXT DEFAULT 'cleaning'"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN source TEXT DEFAULT 'auto'"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
+
+    // Add updated_at and synced_at to all tables (ALTER for existing DBs)
+    const tables = ["rooms", "room_configs", "guests", "booking_groups", "occasions", "bookings", "staff", "cleaning_tasks", "cleaning_task_suggestions", "breakfast_options", "settings"];
+    for (const table of tables) {
+      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))`); } catch (e) { }
+      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN synced_at TEXT`); } catch (e) { }
+      
+      // Add update triggers
+      try {
+        await db.execute(`
+          CREATE TRIGGER IF NOT EXISTS trg_update_at_${table}
+          AFTER UPDATE ON ${table}
+          FOR EACH ROW
+          BEGIN
+            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE ${table === 'settings' ? 'key = OLD.key' : 'id = OLD.id'};
+          END;
+        `);
+      } catch (e) { }
+    }
 
     await db.execute("UPDATE rooms SET type = 'Ferienwohnung' WHERE type IN ('Wohnung', 'Apartment')");
 

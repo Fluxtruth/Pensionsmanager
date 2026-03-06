@@ -17,12 +17,27 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
+import { SyncService } from "@/lib/sync";
 
 export default function DatabasePage() {
     const [lastSync, setLastSync] = useState<string | null>(null);
     const [syncStatus, setSyncStatus] = useState<"success" | "warning" | "error">("success");
     const [pensionName, setPensionName] = useState("Pensionsmanager");
     const [loading, setLoading] = useState(false);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+    const syncService = SyncService.getInstance();
+
+    const refreshSyncStatus = async () => {
+        const time = await syncService.getLastSyncTime();
+        if (time) {
+            setLastSync(new Date(time).toLocaleString('de-DE'));
+        }
+        const count = await syncService.getPendingCount();
+        setPendingCount(count);
+        setSyncStatus(count > 0 ? "warning" : "success");
+    };
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -30,22 +45,32 @@ export default function DatabasePage() {
             if (db) {
                 const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
                 if (titleRes.length > 0) setPensionName(titleRes[0].value);
-
-                // Mock sync data
-                setLastSync(new Date().toLocaleString('de-DE'));
             }
+            await refreshSyncStatus();
         };
         loadSettings();
     }, []);
 
-    const handleManualSync = () => {
+    const handleManualSync = async () => {
         setLoading(true);
-        // Mock sync delay
-        setTimeout(() => {
-            setLastSync(new Date().toLocaleString('de-DE'));
-            setSyncStatus("success");
+        setSyncMessage(null);
+        try {
+            const result = await syncService.performSync();
+            if (result.success) {
+                setSyncMessage("Synchronisation erfolgreich!");
+                await refreshSyncStatus();
+            } else {
+                setSyncStatus("error");
+                setSyncMessage(`Fehler: ${result.error}`);
+            }
+        } catch (error) {
+            setSyncStatus("error");
+            setSyncMessage("Verbindung zum Server fehlgeschlagen.");
+        } finally {
             setLoading(false);
-        }, 1500);
+            // Hide message after 5 seconds
+            setTimeout(() => setSyncMessage(null), 5000);
+        }
     };
 
     const handleLegalClick = (url: string) => {
@@ -97,6 +122,15 @@ export default function DatabasePage() {
                                 Synchronisieren
                             </Button>
                         </div>
+                        {syncMessage && (
+                            <div className={cn(
+                                "mt-4 flex items-center gap-2 p-2 rounded text-xs animate-in fade-in slide-in-from-top-1",
+                                syncStatus === "error" ? "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400" : "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400"
+                            )}>
+                                {syncStatus === "error" ? <AlertCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                                {syncMessage}
+                            </div>
+                        )}
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -111,20 +145,29 @@ export default function DatabasePage() {
                             </div>
                             <div className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
                                 <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium mb-1 uppercase tracking-wider">
-                                    <ShieldCheck className="w-3 h-3 text-blue-500" />
-                                    Security Layer
+                                    <RefreshCw className={cn("w-3 h-3", pendingCount > 0 && "text-orange-500")} />
+                                    Ausstehend
                                 </div>
                                 <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                                    End-to-End
+                                    {pendingCount} Änderungen
+                                </div>
+                            </div>
+                            <div className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                                <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium mb-1 uppercase tracking-wider">
+                                    <ShieldCheck className="w-3 h-3 text-blue-500" />
+                                    Verschlüsselung
+                                </div>
+                                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                                    AES-GCM (Lokal)
                                 </div>
                             </div>
                             <div className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
                                 <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium mb-1 uppercase tracking-wider">
                                     <Database className="w-3 h-3" />
-                                    Speichertyp
+                                    DB Engine
                                 </div>
                                 <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                                    Lokale Postgres
+                                    SQLite (Local)
                                 </div>
                             </div>
                         </div>
