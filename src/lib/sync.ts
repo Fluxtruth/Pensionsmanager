@@ -43,6 +43,32 @@ export class SyncService {
   }
 
   /**
+   * Holt die pension_id des aktuell angemeldeten Benutzers.
+   */
+  public async getPensionId(): Promise<string | null> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('pension_id')
+        .eq('id', user.id)
+        .single();
+
+      if (error || !profile) {
+        console.warn("No pension profile found for user:", user.id);
+        return null;
+      }
+
+      return profile.pension_id;
+    } catch (error) {
+      console.error("Error fetching pension_id:", error);
+      return null;
+    }
+  }
+
+  /**
    * Identifiziert die Anzahl der lokal geänderten Datensätze, die noch nicht synchronisiert wurden.
    */
   public async getPendingCount(): Promise<number> {
@@ -70,6 +96,14 @@ export class SyncService {
     const db = await this.ensureDb();
     if (!db) return { success: false, error: "Datenbank nicht initialisiert" };
 
+    const pensionId = await this.getPensionId();
+    if (!pensionId) {
+      return { 
+        success: false, 
+        error: "Keine zugeordnete Pension gefunden. Bitte kontaktieren Sie den Support oder vervollständigen Sie Ihr Profil." 
+      };
+    }
+
     try {
       let tablesProcessed = 0;
       for (const table of TABLES_TO_SYNC) {
@@ -79,13 +113,16 @@ export class SyncService {
         );
 
         if (pendingRows.length > 0) {
-          console.log(`Syncing ${pendingRows.length} rows for table ${table}...`);
+          console.log(`Syncing ${pendingRows.length} rows for table ${table} with pension_id ${pensionId}...`);
           
           // 2. Zu Supabase hochladen (Upsert)
-          // Wir entfernen 'synced_at' vor dem Upload, da Supabase das nicht wissen muss
+          // Wir stellen sicher, dass pension_id gesetzt ist
           const uploadData = pendingRows.map(row => {
             const { synced_at, ...data } = row;
-            return data;
+            return {
+              ...data,
+              pension_id: data.pension_id || pensionId
+            };
           });
 
           const { error: upsertError } = await supabase
@@ -97,15 +134,15 @@ export class SyncService {
             return { success: false, error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message}` };
           }
 
-          // 3. Lokal als synchronisiert markieren
+          // 3. Lokal als synchronisiert markieren und pension_id persistent speichern
           const now = new Date().toISOString();
           for (const row of pendingRows) {
             const idField = table === 'settings' ? 'key' : 'id';
             const idValue = row[idField];
             
             await db.execute(
-              `UPDATE ${table} SET synced_at = ? WHERE ${idField} = ?`,
-              [now, idValue]
+              `UPDATE ${table} SET synced_at = ?, pension_id = ? WHERE ${idField} = ?`,
+              [now, pensionId, idValue]
             );
           }
         }

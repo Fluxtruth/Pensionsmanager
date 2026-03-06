@@ -38,14 +38,15 @@ const mockData: Record<string, any[]> = {
 
   breakfast_options: [],
   settings: [
-    { key: "branding_title", value: "Pensionsmanager", updated_at: "2026-01-01T00:00:00", synced_at: null },
-    { key: "branding_logo", value: "/logo.jpg", updated_at: "2026-01-01T00:00:00", synced_at: null }
+    { key: "branding_title", value: "Pensionsmanager", updated_at: "2026-01-01T00:00:00", synced_at: null, pension_id: "00000000-0000-0000-0000-000000000001" },
+    { key: "branding_logo", value: "/logo.jpg", updated_at: "2026-01-01T00:00:00", synced_at: null, pension_id: "00000000-0000-0000-0000-000000000001" }
   ]
 };
 
 // Helper to ensure mock rows have sync metadata
 Object.keys(mockData).forEach(table => {
   mockData[table] = mockData[table].map(item => ({
+    pension_id: "00000000-0000-0000-0000-000000000001", // Default mock pension (matches Supabase injected test pension)
     updated_at: "2026-01-01T00:00:00",
     synced_at: null,
     ...item
@@ -310,7 +311,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
         is_allergy_friendly INTEGER DEFAULT 0,
         is_accessible INTEGER DEFAULT 0,
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-        synced_at TEXT
+        synced_at TEXT,
+        pension_id TEXT
       );
     `);
     try { await db.execute("ALTER TABLE rooms ADD COLUMN base_price REAL DEFAULT 0"); } catch (e) { }
@@ -334,7 +336,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
         contact_info TEXT, identity_doc_info TEXT, preferences TEXT,
         relationships TEXT, total_revenue REAL DEFAULT 0,
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-        synced_at TEXT
+        synced_at TEXT,
+        pension_id TEXT
       );
     `);
 
@@ -412,7 +415,8 @@ export async function initDb(): Promise<DatabaseMock | null> {
         key TEXT PRIMARY KEY,
         value TEXT,
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-        synced_at TEXT
+        synced_at TEXT,
+        pension_id TEXT
       );
     `);
 
@@ -445,6 +449,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
     for (const table of tables) {
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN synced_at TEXT`); } catch (e) { }
+      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN pension_id TEXT`); } catch (e) { }
       
       // Add update triggers
       try {
