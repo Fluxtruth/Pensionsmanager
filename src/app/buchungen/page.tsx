@@ -559,18 +559,26 @@ function BookingsList() {
             const booking = bookings.find(b => b.id === editId);
             if (booking) {
                 handleEditClick(booking);
+                // Clear the 'edit' parameter from the URL to prevent reopening
+                const newParams = new URLSearchParams(searchParams.toString());
+                newParams.delete("edit");
+                router.replace(`/buchungen?${newParams.toString()}`, { scroll: false });
             }
         }
-    }, [editId, bookings, handleEditClick]);
+    }, [editId, bookings, handleEditClick, searchParams, router]);
 
     useEffect(() => {
         if (checkoutId && bookings.length > 0) {
             const booking = bookings.find(b => b.id === checkoutId);
             if (booking) {
                 handleCheckOutClick(booking);
+                // Clear the 'checkout' parameter from the URL to prevent reopening
+                const newParams = new URLSearchParams(searchParams.toString());
+                newParams.delete("checkout");
+                router.replace(`/buchungen?${newParams.toString()}`, { scroll: false });
             }
         }
-    }, [checkoutId, bookings]);
+    }, [checkoutId, bookings, searchParams, router]);
 
     const loadBreakfast = async (bookingId: string) => {
         setBreakfastOptions([]);
