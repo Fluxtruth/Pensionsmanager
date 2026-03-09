@@ -16,11 +16,14 @@ import {
     Database,
     Palette,
     Download,
-    User
+    User,
+    Lightbulb,
+    Bug
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
 import { check } from "@tauri-apps/plugin-updater";
+import { FeedbackDialog } from "./FeedbackDialog";
 
 // ... existing navigation const ...
 const navigation = [
@@ -39,6 +42,7 @@ export function Sidebar() {
     const [title, setTitle] = useState("Pensionsmanager");
     const [logo, setLogo] = useState("/logo.jpg");
     const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+    const [feedbackType, setFeedbackType] = useState<"bug" | "feature" | null>(null);
 
     React.useEffect(() => {
         const loadSettings = async () => {
@@ -150,7 +154,34 @@ export function Sidebar() {
                     <User className="w-4 h-4" />
                     Mein Account
                 </Link>
+
+                <div className="pt-2 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
+                    <button
+                        onClick={() => setFeedbackType("feature")}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Lightbulb className="w-4 h-4 text-amber-500" />
+                            Feature-Wunsch
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => setFeedbackType("bug")}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Bug className="w-4 h-4 text-red-500" />
+                            Fehler melden
+                        </div>
+                    </button>
+                </div>
             </div>
+
+            <FeedbackDialog
+                isOpen={feedbackType !== null}
+                onClose={() => setFeedbackType(null)}
+                type={feedbackType || "bug"}
+            />
         </div>
     );
 }

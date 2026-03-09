@@ -65,7 +65,15 @@ export interface DatabaseMock {
   select: <T>(query: string, params?: any[]) => Promise<T>;
 }
 
-export async function initDb(): Promise<DatabaseMock | null> {
+let initPromise: Promise<DatabaseMock | null> | null = null;
+
+export function initDb(): Promise<DatabaseMock | null> {
+  if (initPromise) return initPromise;
+  initPromise = _initDb();
+  return initPromise;
+}
+
+async function _initDb(): Promise<DatabaseMock | null> {
   if (typeof window === "undefined") return null;
 
   // Check if we are running inside Tauri
@@ -318,7 +326,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE rooms ADD COLUMN base_price REAL DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE rooms ADD COLUMN is_allergy_friendly INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE rooms ADD COLUMN is_accessible INTEGER DEFAULT 0"); } catch (e) { }
-    try { await db.execute("ALTER TABLE rooms ADD COLUMN updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))"); } catch (e) { }
+    try { await db.execute("ALTER TABLE rooms ADD COLUMN updated_at TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE rooms ADD COLUMN synced_at TEXT"); } catch (e) { }
 
     await db.execute(`
@@ -447,7 +455,7 @@ export async function initDb(): Promise<DatabaseMock | null> {
     // Add updated_at and synced_at to all tables (ALTER for existing DBs)
     const tables = ["rooms", "room_configs", "guests", "booking_groups", "occasions", "bookings", "staff", "cleaning_tasks", "cleaning_task_suggestions", "breakfast_options", "settings"];
     for (const table of tables) {
-      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))`); } catch (e) { }
+      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN synced_at TEXT`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN pension_id TEXT`); } catch (e) { }
       
