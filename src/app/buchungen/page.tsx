@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import {
     Select,
@@ -103,6 +104,7 @@ interface Booking {
     child_count?: number;
     extra_bed_count?: number;
     is_main_guest?: number;
+    notes?: string;
 }
 
 interface BookingGroup {
@@ -166,6 +168,7 @@ interface WizardData {
     childCount: number;
     extraBedCount: number;
     status: string;
+    notes: string;
 }
 
 const DEFAULT_WIZARD_DATA: WizardData = {
@@ -187,7 +190,8 @@ const DEFAULT_WIZARD_DATA: WizardData = {
     dogCount: 0,
     childCount: 0,
     extraBedCount: 0,
-    status: "Hard-Booked"
+    status: "Hard-Booked",
+    notes: ""
 };
 
 interface BookingTab {
@@ -266,7 +270,7 @@ function BookingsList() {
 
     // Re-declare editingBooking as the computed value
     const editingBooking = editingBookingValue;
-    const [editTab, setEditTab] = useState<"details" | "breakfast">("details");
+    const [editTab, setEditTab] = useState<"details" | "breakfast" | "notes">("details");
     const [breakfastOptions, setBreakfastOptions] = useState<BreakfastOption[]>([]);
     const [editGroupId, setEditGroupId] = useState<string>("none");
     const [editNewGroupName, setEditNewGroupName] = useState<string>("");
@@ -359,8 +363,7 @@ function BookingsList() {
     });
 
     // Wizard States
-
-    const [wizardTab, setWizardTab] = useState<"details" | "breakfast">("details");
+    const [wizardTab, setWizardTab] = useState<"details" | "breakfast" | "notes">("details");
     const [editingTabId, setEditingTabId] = useState<string | null>(null);
     const [activeWizardTabId, setActiveWizardTabId] = useState<string>("tab-1");
     const [wizardTabs, setWizardTabs] = useState<BookingTab[]>([
@@ -772,7 +775,7 @@ function BookingsList() {
 
                     if (subExists) {
                         await db.execute(
-                            "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ? WHERE id = ?",
+                            "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ?, is_main_guest = ?, notes = ? WHERE id = ?",
                             [
                                 b.room_id || null,
                                 thisGuestId || null,
@@ -792,13 +795,15 @@ function BookingsList() {
                                 b.dog_count,
                                 b.child_count,
                                 b.extra_bed_count,
+                                b.is_main_guest || 0,
+                                b.notes || "",
                                 b.id
                             ]
                         );
                     } else {
                         // INSERT
                         await db.execute(
-                            "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             [
                                 b.id,
                                 b.room_id || null,
@@ -819,6 +824,8 @@ function BookingsList() {
                                 b.dog_count,
                                 b.child_count,
                                 b.extra_bed_count,
+                                b.is_main_guest || 0,
+                                b.notes || "",
                                 b.id
                             ]
                         );
@@ -1077,6 +1084,8 @@ function BookingsList() {
         return tempResult.map(({ group, bookings }) => ({ group, bookings }));
     }, [filteredBookings, groups]);
 
+    const isFiltered = statusFilter !== "all" || dateFromFilter !== "" || dateToFilter !== "" || !!searchFilter || !!customerSearchQuery || hideCanceled;
+
     const searchSuggestions = useMemo(() => {
         if (!customerSearchQuery) return [];
         const query = customerSearchQuery.toLowerCase();
@@ -1289,6 +1298,15 @@ function BookingsList() {
             // 3. Save Bookings
             const mainGuestId = wizardTabs[0].data.guestId;
 
+            // Check if group already has a main guest
+            let groupHasMainGuest = false;
+            if (groupIdToUse) {
+                const existingMain = await db.select("SELECT id FROM bookings WHERE group_id = ? AND is_main_guest = 1 LIMIT 1", [groupIdToUse]);
+                if (existingMain && (existingMain as any[]).length > 0) {
+                    groupHasMainGuest = true;
+                }
+            }
+
             for (const tab of wizardTabs) {
                 const data = tab.data;
                 const bookingId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
@@ -1297,8 +1315,8 @@ function BookingsList() {
                 const finalGuestId = data.guestId || mainGuestId;
 
                 await db.execute(
-                    "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [bookingId, data.roomId, finalGuestId, data.occasion, data.startDate, data.endDate, data.status || "Draft", "Offen", data.arrivalTime, groupIdToUse, data.isFamilyRoom ? 1 : 0, data.dogCount > 0 ? 1 : 0, data.isAllergyFriendly ? 1 : 0, data.hasMobilityImpairment ? 1 : 0, data.guestsPerRoom, data.stayType, data.dogCount, data.childCount, data.extraBedCount, tab.id === wizardTabs[0].id ? 1 : 0]
+                    "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [bookingId, data.roomId, finalGuestId, data.occasion, data.startDate, data.endDate, data.status || "Draft", "Offen", data.arrivalTime, groupIdToUse, data.isFamilyRoom ? 1 : 0, data.dogCount > 0 ? 1 : 0, data.isAllergyFriendly ? 1 : 0, data.hasMobilityImpairment ? 1 : 0, data.guestsPerRoom, data.stayType, data.dogCount, data.childCount, data.extraBedCount, (tab.id === wizardTabs[0].id && !groupHasMainGuest) ? 1 : 0, data.notes || ""]
                 );
 
                 // Save Breakfast
@@ -1527,6 +1545,15 @@ function BookingsList() {
                                             >
                                                 Frühstück
                                             </button>
+                                            <button
+                                                onClick={() => setWizardTab("notes")}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-sm font-bold rounded-md transition-all",
+                                                    wizardTab === "notes" ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                                )}
+                                            >
+                                                Notizen
+                                            </button>
                                         </div>
                                     </div>
 
@@ -1567,7 +1594,7 @@ function BookingsList() {
                                                 ) : (
                                                     <div className="flex items-center gap-1.5">
                                                         {tab.id === wizardTabs[0].id && (
-                                                            <Crown className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                                                            <Crown className="w-4 h-4 text-amber-500 fill-amber-500 mr-1.5 shrink-0" />
                                                         )}
                                                         <span className="truncate max-w-[120px]">{tab.label}</span>
                                                         {wizardTabs.length > 1 && (
@@ -1810,32 +1837,33 @@ function BookingsList() {
                                                     }}
                                                 />
 
-                                                {isWizardGroupSearchFocused && groupSearch && !groups.some(g => g.name.toLowerCase() === groupSearch.toLowerCase()) && (
-                                                    <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
-                                                        <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
-                                                        <button
-                                                            type="button"
-                                                            className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                                                            onClick={() => {
-                                                                setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: groupSearch }));
-                                                                setIsWizardGroupSearchFocused(false);
-                                                            }}
-                                                        >
-                                                            <Plus className="w-4 h-4" /> "{groupSearch}" erstellen
-                                                        </button>
-                                                    </div>
-                                                )}
                                                 {isWizardGroupSearchFocused && (
                                                     <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                        {groupSearch && !groups.some(g => g.name.toLowerCase() === groupSearch.toLowerCase()) && (
+                                                            <button
+                                                                type="button"
+                                                                className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors mb-1"
+                                                                onMouseDown={(e) => {
+                                                                    e.preventDefault();
+                                                                    setWizardData(prev => ({ ...prev, groupId: "new", newGroupName: groupSearch }));
+                                                                    setIsWizardGroupSearchFocused(false);
+                                                                }}
+                                                            >
+                                                                <Plus className="w-4 h-4" /> "{groupSearch}" neu erstellen
+                                                            </button>
+                                                        )}
                                                         {groups
-                                                            .filter(g => !groupSearch || (g.name.toLowerCase().includes(groupSearch.toLowerCase()) && g.name.toLowerCase() !== groupSearch.toLowerCase()))
+                                                            .filter(g => !groupSearch || g.name.toLowerCase().includes(groupSearch.toLowerCase()))
                                                             .map(g => (
                                                                 <button
+                                                                    type="button"
                                                                     key={g.id}
                                                                     className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group/item"
-                                                                    onClick={() => {
+                                                                    onMouseDown={(e) => {
+                                                                        e.preventDefault();
                                                                         setGroupSearch(g.name);
                                                                         setWizardData(prev => ({ ...prev, groupId: g.id, newGroupName: "" }));
+                                                                        setIsWizardGroupSearchFocused(false);
                                                                     }}
                                                                 >
                                                                     <span className="font-medium text-zinc-700 dark:text-zinc-300 group-hover/item:text-blue-700 dark:group-hover/item:text-blue-400">{g.name}</span>
@@ -2078,12 +2106,12 @@ function BookingsList() {
 
                                                                                     {(!!room.is_allergy_friendly) && (
                                                                                         <div title="Allergikerfreundlich" className={cn("p-0.5 rounded", wizardData.roomId === room.id ? "bg-emerald-200" : "bg-pink-100")}>
-                                                                                            <Flower2 className={cn("w-2.5 h-2.5", wizardData.roomId === room.id ? "text-emerald-700" : "text-pink-500")} />
+                                                                                            <Flower2 className="w-2.5 h-2.5" />
                                                                                         </div>
                                                                                     )}
                                                                                     {(!!room.is_accessible) && (
                                                                                         <div title="Barrierefrei" className={cn("p-0.5 rounded", wizardData.roomId === room.id ? "bg-emerald-200" : "bg-blue-100")}>
-                                                                                            <Accessibility className={cn("w-2.5 h-2.5", wizardData.roomId === room.id ? "text-emerald-700" : "text-blue-600")} />
+                                                                                            <Accessibility className="w-2.5 h-2.5" />
                                                                                         </div>
                                                                                     )}
                                                                                 </div>
@@ -2118,7 +2146,7 @@ function BookingsList() {
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
+                            ) : wizardTab === "breakfast" ? (
                                 <div className="flex-1 min-h-0 flex flex-col pt-4">
                                     <div className="space-y-4 max-h-full overflow-y-auto pr-2 pb-20">
                                         {getDaysArray(wizardData.startDate, wizardData.endDate).map(day => {
@@ -2206,6 +2234,19 @@ function BookingsList() {
                                         })}
                                     </div>
                                 </div>
+                            ) : (
+                                <div className="flex-1 min-h-0 flex flex-col pt-4">
+                                    <div className="space-y-4 max-h-full overflow-y-auto pr-2 pb-20">
+                                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Notizen zur Buchung</Label>
+                                        <Textarea
+                                            placeholder="Hier können Sie wichtige Notizen zur Buchung hinterlegen, z.B. besondere Wünsche, Anmerkungen zur Zahlung oder interne Hinweise."
+                                            value={wizardData.notes || ""}
+                                            onChange={(e) => setWizardData(prev => ({ ...prev, notes: e.target.value }))}
+                                            rows={10}
+                                            className="min-h-[200px]"
+                                        />
+                                    </div>
+                                </div>
                             )}
 
                             <DialogFooter className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-between shrink-0">
@@ -2260,143 +2301,163 @@ function BookingsList() {
                 </div >
             </div>
 
-            <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
-                <CardContent className="py-2.5 px-4 overflow-x-auto scrollbar-none">
-                    <div className="flex flex-nowrap items-end gap-4 min-w-max pb-1">
-                        {/* Customer Search Filter */}
-                        <div className="space-y-0.5 w-[180px] relative">
-                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kunde suchen</Label>
-                            <div className="relative group">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
-                                <Input
-                                    placeholder="Gast, Firma oder Gruppe..."
-                                    className="pl-9 h-9 text-sm shadow-sm"
-                                    value={customerSearchQuery}
-                                    onChange={(e) => {
-                                        setCustomerSearchQuery(e.target.value);
-                                        setShowCustomerSuggestions(true);
-                                        if (e.target.value === "") setSearchFilter(null);
-                                    }}
-                                    onFocus={() => setShowCustomerSuggestions(true)}
-                                />
-                                {(customerSearchQuery || searchFilter) && (
-                                    <button
-                                        onClick={() => {
-                                            setCustomerSearchQuery("");
-                                            setSearchFilter(null);
-                                            setShowCustomerSuggestions(false);
-                                        }}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
-                                    >
-                                        <XCircle className="w-4 h-4 text-zinc-400" />
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Suggestions Dropdown */}
-                            {showCustomerSuggestions && customerSearchQuery && !searchFilter && (
-                                <div className="absolute z-50 w-[240px] mt-1 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl max-h-[300px] overflow-y-auto p-1 animate-in fade-in zoom-in duration-200">
-                                    {searchSuggestions.map((item, idx) => (
-                                        <button
-                                            key={`${item.type}-${item.id}-${idx}`}
-                                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group"
-                                            onClick={() => {
-                                                setCustomerSearchQuery(item.label);
-                                                setSearchFilter(item);
-                                                setShowCustomerSuggestions(false);
-                                            }}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={cn(
-                                                    "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                                    item.type === 'company' ? "bg-purple-100 text-purple-600" :
-                                                        item.type === 'group' ? "bg-blue-100 text-blue-600" :
-                                                            "bg-zinc-100 text-zinc-600"
-                                                )}>
-                                                    {item.type === 'company' ? <Building2 className="w-4 h-4" /> :
-                                                        item.type === 'group' ? <Users className="w-4 h-4" /> :
-                                                            <User className="w-4 h-4" />}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-700 dark:group-hover:text-blue-400">
-                                                        {item.label}
-                                                    </div>
-                                                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
-                                                        {item.subLabel}
-                                                    </div>
-                                                </div>
+            {/* Filter Bar with running border when filtered */}
+            <div className={cn(isFiltered && "running-border-container-flat")}>
+                <div className={cn(isFiltered ? "running-border-content-flat" : "")}>
+                    <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
+                        <CardContent className="py-2.5 px-4 overflow-x-auto scrollbar-none">
+                            <div className="flex flex-nowrap items-end gap-4 min-w-max pb-1">
+                                {/* Customer Search Filter */}
+                                <div className="space-y-0.5 w-[180px] relative">
+                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kunde suchen</Label>
+                                    <Popover open={showCustomerSuggestions && customerSearchQuery !== "" && !searchFilter} onOpenChange={setShowCustomerSuggestions}>
+                                        <PopoverTrigger asChild>
+                                            <div className="relative group">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                                <Input
+                                                    placeholder="Gast, Firma oder Gruppe..."
+                                                    className="pl-9 h-9 text-sm shadow-sm"
+                                                    value={customerSearchQuery}
+                                                    onChange={(e) => {
+                                                        const value = e.target.value;
+                                                        setCustomerSearchQuery(value);
+                                                        setShowCustomerSuggestions(true);
+                                                        // If we have a filter but the label no longer matches exactly, clear the filter to allow freestyle search
+                                                        if (searchFilter && value !== searchFilter.label) {
+                                                            setSearchFilter(null);
+                                                        }
+                                                        if (value === "") setSearchFilter(null);
+                                                    }}
+                                                    onFocus={() => setShowCustomerSuggestions(true)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Escape") setShowCustomerSuggestions(false);
+                                                    }}
+                                                />
+                                                {(customerSearchQuery || searchFilter) && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setCustomerSearchQuery("");
+                                                            setSearchFilter(null);
+                                                            setShowCustomerSuggestions(false);
+                                                        }}
+                                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                                    >
+                                                        <XCircle className="w-4 h-4 text-zinc-400" />
+                                                    </button>
+                                                )}
                                             </div>
-                                            <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-blue-400 transition-transform group-hover:translate-x-0.5" />
-                                        </button>
-                                    ))}
-                                    {searchSuggestions.length === 0 && (
-                                        <div className="px-3 py-4 text-xs text-zinc-500 text-center italic">
-                                            Keine Treffer gefunden
-                                        </div>
-                                    )}
+                                        </PopoverTrigger>
+                                        <PopoverContent
+                                            className="w-[240px] p-1 animate-in fade-in zoom-in duration-200"
+                                            align="start"
+                                            sideOffset={4}
+                                            onOpenAutoFocus={(e) => e.preventDefault()}
+                                        >
+                                            <div className="max-h-[300px] overflow-y-auto">
+                                                {searchSuggestions.map((item, idx) => (
+                                                    <button
+                                                        key={`${item.type}-${item.id}-${idx}`}
+                                                        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group"
+                                                        onClick={() => {
+                                                            setCustomerSearchQuery(item.label);
+                                                            setSearchFilter(item);
+                                                            setShowCustomerSuggestions(false);
+                                                        }}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn(
+                                                                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                                                                item.type === 'company' ? "bg-purple-100 text-purple-600" :
+                                                                    item.type === 'group' ? "bg-blue-100 text-blue-600" :
+                                                                        "bg-zinc-100 text-zinc-600"
+                                                            )}>
+                                                                {item.type === 'company' ? <Building2 className="w-4 h-4" /> :
+                                                                    item.type === 'group' ? <Users className="w-4 h-4" /> :
+                                                                        <User className="w-4 h-4" />}
+                                                            </div>
+                                                            <div>
+                                                                <div className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-700 dark:group-hover:text-blue-400">
+                                                                    {item.label}
+                                                                </div>
+                                                                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
+                                                                    {item.subLabel}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-blue-400 transition-transform group-hover:translate-x-0.5" />
+                                                    </button>
+                                                ))}
+                                                {searchSuggestions.length === 0 && (
+                                                    <div className="px-3 py-4 text-xs text-zinc-500 text-center italic">
+                                                        Keine Treffer gefunden
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
                                 </div>
-                            )}
-                        </div>
 
-                        <div className="space-y-0.5 w-[140px]">
-                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</Label>
-                            <select
-                                value={statusFilter ?? "all"}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
-                            >
-                                <option value="all">Alle Status</option>
-                                <option value="Draft">Draft (Entwurf)</option>
-                                <option value="Hard-Booked">Fest gebucht</option>
-                                <option value="Checked-In">Eingecheckt</option>
-                                <option value="Checked-Out">Abgereist</option>
-                            </select>
-                        </div>
+                                <div className="space-y-0.5 w-[140px]">
+                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</Label>
+                                    <select
+                                        value={statusFilter ?? "all"}
+                                        onChange={(e) => setStatusFilter(e.target.value)}
+                                        className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
+                                    >
+                                        <option value="all">Alle Status</option>
+                                        <option value="Draft">Draft (Entwurf)</option>
+                                        <option value="Hard-Booked">Fest gebucht</option>
+                                        <option value="Checked-In">Eingecheckt</option>
+                                        <option value="Checked-Out">Abgereist</option>
+                                    </select>
+                                </div>
 
-                        <div className="space-y-0.5 w-[130px]">
-                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">von</Label>
-                            <Input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
-                        </div>
-                        <div className="space-y-0.5 w-[130px]">
-                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">bis</Label>
-                            <Input type="date" value={dateToFilter} onChange={(e) => setDateToFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
-                        </div>
-                        <div className="flex gap-2">
-                            <Button variant="outline" size="sm" className="h-9 shadow-sm" onClick={setTodayFilter}>
-                                <Calendar className="w-4 h-4 mr-2 text-blue-500" /> Heute
-                            </Button>
-                        </div>
-                        <div className="flex items-center gap-3 pl-4 border-l border-zinc-100 dark:border-zinc-800 h-9">
-                            <div className="flex items-center gap-2">
-                                <Switch
-                                    id="show-past"
-                                    checked={showPastBookings}
-                                    onCheckedChange={setShowPastBookings}
-                                />
-                                <Label htmlFor="show-past" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
-                                    {showPastBookings ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                                    Vergangene
-                                </Label>
+                                <div className="space-y-0.5 w-[130px]">
+                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">von</Label>
+                                    <Input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
+                                </div>
+                                <div className="space-y-0.5 w-[130px]">
+                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">bis</Label>
+                                    <Input type="date" value={dateToFilter} onChange={(e) => setDateToFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="outline" size="sm" className="h-9 shadow-sm" onClick={setTodayFilter}>
+                                        <Calendar className="w-4 h-4 mr-2 text-blue-500" /> Heute
+                                    </Button>
+                                </div>
+                                <div className="flex items-center gap-3 pl-4 border-l border-zinc-100 dark:border-zinc-800 h-9">
+                                    <div className="flex items-center gap-2">
+                                        <Switch
+                                            id="show-past"
+                                            checked={showPastBookings}
+                                            onCheckedChange={setShowPastBookings}
+                                        />
+                                        <Label htmlFor="show-past" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
+                                            {showPastBookings ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                            Vergangene
+                                        </Label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Switch
+                                            id="hide-canceled"
+                                            checked={!hideCanceled}
+                                            onCheckedChange={(val) => setHideCanceled(!val)}
+                                        />
+                                        <Label htmlFor="hide-canceled" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
+                                            {!hideCanceled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                            Stornos
+                                        </Label>
+                                    </div>
+                                </div>
+
+                                <Button variant="ghost" size="sm" className="h-9 text-xs font-bold text-zinc-500 ml-auto" onClick={resetFilters}>
+                                    <RotateCcw className="w-3.5 h-3.5 mr-2" /> Filter zurücksetzen
+                                </Button>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Switch
-                                    id="hide-canceled"
-                                    checked={!hideCanceled}
-                                    onCheckedChange={(val) => setHideCanceled(!val)}
-                                />
-                                <Label htmlFor="hide-canceled" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
-                                    {!hideCanceled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                                    Stornos
-                                </Label>
-                            </div>
-                        </div>
-
-                        <Button variant="ghost" size="sm" className="h-9 text-xs font-bold text-zinc-500 ml-auto" onClick={resetFilters}>
-                            <RotateCcw className="w-3.5 h-3.5 mr-2" /> Filter zurücksetzen
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
 
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
                 <Table className="table-fixed w-full">
@@ -2773,6 +2834,15 @@ function BookingsList() {
                                     >
                                         Frühstück
                                     </button>
+                                    <button
+                                        onClick={() => setEditTab("notes")}
+                                        className={cn(
+                                            "px-4 py-1.5 text-sm font-bold rounded-md transition-all",
+                                            editTab === "notes" ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                                        )}
+                                    >
+                                        Notizen
+                                    </button>
                                 </div>
                             </div>
                         </DialogTitle>
@@ -2800,6 +2870,9 @@ function BookingsList() {
                                         tab.booking.status === "Storniert" ? "bg-red-500" :
                                             "bg-zinc-300"
                                 )} />
+                                {tab.booking.is_main_guest === 1 && (
+                                    <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                                )}
                                 {tab.label}
                             </div>
                         ))}
@@ -2833,7 +2906,8 @@ function BookingsList() {
                                     stay_type: "privat",
                                     dog_count: 0,
                                     child_count: 0,
-                                    extra_bed_count: 0
+                                    extra_bed_count: 0,
+                                    is_main_guest: 0
                                 };
 
                                 setEditTabs(prev => [...prev, {
@@ -3000,27 +3074,24 @@ function BookingsList() {
                                                         }}
                                                     />
 
-                                                    {isEditGroupSearchFocused && editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
-                                                        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 p-2 animate-in fade-in zoom-in-95 duration-200">
-                                                            <div className="text-xs text-blue-600 font-bold uppercase mb-1 px-1">Ausgewählt: Neu</div>
-                                                            <button
-                                                                type="button"
-                                                                className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                                                                onMouseDown={(e) => {
-                                                                    e.preventDefault();
-                                                                    setEditGroupId("new");
-                                                                    setEditNewGroupName(editGroupSearch);
-                                                                    setIsEditGroupSearchFocused(false);
-                                                                }}
-                                                            >
-                                                                <Plus className="w-4 h-4" /> "{editGroupSearch}" erstellen
-                                                            </button>
-                                                        </div>
-                                                    )}
                                                     {isEditGroupSearchFocused && (
                                                         <div className="absolute z-20 w-full mt-1 bg-white dark:bg-zinc-950 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[150px] overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200">
+                                                            {editGroupSearch && !groups.some(g => g.name.toLowerCase() === editGroupSearch.toLowerCase()) && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors mb-1"
+                                                                    onMouseDown={(e) => {
+                                                                        e.preventDefault();
+                                                                        setEditGroupId("new");
+                                                                        setEditNewGroupName(editGroupSearch);
+                                                                        setIsEditGroupSearchFocused(false);
+                                                                    }}
+                                                                >
+                                                                    <Plus className="w-4 h-4" /> "{editGroupSearch}" neu erstellen
+                                                                </button>
+                                                            )}
                                                             {groups
-                                                                .filter(g => !editGroupSearch || (g.name.toLowerCase().includes(editGroupSearch.toLowerCase()) && g.name.toLowerCase() !== editGroupSearch.toLowerCase()))
+                                                                .filter(g => !editGroupSearch || g.name.toLowerCase().includes(editGroupSearch.toLowerCase()))
                                                                 .map(g => (
                                                                     <button
                                                                         type="button"
@@ -3287,7 +3358,7 @@ function BookingsList() {
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
+                            ) : editTab === "breakfast" ? (
                                 <div className="flex-1 min-h-0 flex flex-col pt-4 overflow-hidden relative">
                                     {/* Breakfast Content (Preserved) */}
                                     <div className="space-y-4 overflow-y-auto pr-2 pb-6">
@@ -3353,6 +3424,19 @@ function BookingsList() {
                                                 </div>
                                             );
                                         })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex-1 min-h-0 flex flex-col pt-4 overflow-hidden relative">
+                                    <div className="space-y-4 overflow-y-auto pr-2 pb-6">
+                                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Notizen zur Buchung</Label>
+                                        <Textarea
+                                            placeholder="Hier können Sie wichtige Notizen zur Buchung hinterlegen, z.B. besondere Wünsche, Anmerkungen zur Zahlung oder interne Hinweise."
+                                            value={editingBooking.notes || ""}
+                                            onChange={(e) => setEditingBooking(prev => prev ? ({ ...prev, notes: e.target.value }) : null)}
+                                            rows={10}
+                                            className="min-h-[200px]"
+                                        />
                                     </div>
                                 </div>
                             )
@@ -3424,7 +3508,7 @@ function BookingsList() {
                                     </Button>
                                 </div>
                             </>
-                        ) : (
+                        ) : editTab === 'breakfast' ? (
                             <>
                                 <div className="flex items-center gap-4">
                                     {Object.keys(pendingBreakfastChanges).length > 0 && (
@@ -3451,6 +3535,29 @@ function BookingsList() {
                                     >
                                         <Check className="w-4 h-4 mr-2" />
                                         Frühstück speichern
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="flex items-center gap-4">
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                                        onClick={() => setEditTab("details")}
+                                    >
+                                        Zurück
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
+                                        onClick={updateBooking}
+                                    >
+                                        <Check className="w-4 h-4 mr-2" />
+                                        Notizen speichern
                                     </Button>
                                 </div>
                             </>
@@ -3635,6 +3742,7 @@ function BookingsList() {
                 variant={deleteConfirm.variant as any}
             />
         </div >
+    </div >
     );
 }
 
