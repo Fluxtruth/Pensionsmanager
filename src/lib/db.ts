@@ -464,12 +464,20 @@ async function _initDb(): Promise<DatabaseMock | null> {
       
       // Add update triggers
       try {
+        // We drop existing trigger to ensure update to the new logic
+        await db.execute(`DROP TRIGGER IF EXISTS trg_update_at_${table}`);
+        
         await db.execute(`
           CREATE TRIGGER IF NOT EXISTS trg_update_at_${table}
           AFTER UPDATE ON ${table}
           FOR EACH ROW
+          WHEN (
+            NEW.synced_at IS OLD.synced_at AND 
+            (NEW.pension_id IS OLD.pension_id OR (NEW.pension_id IS NOT NULL AND OLD.pension_id IS NULL))
+          )
           BEGIN
-            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE ${table === 'settings' ? 'key = OLD.key' : 'id = OLD.id'};
+            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') 
+            WHERE ${table === 'settings' ? 'key = OLD.key' : 'id = OLD.id'};
           END;
         `);
       } catch (e) { }
