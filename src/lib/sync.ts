@@ -24,7 +24,7 @@ const TABLES_TO_SYNC = [
 
 export class SyncService {
   private static instance: SyncService;
-  private db: any = null;
+  private db: DatabaseMock | null = null;
 
   private constructor() {}
 
@@ -106,6 +106,8 @@ export class SyncService {
 
     try {
       let tablesProcessed = 0;
+      let totalUpdated = 0;
+
       for (const table of TABLES_TO_SYNC) {
         // 1. Geänderte Zeilen holen
         const pendingRows = await db.select<any>(
@@ -113,11 +115,10 @@ export class SyncService {
         );
 
         if (pendingRows.length > 0) {
-          console.log(`Syncing ${pendingRows.length} rows for table ${table} with pension_id ${pensionId}...`);
+          console.log(`[Sync] Found ${pendingRows.length} changes in table ${table}`);
           
           // 2. Zu Supabase hochladen (Upsert)
-          // Wir stellen sicher, dass pension_id gesetzt ist
-          const uploadData = pendingRows.map(row => {
+          const uploadData = pendingRows.map((row: any) => {
             const { synced_at, ...data } = row;
             return {
               ...data,
@@ -130,12 +131,13 @@ export class SyncService {
             .upsert(uploadData);
 
           if (upsertError) {
-            console.error(`Supabase Upsert Error for ${table}:`, upsertError);
+            console.error(`[Sync] Supabase Upsert Error for ${table}:`, upsertError);
             return { success: false, error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message}` };
           }
 
-          // 3. Lokal als synchronisiert markieren und pension_id persistent speichern
+          // 3. Lokal als synchronisiert markieren
           const now = new Date().toISOString();
+          let rowCount = 0;
           for (const row of pendingRows) {
             const idField = table === 'settings' ? 'key' : 'id';
             const idValue = row[idField];
@@ -144,7 +146,10 @@ export class SyncService {
               `UPDATE ${table} SET synced_at = ?, pension_id = ? WHERE ${idField} = ?`,
               [now, pensionId, idValue]
             );
+            rowCount++;
           }
+          console.log(`[Sync] Successfully updated ${rowCount} rows in local table ${table}`);
+          totalUpdated += rowCount;
         }
 
         tablesProcessed++;
@@ -153,9 +158,10 @@ export class SyncService {
         }
       }
 
+      console.log(`[Sync] Process complete. Total rows updated: ${totalUpdated}`);
       return { success: true };
     } catch (error: any) {
-      console.error("Sync process failed:", error);
+      console.error("[Sync] process failed:", error);
       return { success: false, error: error.message || "Unbekannter Fehler während der Synchronisation" };
     }
   }

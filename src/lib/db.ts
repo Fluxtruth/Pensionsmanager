@@ -379,7 +379,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
         is_allergy_friendly INTEGER DEFAULT 0, has_mobility_impairment INTEGER DEFAULT 0,
         guests_per_room INTEGER DEFAULT 1, stay_type TEXT DEFAULT 'private',
         dog_count INTEGER DEFAULT 0, child_count INTEGER DEFAULT 0, extra_bed_count INTEGER DEFAULT 0,
-        is_main_guest INTEGER DEFAULT 0,
+        is_main_guest INTEGER DEFAULT 0, notes TEXT,
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
         synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
@@ -443,6 +443,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE bookings ADD COLUMN child_count INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE bookings ADD COLUMN extra_bed_count INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE bookings ADD COLUMN is_main_guest INTEGER DEFAULT 0"); } catch (e) { }
+    try { await db.execute("ALTER TABLE bookings ADD COLUMN notes TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN comments TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN delayed_from TEXT"); } catch (e) { }
@@ -461,12 +462,20 @@ async function _initDb(): Promise<DatabaseMock | null> {
       
       // Add update triggers
       try {
+        // We drop existing trigger to ensure update to the new logic
+        await db.execute(`DROP TRIGGER IF EXISTS trg_update_at_${table}`);
+        
         await db.execute(`
           CREATE TRIGGER IF NOT EXISTS trg_update_at_${table}
           AFTER UPDATE ON ${table}
           FOR EACH ROW
+          WHEN (
+            NEW.synced_at IS OLD.synced_at AND 
+            (NEW.pension_id IS OLD.pension_id OR (NEW.pension_id IS NOT NULL AND OLD.pension_id IS NULL))
+          )
           BEGIN
-            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE ${table === 'settings' ? 'key = OLD.key' : 'id = OLD.id'};
+            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') 
+            WHERE ${table === 'settings' ? 'key = OLD.key' : 'id = OLD.id'};
           END;
         `);
       } catch (e) { }

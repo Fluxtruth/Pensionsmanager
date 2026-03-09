@@ -3500,18 +3500,17 @@ function BookingsList() {
                             </Button>
                         </div>
                     </DialogFooter>
-                </DialogContent >
-            </Dialog >
+                </DialogContent>
+            </Dialog>
 
             {/* Check-Out Summary Dialog */}
-            < Dialog open={isCheckOutOpen} onOpenChange={(open) => {
+            <Dialog open={isCheckOutOpen} onOpenChange={(open) => {
                 setIsCheckOutOpen(open);
                 if (!open) {
                     setCheckOutBooking(null);
                     router.push('/buchungen', { scroll: false });
                 }
-            }
-            }>
+            }}>
                 <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -3600,7 +3599,7 @@ function BookingsList() {
                 </DialogContent>
             </Dialog >
             {/* Guest Edit Mask */}
-            < Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen} >
+            <Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
@@ -3609,10 +3608,10 @@ function BookingsList() {
                         <GuestMaskForm guest={editingGuestForMask} onSubmit={updateGuestInMask} />
                     )}
                 </DialogContent>
-            </Dialog >
+            </Dialog>
 
             {/* Group Deletion Dialog */}
-            < Dialog open={isGroupDeleteOpen} onOpenChange={setIsGroupDeleteOpen} >
+            <Dialog open={isGroupDeleteOpen} onOpenChange={setIsGroupDeleteOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Gruppe "{deletingGroup?.name}" verwalten</DialogTitle>
@@ -3667,7 +3666,7 @@ function BookingsList() {
                         </div>
                     </div>
                 </DialogContent>
-            </Dialog >
+            </Dialog>
 
             <ConfirmDialog
                 isOpen={deleteConfirm.isOpen}
@@ -3678,8 +3677,7 @@ function BookingsList() {
                 confirmText={deleteConfirm.confirmText}
                 variant={deleteConfirm.variant as any}
             />
-        </div >
-    </div >
+        </div>
     );
 }
 
