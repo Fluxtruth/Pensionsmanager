@@ -78,7 +78,7 @@ export class SyncService {
     let totalPending = 0;
     for (const table of TABLES_TO_SYNC) {
       try {
-        const result = await db.select<any>(
+        const result = await db.select(
           `SELECT COUNT(*) as count FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
         );
         totalPending += result[0]?.count || 0;
@@ -108,7 +108,7 @@ export class SyncService {
       let tablesProcessed = 0;
       for (const table of TABLES_TO_SYNC) {
         // 1. Geänderte Zeilen holen
-        const pendingRows = await db.select<any>(
+        const pendingRows = await db.select(
           `SELECT * FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
         );
 
@@ -117,7 +117,7 @@ export class SyncService {
           
           // 2. Zu Supabase hochladen (Upsert)
           // Wir stellen sicher, dass pension_id gesetzt ist
-          const uploadData = pendingRows.map(row => {
+          const uploadData = pendingRows.map((row: any) => {
             const { synced_at, ...data } = row;
             return {
               ...data,
@@ -170,7 +170,7 @@ export class SyncService {
     let latestSync: string | null = null;
     for (const table of TABLES_TO_SYNC) {
       try {
-        const result = await db.select<any>(
+        const result = await db.select(
           `SELECT MAX(synced_at) as max_sync FROM ${table}`
         );
         const tableMax = result[0]?.max_sync;

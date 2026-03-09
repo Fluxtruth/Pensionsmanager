@@ -23,13 +23,15 @@ const mockData: Record<string, any[]> = {
       id: "b1", room_id: "101", guest_id: "g1",
       start_date: "2026-01-12", end_date: "2026-01-13",
       status: "Draft", payment_status: "Offen",
-      group_id: "bg1", guests_per_room: 1, is_main_guest: 1
+      group_id: "bg1", guests_per_room: 1, is_main_guest: 1,
+      notes: ""
     },
     {
       id: "b2", room_id: "102", guest_id: "g2",
       start_date: "2026-01-12", end_date: "2026-01-13",
       status: "Draft", payment_status: "Offen",
-      group_id: "bg1", guests_per_room: 1, is_main_guest: 0
+      group_id: "bg1", guests_per_room: 1, is_main_guest: 0,
+      notes: "Testnotiz"
     }
   ],
   staff: [],
@@ -120,7 +122,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
                   is_allergy_friendly: params?.[12], has_mobility_impairment: params?.[13],
                   guests_per_room: params?.[14], stay_type: params?.[15],
                   dog_count: params?.[16], child_count: params?.[17], extra_bed_count: params?.[18],
-                  is_main_guest: params?.[19]
+                  is_main_guest: params?.[19], notes: params?.[20]
                 });
               } else if (table === "breakfast_options") {
                 mockData.breakfast_options.push({ id: params?.[0], booking_id: params?.[1], date: params?.[2], is_included: params?.[3], is_prepared: params?.[4] || 0, guest_count: params?.[5] || 1, time: params?.[6], comments: params?.[7], source: params?.[8] || 'auto', is_manual: params?.[9] || 0 });
@@ -379,7 +381,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
         is_allergy_friendly INTEGER DEFAULT 0, has_mobility_impairment INTEGER DEFAULT 0,
         guests_per_room INTEGER DEFAULT 1, stay_type TEXT DEFAULT 'private',
         dog_count INTEGER DEFAULT 0, child_count INTEGER DEFAULT 0, extra_bed_count INTEGER DEFAULT 0,
-        is_main_guest INTEGER DEFAULT 0,
+        is_main_guest INTEGER DEFAULT 0, notes TEXT,
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
         synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
@@ -443,6 +445,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE bookings ADD COLUMN child_count INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE bookings ADD COLUMN extra_bed_count INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE bookings ADD COLUMN is_main_guest INTEGER DEFAULT 0"); } catch (e) { }
+    try { await db.execute("ALTER TABLE bookings ADD COLUMN notes TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN comments TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN delayed_from TEXT"); } catch (e) { }

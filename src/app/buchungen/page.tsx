@@ -2301,163 +2301,162 @@ function BookingsList() {
                 </div >
             </div>
 
-            {/* Filter Bar with running border when filtered */}
-            <div className={cn(isFiltered && "running-border-container-flat")}>
-                <div className={cn(isFiltered ? "running-border-content-flat" : "")}>
-                    <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">
-                        <CardContent className="py-2.5 px-4 overflow-x-auto scrollbar-none">
-                            <div className="flex flex-nowrap items-end gap-4 min-w-max pb-1">
-                                {/* Customer Search Filter */}
-                                <div className="space-y-0.5 w-[180px] relative">
-                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kunde suchen</Label>
-                                    <Popover open={showCustomerSuggestions && customerSearchQuery !== "" && !searchFilter} onOpenChange={setShowCustomerSuggestions}>
-                                        <PopoverTrigger asChild>
-                                            <div className="relative group">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
-                                                <Input
-                                                    placeholder="Gast, Firma oder Gruppe..."
-                                                    className="pl-9 h-9 text-sm shadow-sm"
-                                                    value={customerSearchQuery}
-                                                    onChange={(e) => {
-                                                        const value = e.target.value;
-                                                        setCustomerSearchQuery(value);
-                                                        setShowCustomerSuggestions(true);
-                                                        // If we have a filter but the label no longer matches exactly, clear the filter to allow freestyle search
-                                                        if (searchFilter && value !== searchFilter.label) {
-                                                            setSearchFilter(null);
-                                                        }
-                                                        if (value === "") setSearchFilter(null);
-                                                    }}
-                                                    onFocus={() => setShowCustomerSuggestions(true)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Escape") setShowCustomerSuggestions(false);
-                                                    }}
-                                                />
-                                                {(customerSearchQuery || searchFilter) && (
-                                                    <button
-                                                        onClick={() => {
-                                                            setCustomerSearchQuery("");
-                                                            setSearchFilter(null);
-                                                            setShowCustomerSuggestions(false);
-                                                        }}
-                                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
-                                                    >
-                                                        <XCircle className="w-4 h-4 text-zinc-400" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </PopoverTrigger>
-                                        <PopoverContent
-                                            className="w-[240px] p-1 animate-in fade-in zoom-in duration-200"
-                                            align="start"
-                                            sideOffset={4}
-                                            onOpenAutoFocus={(e) => e.preventDefault()}
-                                        >
-                                            <div className="max-h-[300px] overflow-y-auto">
-                                                {searchSuggestions.map((item, idx) => (
-                                                    <button
-                                                        key={`${item.type}-${item.id}-${idx}`}
-                                                        className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group"
-                                                        onClick={() => {
-                                                            setCustomerSearchQuery(item.label);
-                                                            setSearchFilter(item);
-                                                            setShowCustomerSuggestions(false);
-                                                        }}
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={cn(
-                                                                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                                                                item.type === 'company' ? "bg-purple-100 text-purple-600" :
-                                                                    item.type === 'group' ? "bg-blue-100 text-blue-600" :
-                                                                        "bg-zinc-100 text-zinc-600"
-                                                            )}>
-                                                                {item.type === 'company' ? <Building2 className="w-4 h-4" /> :
-                                                                    item.type === 'group' ? <Users className="w-4 h-4" /> :
-                                                                        <User className="w-4 h-4" />}
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-700 dark:group-hover:text-blue-400">
-                                                                    {item.label}
-                                                                </div>
-                                                                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
-                                                                    {item.subLabel}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-blue-400 transition-transform group-hover:translate-x-0.5" />
-                                                    </button>
-                                                ))}
-                                                {searchSuggestions.length === 0 && (
-                                                    <div className="px-3 py-4 text-xs text-zinc-500 text-center italic">
-                                                        Keine Treffer gefunden
+            {/* Filter Bar with pulsing border when filtered */}
+            <Card className={cn(
+                "shadow-sm bg-white dark:bg-zinc-900/50 transition-all duration-300",
+                isFiltered ? "animate-border-pulse border-blue-400/50 dark:border-blue-500/50" : "border-none"
+            )}>
+                <CardContent className="py-2.5 px-4 overflow-x-auto scrollbar-none">
+                    <div className="flex flex-nowrap items-end gap-4 min-w-max pb-1">
+                        {/* Customer Search Filter */}
+                        <div className="space-y-0.5 w-[180px] relative">
+                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kunde suchen</Label>
+                            <Popover open={showCustomerSuggestions && customerSearchQuery !== "" && !searchFilter} onOpenChange={setShowCustomerSuggestions}>
+                                <PopoverTrigger asChild>
+                                    <div className="relative group">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                                        <Input
+                                            placeholder="Gast, Firma oder Gruppe..."
+                                            className="pl-9 h-9 text-sm shadow-sm"
+                                            value={customerSearchQuery}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setCustomerSearchQuery(value);
+                                                setShowCustomerSuggestions(true);
+                                                // If we have a filter but the label no longer matches exactly, clear the filter to allow freestyle search
+                                                if (searchFilter && value !== searchFilter.label) {
+                                                    setSearchFilter(null);
+                                                }
+                                                if (value === "") setSearchFilter(null);
+                                            }}
+                                            onFocus={() => setShowCustomerSuggestions(true)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Escape") setShowCustomerSuggestions(false);
+                                            }}
+                                        />
+                                        {(customerSearchQuery || searchFilter) && (
+                                            <button
+                                                onClick={() => {
+                                                    setCustomerSearchQuery("");
+                                                    setSearchFilter(null);
+                                                    setShowCustomerSuggestions(false);
+                                                }}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                            >
+                                                <XCircle className="w-4 h-4 text-zinc-400" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                    className="w-[240px] p-1 animate-in fade-in zoom-in duration-200"
+                                    align="start"
+                                    sideOffset={4}
+                                    onOpenAutoFocus={(e) => e.preventDefault()}
+                                >
+                                    <div className="max-h-[300px] overflow-y-auto">
+                                        {searchSuggestions.map((item, idx) => (
+                                            <button
+                                                key={`${item.type}-${item.id}-${idx}`}
+                                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-all flex items-center justify-between group"
+                                                onClick={() => {
+                                                    setCustomerSearchQuery(item.label);
+                                                    setSearchFilter(item);
+                                                    setShowCustomerSuggestions(false);
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={cn(
+                                                        "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                                                        item.type === 'company' ? "bg-purple-100 text-purple-600" :
+                                                            item.type === 'group' ? "bg-blue-100 text-blue-600" :
+                                                                "bg-zinc-100 text-zinc-600"
+                                                    )}>
+                                                        {item.type === 'company' ? <Building2 className="w-4 h-4" /> :
+                                                            item.type === 'group' ? <Users className="w-4 h-4" /> :
+                                                                <User className="w-4 h-4" />}
                                                     </div>
-                                                )}
+                                                    <div>
+                                                        <div className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-700 dark:group-hover:text-blue-400">
+                                                            {item.label}
+                                                        </div>
+                                                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
+                                                            {item.subLabel}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-blue-400 transition-transform group-hover:translate-x-0.5" />
+                                            </button>
+                                        ))}
+                                        {searchSuggestions.length === 0 && (
+                                            <div className="px-3 py-4 text-xs text-zinc-500 text-center italic">
+                                                Keine Treffer gefunden
                                             </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-
-                                <div className="space-y-0.5 w-[140px]">
-                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</Label>
-                                    <select
-                                        value={statusFilter ?? "all"}
-                                        onChange={(e) => setStatusFilter(e.target.value)}
-                                        className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
-                                    >
-                                        <option value="all">Alle Status</option>
-                                        <option value="Draft">Draft (Entwurf)</option>
-                                        <option value="Hard-Booked">Fest gebucht</option>
-                                        <option value="Checked-In">Eingecheckt</option>
-                                        <option value="Checked-Out">Abgereist</option>
-                                    </select>
-                                </div>
-
-                                <div className="space-y-0.5 w-[130px]">
-                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">von</Label>
-                                    <Input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
-                                </div>
-                                <div className="space-y-0.5 w-[130px]">
-                                    <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">bis</Label>
-                                    <Input type="date" value={dateToFilter} onChange={(e) => setDateToFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button variant="outline" size="sm" className="h-9 shadow-sm" onClick={setTodayFilter}>
-                                        <Calendar className="w-4 h-4 mr-2 text-blue-500" /> Heute
-                                    </Button>
-                                </div>
-                                <div className="flex items-center gap-3 pl-4 border-l border-zinc-100 dark:border-zinc-800 h-9">
-                                    <div className="flex items-center gap-2">
-                                        <Switch
-                                            id="show-past"
-                                            checked={showPastBookings}
-                                            onCheckedChange={setShowPastBookings}
-                                        />
-                                        <Label htmlFor="show-past" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
-                                            {showPastBookings ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                                            Vergangene
-                                        </Label>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Switch
-                                            id="hide-canceled"
-                                            checked={!hideCanceled}
-                                            onCheckedChange={(val) => setHideCanceled(!val)}
-                                        />
-                                        <Label htmlFor="hide-canceled" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
-                                            {!hideCanceled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                                            Stornos
-                                        </Label>
-                                    </div>
-                                </div>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
 
-                                <Button variant="ghost" size="sm" className="h-9 text-xs font-bold text-zinc-500 ml-auto" onClick={resetFilters}>
-                                    <RotateCcw className="w-3.5 h-3.5 mr-2" /> Filter zurücksetzen
-                                </Button>
+                        <div className="space-y-0.5 w-[140px]">
+                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</Label>
+                            <select
+                                value={statusFilter ?? "all"}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950 shadow-sm"
+                            >
+                                <option value="all">Alle Status</option>
+                                <option value="Draft">Draft (Entwurf)</option>
+                                <option value="Hard-Booked">Fest gebucht</option>
+                                <option value="Checked-In">Eingecheckt</option>
+                                <option value="Checked-Out">Abgereist</option>
+                            </select>
+                        </div>
+
+                        <div className="space-y-0.5 w-[130px]">
+                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">von</Label>
+                            <Input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
+                        </div>
+                        <div className="space-y-0.5 w-[130px]">
+                            <Label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">bis</Label>
+                            <Input type="date" value={dateToFilter} onChange={(e) => setDateToFilter(e.target.value)} className="h-9 text-xs shadow-sm" />
+                        </div>
+                        <div className="flex gap-2">
+                            <Button variant="outline" size="sm" className="h-9 shadow-sm" onClick={setTodayFilter}>
+                                <Calendar className="w-4 h-4 mr-2 text-blue-500" /> Heute
+                            </Button>
+                        </div>
+                        <div className="flex items-center gap-3 pl-4 border-l border-zinc-100 dark:border-zinc-800 h-9">
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="show-past"
+                                    checked={showPastBookings}
+                                    onCheckedChange={setShowPastBookings}
+                                />
+                                <Label htmlFor="show-past" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
+                                    {showPastBookings ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                    Vergangene
+                                </Label>
                             </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="hide-canceled"
+                                    checked={!hideCanceled}
+                                    onCheckedChange={(val) => setHideCanceled(!val)}
+                                />
+                                <Label htmlFor="hide-canceled" className="text-xs font-bold text-zinc-500 cursor-pointer flex gap-1.5 items-center">
+                                    {!hideCanceled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                    Stornos
+                                </Label>
+                            </div>
+                        </div>
+
+                        <Button variant="ghost" size="sm" className="h-9 text-xs font-bold text-zinc-500 ml-auto" onClick={resetFilters}>
+                            <RotateCcw className="w-3.5 h-3.5 mr-2" /> Filter zurücksetzen
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
 
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
                 <Table className="table-fixed w-full">
@@ -3742,7 +3741,6 @@ function BookingsList() {
                 variant={deleteConfirm.variant as any}
             />
         </div >
-    </div >
     );
 }
 
