@@ -296,43 +296,6 @@ function BookingsList() {
         }));
     };
 
-    const handleSaveBreakfastChanges = async () => {
-        if (Object.keys(pendingBreakfastChanges).length === 0) return;
-
-        try {
-            const db = await initDb();
-            if (db) {
-                // Execute updates sequentially to avoid potential DB lock issues (though rare in mock/sqlite)
-                for (const [id, changes] of Object.entries(pendingBreakfastChanges)) {
-                    const original = breakfastOptions.find(o => o.id === id);
-                    if (original) {
-                        const isIncluded = original.is_included;
-                        const isPrepared = original.is_prepared ?? 0;
-                        const guestCount = original.guest_count ?? 1;
-                        const time = changes.time ?? original.time ?? "08:00";
-                        const comments = changes.comments ?? original.comments ?? "";
-                        const source = original.source ?? "manual";
-                        const isManual = original.is_manual ?? 1;
-
-                        await db.execute(
-                            `UPDATE breakfast_options SET is_included=?, is_prepared=?, guest_count=?, time=?, comments=?, source=?, is_manual=? WHERE id=?`,
-                            [isIncluded, isPrepared, guestCount, time, comments, source, isManual, id]
-                        );
-                    }
-                }
-
-                setPendingBreakfastChanges({});
-                if (editingBooking) {
-                    await loadBreakfast(editingBooking.id);
-                }
-                setIsEditOpen(false); // Close dialog on save
-            }
-        } catch (error) {
-            console.error("Failed to save breakfast changes:", error);
-            alert("Fehler beim Speichern der Änderungen.");
-        }
-    };
-
     // Customer/Group/Company Filter States
     const [customerSearchQuery, setCustomerSearchQuery] = useState<string>("");
     const [searchFilter, setSearchFilter] = useState<{ type: 'guest' | 'group' | 'company', id: string, label: string } | null>(null);
@@ -830,6 +793,27 @@ function BookingsList() {
                             ]
                         );
                     }
+                }
+
+                if (Object.keys(pendingBreakfastChanges).length > 0) {
+                    for (const [id, changes] of Object.entries(pendingBreakfastChanges)) {
+                        const original = breakfastOptions.find(o => o.id === id);
+                        if (original) {
+                            const isIncluded = original.is_included;
+                            const isPrepared = original.is_prepared ?? 0;
+                            const guestCount = original.guest_count ?? 1;
+                            const time = changes.time ?? original.time ?? "08:00";
+                            const comments = changes.comments ?? original.comments ?? "";
+                            const source = original.source ?? "manual";
+                            const isManual = original.is_manual ?? 1;
+
+                            await db.execute(
+                                `UPDATE breakfast_options SET is_included=?, is_prepared=?, guest_count=?, time=?, comments=?, source=?, is_manual=? WHERE id=?`,
+                                [isIncluded, isPrepared, guestCount, time, comments, source, isManual, id]
+                            );
+                        }
+                    }
+                    setPendingBreakfastChanges({});
                 }
 
                 await loadData();
@@ -3444,9 +3428,9 @@ function BookingsList() {
                     }
 
                     <DialogFooter className="mt-auto pt-6 border-t border-zinc-100 flex items-center justify-between shrink-0 px-6 -mx-6 bg-white dark:bg-zinc-950 rounded-b-lg">
-                        {editTab === 'details' ? (
-                            <>
-                                <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-6">
+                            {editTab === 'details' && (
+                                <>
                                     <div className="flex flex-col gap-1.5">
                                         <Label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Buchungsstatus</Label>
                                         <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg">
@@ -3487,81 +3471,34 @@ function BookingsList() {
                                             ) : "---"}
                                         </div>
                                     </div>
+                                </>
+                            )}
+                            {editTab === 'breakfast' && Object.keys(pendingBreakfastChanges).length > 0 && (
+                                <div className="flex items-center gap-2 text-amber-600 font-bold text-xs animate-pulse">
+                                    <div className="w-2 h-2 rounded-full bg-amber-500" />
+                                    Ungespeicherte Änderungen
                                 </div>
+                            )}
+                        </div>
 
-                                <div className="flex items-center gap-3">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                                        onClick={() => setIsEditOpen(false)}
-                                    >
-                                        Abbrechen
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
-                                        onClick={updateBooking}
-                                    >
-                                        <Check className="w-4 h-4 mr-2" />
-                                        Änderungen speichern
-                                    </Button>
-                                </div>
-                            </>
-                        ) : editTab === 'breakfast' ? (
-                            <>
-                                <div className="flex items-center gap-4">
-                                    {Object.keys(pendingBreakfastChanges).length > 0 && (
-                                        <div className="flex items-center gap-2 text-amber-600 font-bold text-xs animate-pulse">
-                                            <div className="w-2 h-2 rounded-full bg-amber-500" />
-                                            Ungespeicherte Änderungen
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                                        onClick={() => setEditTab("details")}
-                                    >
-                                        Zurück
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        disabled={Object.keys(pendingBreakfastChanges).length === 0}
-                                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
-                                        onClick={handleSaveBreakfastChanges}
-                                    >
-                                        <Check className="w-4 h-4 mr-2" />
-                                        Frühstück speichern
-                                    </Button>
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <div className="flex items-center gap-4">
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                                        onClick={() => setEditTab("details")}
-                                    >
-                                        Zurück
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
-                                        onClick={updateBooking}
-                                    >
-                                        <Check className="w-4 h-4 mr-2" />
-                                        Notizen speichern
-                                    </Button>
-                                </div>
-                            </>
-                        )}
+                        <div className="flex items-center gap-3">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-11 px-6 font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                                onClick={() => setIsEditOpen(false)}
+                            >
+                                Abbrechen
+                            </Button>
+                            <Button
+                                type="button"
+                                className="h-11 px-8 bg-blue-600 hover:bg-blue-700 font-bold shadow-lg shadow-blue-600/20"
+                                onClick={updateBooking}
+                            >
+                                <Check className="w-4 h-4 mr-2" />
+                                Speichern
+                            </Button>
+                        </div>
                     </DialogFooter>
                 </DialogContent >
             </Dialog >
