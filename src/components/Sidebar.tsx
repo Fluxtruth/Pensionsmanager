@@ -162,7 +162,7 @@ export function Sidebar() {
                     >
                         <div className="flex items-center gap-3">
                             <Lightbulb className="w-4 h-4 text-amber-500" />
-                            Feature-Wunsch
+                            Funktion wünschen
                         </div>
                     </button>
                     <button
