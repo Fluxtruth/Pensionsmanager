@@ -26,6 +26,7 @@ import { initDb } from "@/lib/db";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ROOM_TYPES } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 
 interface Room {
     id: string;
@@ -49,6 +50,48 @@ export default function RoomsPage() {
     // States for editing
     const [editingRoom, setEditingRoom] = useState<Room | null>(null);
     const [isConfigOpen, setIsConfigOpen] = useState(false);
+
+    // Form States for Room IDs with feedback
+    const [newRoomId, setNewRoomId] = useState("");
+    const [newRoomError, setNewRoomError] = useState(false);
+    const [newRoomErrorText, setNewRoomErrorText] = useState("");
+    
+    const [editRoomId, setEditRoomId] = useState("");
+    const [editRoomError, setEditRoomError] = useState(false);
+    const [editRoomErrorText, setEditRoomErrorText] = useState("");
+
+    const handleRoomIdChange = (
+        value: string, 
+        setter: (v: string) => void, 
+        errorSetter: (e: boolean) => void, 
+        textSetter: (t: string) => void
+    ) => {
+        // If it's the error text, treat any input as potentially "clearing the error"
+        if (value.includes("Nur Zahlen erlaubt")) {
+            const newValue = value.replace("Nur Zahlen erlaubt", "");
+            if (/^\d*$/.test(newValue)) {
+                setter(newValue);
+            }
+            textSetter("");
+            errorSetter(false);
+            return;
+        }
+
+        // Only allow digits
+        if (/^\d*$/.test(value)) {
+            setter(value);
+            errorSetter(false);
+            textSetter("");
+        } else {
+            // Trigger error feedback
+            errorSetter(true);
+            textSetter("Nur Zahlen erlaubt");
+            setTimeout(() => {
+                textSetter("");
+                errorSetter(false);
+            }, 2000);
+        }
+    };
 
     // States for Calendar
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -191,7 +234,7 @@ export default function RoomsPage() {
             const db = await initDb();
             if (db) {
                 await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)", [
-                    id,
+                    newRoomId,
                     name,
                     type,
                     0, // base_price
@@ -200,6 +243,7 @@ export default function RoomsPage() {
                 ]);
                 await loadRooms();
                 setIsOpen(false);
+                setNewRoomId("");
                 form.reset();
             }
         } catch (error) {
@@ -214,7 +258,7 @@ export default function RoomsPage() {
 
         const form = e.currentTarget;
         const formData = new FormData(form);
-        const newId = formData.get("id") as string;
+        const newId = editRoomId;
         const name = formData.get("name") as string;
         const type = formData.get("type") as string;
         // Price removed
@@ -282,7 +326,19 @@ export default function RoomsPage() {
                         <form onSubmit={addRoom} className="space-y-4 pt-4">
                             <div className="space-y-2">
                                 <Label htmlFor="id">Zimmer-Nummer</Label>
-                                <Input id="id" name="id" type="number" step="1" placeholder="z.B. 101" required />
+                                <Input 
+                                    id="id" 
+                                    name="id" 
+                                    type="text" 
+                                    placeholder="z.B. 101" 
+                                    required 
+                                    value={newRoomErrorText || newRoomId}
+                                    onChange={(e) => handleRoomIdChange(e.target.value, setNewRoomId, setNewRoomError, setNewRoomErrorText)}
+                                    className={cn(
+                                        "transition-all duration-300",
+                                        newRoomError ? "border-red-500 ring-2 ring-red-500/20 animate-shake text-red-500 font-medium" : ""
+                                    )}
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="name">Name / Bezeichnung</Label>
@@ -364,6 +420,9 @@ export default function RoomsPage() {
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setEditingRoom(room);
+                                                        setEditRoomId(room.id);
+                                                        setEditRoomError(false);
+                                                        setEditRoomErrorText("");
                                                         setIsConfigOpen(true);
                                                     }}
                                                 >
@@ -607,7 +666,18 @@ export default function RoomsPage() {
                         <form onSubmit={updateRoom} className="space-y-4 pt-4">
                             <div className="space-y-2">
                                 <Label htmlFor="edit-id">Zimmer-Nummer</Label>
-                                <Input id="edit-id" name="id" type="number" step="1" defaultValue={editingRoom.id} required />
+                                <Input 
+                                    id="edit-id" 
+                                    name="id" 
+                                    type="text" 
+                                    required 
+                                    value={editRoomErrorText || editRoomId}
+                                    onChange={(e) => handleRoomIdChange(e.target.value, setEditRoomId, setEditRoomError, setEditRoomErrorText)}
+                                    className={cn(
+                                        "transition-all duration-300",
+                                        editRoomError ? "border-red-500 ring-2 ring-red-500/20 animate-shake text-red-500 font-medium" : ""
+                                    )}
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="edit-name">Name / Bezeichnung</Label>
