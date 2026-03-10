@@ -18,7 +18,8 @@ import {
     Download,
     User,
     Lightbulb,
-    Bug
+    Bug,
+    Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
@@ -43,16 +44,24 @@ export function Sidebar() {
     const [logo, setLogo] = useState("/logo.jpg");
     const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
     const [feedbackType, setFeedbackType] = useState<"bug" | "feature" | null>(null);
+    const [hasPin, setHasPin] = useState(false);
 
     React.useEffect(() => {
         const loadSettings = async () => {
-            const db = await initDb();
-            if (db) {
-                const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
-                if (titleRes.length > 0) setTitle(titleRes[0].value);
+            try {
+                const db = await initDb();
+                if (db) {
+                    const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
+                    if (titleRes.length > 0) setTitle(titleRes[0].value);
 
-                const logoRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_logo"]);
-                if (logoRes.length > 0) setLogo(logoRes[0].value);
+                    const logoRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_logo"]);
+                    if (logoRes.length > 0) setLogo(logoRes[0].value);
+
+                    const pinRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["app_pin"]);
+                    setHasPin(pinRes.length > 0);
+                }
+            } catch (err) {
+                console.error("Failed to load settings:", err);
             }
         };
         loadSettings();
@@ -174,6 +183,17 @@ export function Sidebar() {
                             Fehler melden
                         </div>
                     </button>
+                    {hasPin && (
+                        <button
+                            onClick={() => window.dispatchEvent(new CustomEvent('app-lock'))}
+                            className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/10 rounded-lg transition-colors group"
+                        >
+                            <div className="flex items-center gap-3">
+                                <Lock className="w-4 h-4" />
+                                App Sperren
+                            </div>
+                        </button>
+                    )}
                 </div>
             </div>
 

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -1759,7 +1759,7 @@ function BookingsList() {
                                             "flex flex-col gap-4 overflow-y-auto flex-1",
                                             wizardData.guestId && (!wizardData.startDate || !wizardData.endDate) ? "running-border-content p-4" : ""
                                         )}>
-                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Zeitraum & Details</Label>
+                                            <Label className="text-xs font-bold text-zinc-500 block">2. Zeitraum & Details</Label>
 
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1.5">
@@ -1884,7 +1884,7 @@ function BookingsList() {
 
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
+                                                    <Label className="text-xs">Gäste / Zimmer</Label>
                                                     <Input
                                                         type="number"
                                                         min="1"
@@ -1894,7 +1894,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
+                                                    <Label className="text-xs">Aufenthaltstyp</Label>
                                                     <Select
                                                         value={wizardData.stayType}
                                                         onValueChange={(val) => setWizardData(prev => ({ ...prev, stayType: val }))}
@@ -1912,7 +1912,7 @@ function BookingsList() {
 
                                             <div className="grid grid-cols-4 gap-2">
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
+                                                    <Label className="text-xs">Hunde</Label>
                                                     <Input
                                                         type="number"
                                                         min="0"
@@ -1922,7 +1922,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
+                                                    <Label className="text-xs">Kinder</Label>
                                                     <Input
                                                         type="number"
                                                         min="0"
@@ -1932,7 +1932,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
+                                                    <Label className="text-xs">Aufbett.</Label>
                                                     <Input
                                                         type="number"
                                                         min="0"
@@ -1942,7 +1942,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
+                                                    <Label className="text-xs">Ankunft</Label>
                                                     <Input
                                                         type="time"
                                                         className="h-8 text-xs"
@@ -2997,7 +2997,7 @@ function BookingsList() {
                                     {/* SPALTE 2: DETAILS (4 Spalten) */}
                                     <div className="col-span-4 border-r border-zinc-100 pr-6 flex flex-col min-h-0">
                                         <div className="flex flex-col gap-4 overflow-y-auto flex-1">
-                                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">2. Zeitraum & Details</Label>
+                                            <Label className="text-xs font-bold text-zinc-500 block">2. Zeitraum & Details</Label>
 
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1.5">
@@ -3120,7 +3120,7 @@ function BookingsList() {
 
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Gäste / Zimmer</Label>
+                                                    <Label className="text-xs">Gäste / Zimmer</Label>
                                                     <Input
                                                         type="number"
                                                         min="1"
@@ -3130,7 +3130,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufenthaltstyp</Label>
+                                                    <Label className="text-xs">Aufenthaltstyp</Label>
                                                     <Select
                                                         value={editingBooking.stay_type || "privat"}
                                                         onValueChange={(val) => setEditingBooking(prev => prev ? ({ ...prev, stay_type: val }) : null)}
@@ -3148,7 +3148,7 @@ function BookingsList() {
 
                                             <div className="grid grid-cols-4 gap-2">
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hunde</Label>
+                                                    <Label className="text-xs">Hunde</Label>
                                                     <Input
                                                         type="number"
                                                         min="0"
@@ -3158,7 +3158,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Kinder</Label>
+                                                    <Label className="text-xs">Kinder</Label>
                                                     <Input
                                                         type="number"
                                                         min="0"
@@ -3168,7 +3168,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Aufbett.</Label>
+                                                    <Label className="text-xs">Aufbett.</Label>
                                                     <Input
                                                         type="number"
                                                         min="0"
@@ -3178,7 +3178,7 @@ function BookingsList() {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] font-bold text-zinc-500 uppercase">Ankunft</Label>
+                                                    <Label className="text-xs">Ankunft</Label>
                                                     <Input
                                                         type="time"
                                                         className="h-8 text-xs"
