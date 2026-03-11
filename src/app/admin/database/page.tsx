@@ -283,32 +283,10 @@ export default function DatabasePage() {
                                 </div>
                                 <div>
                                     <CardTitle>Synchronisations-Status</CardTitle>
-                                    <CardDescription>Automatische Sicherung zwischen lokaler DB und Supabase.</CardDescription>
+                                    <CardDescription>Automatische Sicherung zwischen Ihrem Gerät und unserer sicheren Cloud, betrieben am Standort Frankfurt (Main).</CardDescription>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Button 
-                                    variant="outline" 
-                                    size="sm"
-                                    className="h-7 text-xs gap-1.5"
-                                    onClick={async () => {
-                                        setSyncMessage({ text: "Starte manuelle Synchronisation...", type: "success" });
-                                        setLoading(true);
-                                        const result = await syncService.performSync();
-                                        if (result.success) {
-                                            setSyncMessage({ text: "Manuelle Synchronisation erfolgreich", type: "success" });
-                                        } else {
-                                            setSyncMessage({ text: `Sync Fehler: ${result.error}`, type: "error" });
-                                        }
-                                        await refreshSyncStatus();
-                                        setLoading(false);
-                                        setTimeout(() => setSyncMessage(null), 5000);
-                                    }}
-                                    disabled={loading}
-                                >
-                                    <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
-                                    Jetzt synchronisieren
-                                </Button>
                                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/10 dark:text-green-400 dark:border-green-900/30 gap-1.5 py-1">
                                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                                     Auto-Sync Aktiv
