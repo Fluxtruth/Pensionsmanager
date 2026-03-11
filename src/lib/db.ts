@@ -370,6 +370,14 @@ async function _initDb(): Promise<DatabaseMock | null> {
     const db = await Database.load("sqlite:pensionsmanager.db");
 
     await db.execute(`
+      CREATE TABLE IF NOT EXISTS pensions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT
+      );
+
       CREATE TABLE IF NOT EXISTS rooms (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,

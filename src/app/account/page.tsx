@@ -5,17 +5,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { User, LogOut, Mail, Calendar, ShieldCheck, KeyRound, Pencil, Trash2, Lock } from "lucide-react";
+import { User, LogOut, Mail, Calendar, ShieldCheck, KeyRound, Pencil, Trash2, Lock, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
+import { Switch } from "@/components/ui/switch";
 
 export default function AccountPage() {
     const [user, setUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [logoutLoading, setLogoutLoading] = useState(false);
     const [pin, setPin] = useState<string | null>(null);
+    const [isPinEnabled, setIsPinEnabled] = useState(true);
     const [isEditingPin, setIsEditingPin] = useState(false);
     const [newPin, setNewPin] = useState("");
     const [pinError, setPinError] = useState("");
@@ -30,9 +33,13 @@ export default function AccountPage() {
             try {
                 const db = await initDb();
                 if (db) {
-                    const pinSetting = await db.select<any[]>("SELECT value FROM settings WHERE key = 'app_pin'");
-                    if (pinSetting && pinSetting.length > 0) {
-                        setPin(pinSetting[0].value);
+                    const settings = await db.select<any[]>("SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled')");
+                    const pinSetting = settings.find(s => s.key === 'app_pin');
+                    const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
+                    
+                    if (pinSetting) {
+                        setPin(pinSetting.value);
+                        setIsPinEnabled(enabledSetting?.value !== 'false');
                     }
                 }
             } catch (err) {
@@ -67,7 +74,9 @@ export default function AccountPage() {
             const db = await initDb();
             if (db) {
                 await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('app_pin', ?)", [newPin]);
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('is_pin_enabled', 'true')", []);
                 setPin(newPin);
+                setIsPinEnabled(true);
                 setIsEditingPin(false);
                 setNewPin("");
                 setPinError("");
@@ -82,13 +91,27 @@ export default function AccountPage() {
         try {
             const db = await initDb();
             if (db) {
-                await db.execute("DELETE FROM settings WHERE key = 'app_pin'");
+                await db.execute("DELETE FROM settings WHERE key IN ('app_pin', 'is_pin_enabled')");
                 setPin(null);
+                setIsPinEnabled(true);
                 setPinError("");
             }
         } catch (err) {
             console.error("Failed to remove PIN:", err);
             setPinError("Fehler beim Entfernen der PIN.");
+        }
+    };
+
+    const handleTogglePinEnabled = async (enabled: boolean) => {
+        try {
+            const db = await initDb();
+            if (db) {
+                const value = enabled ? "true" : "false";
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('is_pin_enabled', ?)", [value]);
+                setIsPinEnabled(enabled);
+            }
+        } catch (err) {
+            console.error("Failed to toggle PIN enabled:", err);
         }
     };
 
@@ -177,14 +200,7 @@ export default function AccountPage() {
                     </CardContent>
                 </Card>
 
-                <Card className="shadow-md border-zinc-200 dark:border-zinc-800 bg-blue-50/50 dark:bg-blue-900/5">
-                    <CardHeader>
-                        <CardTitle className="text-lg">Sicherheitshinweis</CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                        Ihre Sitzung ist durch moderne JWT-Token gesichert. Sobald Sie sich abmelden, werden alle lokalen Sitzungsdaten gelöscht und der Zugriff erlischt sofort.
-                    </CardContent>
-                </Card>
+
 
                 <Card className="col-span-2 shadow-md border-zinc-200 dark:border-zinc-800">
                     <CardHeader className="flex flex-row items-center gap-4 space-y-0 text-amber-600 dark:text-amber-400">
@@ -198,8 +214,13 @@ export default function AccountPage() {
                         {pin ? (
                             <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-100 dark:border-zinc-800">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                                    <span className="text-sm font-medium">PIN ist aktiv (••••)</span>
+                                    <div className={cn(
+                                        "w-2 h-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)]",
+                                        isPinEnabled ? "bg-green-500" : "bg-zinc-400 grayscale"
+                                    )} />
+                                    <span className="text-sm font-medium">
+                                        PIN ist {isPinEnabled ? "aktiv" : "deaktiviert"} (••••)
+                                    </span>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button
@@ -223,6 +244,22 @@ export default function AccountPage() {
                         ) : (
                             <div className="text-sm text-zinc-500 italic py-2">
                                 Keine PIN eingerichtet. Die App ist auf diesem Gerät nicht zusätzlich geschützt.
+                            </div>
+                        )}
+
+                        {pin && !isEditingPin && (
+                            <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                                <div className="flex items-center gap-3">
+                                    <Shield className={cn("w-4 h-4", isPinEnabled ? "text-purple-600" : "text-zinc-400")} />
+                                    <div className="space-y-0.5">
+                                        <div className="text-sm font-medium">Zugriffsschutz aktiv</div>
+                                        <div className="text-xs text-zinc-500">App-Sperre bei Inaktivität oder manuellem Sperren</div>
+                                    </div>
+                                </div>
+                                <Switch 
+                                    checked={isPinEnabled} 
+                                    onCheckedChange={handleTogglePinEnabled}
+                                />
                             </div>
                         )}
 

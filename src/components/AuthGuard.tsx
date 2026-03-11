@@ -15,6 +15,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [appPin, setAppPin] = useState<string | null>(null);
+    const [isPinEnabled, setIsPinEnabled] = useState(true);
     const [isPinVerified, setIsPinVerified] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -41,9 +42,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     if (session && !isAuthRoute) {
                         const db = await initDb();
                         if (db) {
-                            const pinSetting = await db.select<any[]>("SELECT value FROM settings WHERE key = ?", ['app_pin']);
-                            if (pinSetting && pinSetting.length > 0) {
-                                setAppPin(pinSetting[0].value);
+                            const settings = await db.select<any[]>("SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled')");
+                            const pinSetting = settings.find(s => s.key === 'app_pin');
+                            const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
+                            
+                            if (pinSetting) {
+                                setAppPin(pinSetting.value);
+                                setIsPinEnabled(enabledSetting?.value !== 'false');
                             } else {
                                 setIsPinVerified(true); // No PIN set
                             }
@@ -135,7 +140,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // If authorized and NOT on an auth route, render the standard layout structure expects children to be injected into
     return (
         <div className="flex h-full">
-            {appPin && !isPinVerified && (
+            {appPin && isPinEnabled && !isPinVerified && (
                 <PinEntry 
                     correctPin={appPin} 
                     onSuccess={() => setIsPinVerified(true)} 

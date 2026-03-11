@@ -54,6 +54,7 @@ export default function DatabasePage() {
     const [isRevokeDialogOpen, setIsRevokeDialogOpen] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState<ConnectedDevice | null>(null);
 
+
     const syncService = SyncService.getInstance();
 
     const refreshSyncStatus = async () => {
@@ -96,6 +97,16 @@ export default function DatabasePage() {
             // Ensure device is registered immediately
             await syncService.registerCurrentDevice().catch(console.error);
 
+            // Start Auto-Sync automatically if not already active
+            if (!syncService.isAutoSyncActive()) {
+                syncService.startAutoSync(async (result) => {
+                    if (!result.success) {
+                        setSyncMessage({ text: `Auto-Sync Fehler: ${result.error}`, type: "error" });
+                    }
+                    await refreshSyncStatus();
+                });
+            }
+
             const db = await initDb();
             if (db) {
                 const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
@@ -105,42 +116,6 @@ export default function DatabasePage() {
         };
         loadSettings();
     }, []);
-
-    const handleManualSync = async () => {
-        setLoading(true);
-        setSyncMessage(null);
-        try {
-            const result = await syncService.performSync();
-            if (result.success) {
-                setSyncMessage({ text: "Synchronisation erfolgreich!", type: "success" });
-                await refreshSyncStatus();
-            } else {
-                setSyncStatus("error");
-                setSyncMessage({ text: `Fehler: ${result.error}`, type: "error" });
-            }
-        } catch (error) {
-            setSyncStatus("error");
-            setSyncMessage({ text: "Verbindung zum Server fehlgeschlagen.", type: "error" });
-        } finally {
-            setLoading(false);
-            // Hide message after 5 seconds
-            setTimeout(() => setSyncMessage(null), 5000);
-        }
-    };
-
-    const toggleAutoSync = (checked: boolean) => {
-        if (checked) {
-            syncService.startAutoSync(async (result) => {
-                if (!result.success) {
-                    setSyncMessage({ text: `Auto-Sync Fehler: ${result.error}`, type: "error" });
-                }
-                await refreshSyncStatus();
-            });
-        } else {
-            syncService.stopAutoSync();
-        }
-        setIsAutoSync(checked);
-    };
 
     const handleCreateBackup = async () => {
         if (!newBackupName.trim()) return;
@@ -288,32 +263,18 @@ export default function DatabasePage() {
                                         syncStatus === "warning" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" :
                                             "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                 )}>
-                                    <Database className="w-5 h-5" />
+                                    <Cloud className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <CardTitle>Cloud-Backup Status</CardTitle>
-                                    <CardDescription>Datenabgleich zwischen lokaler DB und Supabase.</CardDescription>
+                                    <CardTitle>Synchronisations-Status</CardTitle>
+                                    <CardDescription>Automatische Sicherung zwischen lokaler DB und Supabase.</CardDescription>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2 mr-4">
-                                    <Label htmlFor="auto-sync" className="text-xs font-medium cursor-pointer">Auto-Sync</Label>
-                                    <Switch
-                                        id="auto-sync"
-                                        checked={isAutoSync}
-                                        onCheckedChange={toggleAutoSync}
-                                    />
-                                </div>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="gap-2"
-                                    onClick={handleManualSync}
-                                    disabled={loading}
-                                >
-                                    <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-                                    Synchronisieren
-                                </Button>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/10 dark:text-green-400 dark:border-green-900/30 gap-1.5 py-1">
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                    Auto-Sync Aktiv
+                                </Badge>
                             </div>
                         </div>
                         {syncMessage && (
@@ -399,12 +360,13 @@ export default function DatabasePage() {
 
                         <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-100 dark:border-zinc-800 text-sm flex gap-3">
                             <Lock className="w-5 h-5 flex-shrink-0 text-zinc-400" />
-                            <div>
+                            <div className="flex-1">
                                 <p className="font-semibold mb-1">Datensparsamkeit & Souveränität</p>
                                 <p className="text-zinc-500">
                                     Diese App speichert alle sensiblen Daten primär auf Ihrem Gerät. Der Cloud-Sync dient lediglich dem Backup und der Wiederherstellung auf anderen Geräten.
                                 </p>
                             </div>
+
                         </div>
 
                         <Separator />
@@ -684,6 +646,8 @@ export default function DatabasePage() {
                 variant="danger"
                 isLoading={loading}
             />
+
+
         </div>
     );
 }

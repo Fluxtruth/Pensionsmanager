@@ -243,9 +243,8 @@ export class SyncService {
       let totalUpdated = 0;
 
       // 1. PULL PHASE (Cloud -> Local)
-      // For now we only pull connected_devices to ensure they are visible
-      // In the future we might want to pull other tables too
-      const pullTables = ["connected_devices", "settings"];
+      // Pull all tables to ensure local DB matches remote state (especially for seed data)
+      const pullTables = TABLES_TO_SYNC.filter(t => t !== 'connected_devices'); // connected_devices is special, we handle it separately
       for (const table of pullTables) {
          try {
            await this.pullTable(table);
@@ -279,8 +278,11 @@ export class SyncService {
             .upsert(uploadData);
 
           if (upsertError) {
-            console.error(`[Sync] Supabase Upsert Error for ${table}:`, upsertError);
-            return { success: false, error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message}` };
+            console.error(`[Sync] Supabase Upsert Error for ${table}:`, JSON.stringify(upsertError, null, 2));
+            return { 
+              success: false, 
+              error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message || 'FK-Verletzung oder RLS-Block'}. Details: ${JSON.stringify(upsertError)}` 
+            };
           }
 
           // 3. Lokal als synchronisiert markieren
@@ -290,13 +292,17 @@ export class SyncService {
             const idField = table === 'settings' ? 'key' : 'id';
             const idValue = row[idField];
             
-            await db.execute(
-              `UPDATE ${table} SET synced_at = ?, pension_id = ? WHERE ${idField} = ?`,
-              [now, pensionId, idValue]
-            );
-            rowCount++;
+            try {
+              const updateResult = await db.execute(
+                `UPDATE ${table} SET synced_at = ?, pension_id = ? WHERE ${idField} = ?`,
+                [now, pensionId, idValue]
+              );
+              rowCount++;
+            } catch (updateErr) {
+              console.error(`[Sync] Failed to mark ${table} row ${idValue} as synced:`, updateErr);
+            }
           }
-          console.log(`[Sync] Successfully updated ${rowCount} rows in local table ${table}`);
+          console.log(`[Sync] Successfully updated ${rowCount}/${pendingRows.length} rows in local table ${table}`);
           totalUpdated += rowCount;
         }
 
@@ -725,4 +731,50 @@ export class SyncService {
       console.error("[Sync] Failed to initialize web context:", e);
     }
   }
+
+  /**
+   * Löscht alle lokalen Daten in der SQLite Datenbank (außer critical settings).
+   * Nützlich bei einem Umgebungswechsel.
+   */
+  public async resetLocalDb(): Promise<{ success: boolean; error?: string }> {
+    const db = await this.ensureDb();
+    if (!db) return { success: false, error: "Datenbank nicht initialisiert" };
+
+    try {
+      await db.execute("PRAGMA foreign_keys = OFF;");
+      
+      const TABLES_TO_CLEAR = [
+        "breakfast_options",
+        "cleaning_tasks",
+        "bookings",
+        "room_configs",
+        "occasions",
+        "cleaning_task_suggestions",
+        "staff",
+        "booking_groups",
+        "guests",
+        "rooms",
+        "connected_devices"
+      ];
+
+      for (const table of TABLES_TO_CLEAR) {
+        await db.execute(`DELETE FROM ${table}`);
+      }
+
+      // Wir behalten die settings, löschen aber evtl. gecachte pension_id oder branding
+      // außer wir wollen wirklich ALLES platt machen.
+      // Hier löschen wir alle settings außer kritische (falls es welche gäbe)
+      await db.execute("DELETE FROM settings");
+
+      await db.execute("PRAGMA foreign_keys = ON;");
+      
+      console.log("[Sync] Local database has been reset.");
+      return { success: true };
+    } catch (error: any) {
+      try { await db.execute("PRAGMA foreign_keys = ON;"); } catch(e) {}
+      console.error("[Sync] Local DB reset failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
 }

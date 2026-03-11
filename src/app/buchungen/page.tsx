@@ -2450,10 +2450,10 @@ function BookingsList() {
                 <Table className="table-fixed w-full">
                     <TableHeader>
                         <TableRow className="bg-zinc-50/50 dark:bg-zinc-800/50 border-none">
-                            <TableHead className="font-bold h-12 w-[30%]">Gast / Gruppe</TableHead>
-                            <TableHead className="font-bold h-12 w-[15%]">Zimmer</TableHead>
+                            <TableHead className="font-bold h-12 w-[28%]">Gast / Gruppe</TableHead>
+                            <TableHead className="font-bold h-12 w-[12%]">Zimmer</TableHead>
                             <TableHead className="font-bold h-12 w-[20%]">Zeitraum</TableHead>
-                            <TableHead className="font-bold h-12 w-[10%] text-center">Datenqualität</TableHead>
+                            <TableHead className="font-bold h-12 w-[15%] text-center">Datenqualität</TableHead>
                             <TableHead className="font-bold h-12 w-[10%]">Status</TableHead>
                             <TableHead className="text-right font-bold h-12 px-6 w-[15%]">Aktionen</TableHead>
                         </TableRow>

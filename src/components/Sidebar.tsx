@@ -58,17 +58,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             try {
                 const db = await initDb();
                 if (db) {
-                    const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
-                    if (titleRes.length > 0) {
-                        setTitle(titleRes[0].value);
-                        document.title = titleRes[0].value;
+                    const settings = await db.select<{ key: string, value: string }[]>("SELECT key, value FROM settings WHERE key IN ('branding_title', 'branding_logo', 'app_pin', 'is_pin_enabled')");
+                    
+                    const titleRes = settings.find(s => s.key === "branding_title");
+                    if (titleRes) {
+                        setTitle(titleRes.value);
+                        document.title = titleRes.value;
                     }
 
-                    const logoRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_logo"]);
-                    if (logoRes.length > 0) setLogo(logoRes[0].value);
+                    const logoRes = settings.find(s => s.key === "branding_logo");
+                    if (logoRes) setLogo(logoRes.value);
 
-                    const pinRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["app_pin"]);
-                    setHasPin(pinRes.length > 0);
+                    const pinRes = settings.find(s => s.key === "app_pin");
+                    const enabledRes = settings.find(s => s.key === "is_pin_enabled");
+                    setHasPin(!!pinRes && enabledRes?.value !== "false");
                 }
             } catch (err) {
                 console.error("Failed to load settings:", err);

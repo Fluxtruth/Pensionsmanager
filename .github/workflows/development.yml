@@ -1,0 +1,37 @@
+name: Development
+on:
+  push:
+    branches:
+      - develop
+      - 'feature/*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    environment: development
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint and Type Check
+        run: |
+          npm run lint
+          npm run typecheck
+
+      - name: Build Web (Test)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
