@@ -117,7 +117,16 @@ export class SyncService {
         const result = await db.select<any>(
           `SELECT COUNT(*) as count FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
         );
-        totalPending += result[0]?.count || 0;
+        const count = result[0]?.count || 0;
+        if (count > 0) {
+          console.debug(`[Sync] Table ${table} has ${count} pending changes.`);
+          // Optionally log details of pending rows (avoid logging sensitive data like value)
+          const pendingDetails = await db.select<any[]>(
+            `SELECT ${table === 'settings' ? 'key' : 'id'}, updated_at, synced_at FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
+          );
+          console.debug(`[Sync] Pending rows in ${table}:`, pendingDetails);
+        }
+        totalPending += count;
       } catch (error) {
         console.error(`Error counting pending rows for ${table}:`, error);
       }
@@ -255,7 +264,7 @@ export class SyncService {
 
       // 2. PUSH PHASE (Local -> Cloud)
       for (const table of TABLES_TO_SYNC) {
-        // 1. Geänderte Zeilen holen
+        // Fetch pending rows. We compare timestamps if synced_at exists.
         const pendingRows = await db.select<any>(
           `SELECT * FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
         );
@@ -344,13 +353,16 @@ export class SyncService {
 
       for (const row of data) {
         // Find existing local row
-        const result = await db.select<any[]>(`SELECT updated_at FROM ${tableName} WHERE ${idField} = ?`, [row[idField]]);
+        const result = await db.select<any[]>(`SELECT updated_at, synced_at FROM ${tableName} WHERE ${idField} = ?`, [row[idField]]);
         const existing = Array.isArray(result) ? result : [];
         
         if (existing.length > 0) {
-          // Compare timestamps (Supabase wins if newer)
-          if (!existing[0].updated_at || row.updated_at > existing[0].updated_at) {
-            const columns = Object.keys(row).filter(col => col !== idField);
+          const localRow = existing[0];
+          const localTime = new Date(localRow.updated_at || 0).getTime();
+          const remoteTime = new Date(row.updated_at || 0).getTime();
+
+          if (remoteTime > localTime && (localRow.synced_at !== null || remoteTime > localTime)) {
+            const columns = Object.keys(row).filter(col => col !== idField && col !== 'synced_at');
             const setStatement = columns.map(col => `${col} = ?`).join(", ");
             const values = columns.map(col => row[col]);
             
@@ -361,7 +373,7 @@ export class SyncService {
           }
         } else {
           // New row localy
-          const columns = Object.keys(row);
+          const columns = Object.keys(row).filter(c => c !== 'synced_at');
           const placeholders = columns.map(() => "?").join(", ");
           const values = columns.map(col => row[col]);
           

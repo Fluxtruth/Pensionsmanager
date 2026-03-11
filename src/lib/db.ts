@@ -218,6 +218,21 @@ async function _initDb(): Promise<DatabaseMock | null> {
             const setPhrase = match[2];
             const wherePhrase = match[3] || "";
 
+            // Handle SyncService explicit 'UPDATE table SET synced_at = ?, pension_id = ? WHERE key/id = ?'
+            if (upperQuery.includes("SET SYNCED_AT = ?")) {
+              const idField = table === 'settings' ? 'key' : 'id';
+              const idValue = params?.[params.length - 1]; // Assume ID is always last
+              const index = mockData[table]?.findIndex(item => item[idField] === idValue);
+              
+              if (index !== undefined && index !== -1) {
+                mockData[table][index].synced_at = params?.[0]; // synced_at is the first param
+                if (upperQuery.includes("PENSION_ID = ?")) {
+                   mockData[table][index].pension_id = params?.[1]; // pension_id is the second
+                }
+                return { rowsAffected: 1, lastInsertId: 0 };
+              }
+            }
+
             // Extract all assigned columns: `col1 = ?, col2 = ?, col3 = 'val'`
             const assignments = setPhrase.split(',').map(s => s.trim());
 

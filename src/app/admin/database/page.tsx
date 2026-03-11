@@ -93,6 +93,9 @@ export default function DatabasePage() {
     };
 
     useEffect(() => {
+        let isSubscribed = true;
+        let pollInterval: NodeJS.Timeout;
+
         const loadSettings = async () => {
             // Ensure device is registered immediately
             await syncService.registerCurrentDevice().catch(console.error);
@@ -100,6 +103,7 @@ export default function DatabasePage() {
             // Start Auto-Sync automatically if not already active
             if (!syncService.isAutoSyncActive()) {
                 syncService.startAutoSync(async (result) => {
+                    if (!isSubscribed) return;
                     if (!result.success) {
                         setSyncMessage({ text: `Auto-Sync Fehler: ${result.error}`, type: "error" });
                     }
@@ -110,11 +114,23 @@ export default function DatabasePage() {
             const db = await initDb();
             if (db) {
                 const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
-                if (titleRes.length > 0) setPensionName(titleRes[0].value);
+                if (titleRes.length > 0 && isSubscribed) setPensionName(titleRes[0].value);
             }
-            await refreshSyncStatus();
+            if (isSubscribed) await refreshSyncStatus();
+
+            // Setup polling to update UI if background sync changes the data
+            pollInterval = setInterval(async () => {
+                if (isSubscribed) {
+                    await refreshSyncStatus();
+                }
+            }, 30000); // 30 seconds
         };
         loadSettings();
+
+        return () => {
+            isSubscribed = false;
+            if (pollInterval) clearInterval(pollInterval);
+        };
     }, []);
 
     const handleCreateBackup = async () => {
@@ -271,8 +287,30 @@ export default function DatabasePage() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
+                                <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    className="h-7 text-xs gap-1.5"
+                                    onClick={async () => {
+                                        setSyncMessage({ text: "Starte manuelle Synchronisation...", type: "success" });
+                                        setLoading(true);
+                                        const result = await syncService.performSync();
+                                        if (result.success) {
+                                            setSyncMessage({ text: "Manuelle Synchronisation erfolgreich", type: "success" });
+                                        } else {
+                                            setSyncMessage({ text: `Sync Fehler: ${result.error}`, type: "error" });
+                                        }
+                                        await refreshSyncStatus();
+                                        setLoading(false);
+                                        setTimeout(() => setSyncMessage(null), 5000);
+                                    }}
+                                    disabled={loading}
+                                >
+                                    <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
+                                    Jetzt synchronisieren
+                                </Button>
                                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/10 dark:text-green-400 dark:border-green-900/30 gap-1.5 py-1">
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                                     Auto-Sync Aktiv
                                 </Badge>
                             </div>

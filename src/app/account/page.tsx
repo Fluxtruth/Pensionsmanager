@@ -12,16 +12,18 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
 import { Switch } from "@/components/ui/switch";
+import { SyncService } from "@/lib/sync";
 
 export default function AccountPage() {
     const [user, setUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [logoutLoading, setLogoutLoading] = useState(false);
     const [pin, setPin] = useState<string | null>(null);
+    const [localPensionId, setLocalPensionId] = useState<string | null>(null);
     const [isPinEnabled, setIsPinEnabled] = useState(true);
     const [isEditingPin, setIsEditingPin] = useState(false);
     const [newPin, setNewPin] = useState("");
-    const [pinError, setPinError] = useState("");
+    const [pinError, setPinError] = useState<string | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -33,14 +35,18 @@ export default function AccountPage() {
             try {
                 const db = await initDb();
                 if (db) {
-                    const settings = await db.select<any[]>("SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled')");
-                    const pinSetting = settings.find(s => s.key === 'app_pin');
-                    const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
+                    const settingsRes = await db.select<any[]>("SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled', 'pension_id')");
+                    const pinVal = settingsRes.find(s => s.key === 'app_pin')?.value;
+                    const enabled = settingsRes.find(s => s.key === 'is_pin_enabled')?.value;
+                    setPin(pinVal || null);
+                    setIsPinEnabled(enabled !== 'false');
                     
-                    if (pinSetting) {
-                        setPin(pinSetting.value);
-                        setIsPinEnabled(enabledSetting?.value !== 'false');
+                    // Get pension_id from settings or sync service
+                    let pId = settingsRes.find(s => s.key === 'pension_id')?.value;
+                    if (!pId) {
+                        pId = await SyncService.getInstance().getPensionId();
                     }
+                    setLocalPensionId(pId || null);
                 }
             } catch (err) {
                 console.error("Failed to load PIN:", err);
@@ -73,13 +79,14 @@ export default function AccountPage() {
         try {
             const db = await initDb();
             if (db) {
-                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('app_pin', ?)", [newPin]);
-                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('is_pin_enabled', 'true')", []);
+                const now = new Date().toISOString();
+                await db.execute("INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)", ["app_pin", newPin, now, localPensionId]);
+                await db.execute("INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)", ["is_pin_enabled", "true", now, localPensionId]);
                 setPin(newPin);
                 setIsPinEnabled(true);
                 setIsEditingPin(false);
                 setNewPin("");
-                setPinError("");
+                setPinError(null);
             }
         } catch (err) {
             console.error("Failed to save PIN:", err);
@@ -91,10 +98,11 @@ export default function AccountPage() {
         try {
             const db = await initDb();
             if (db) {
-                await db.execute("DELETE FROM settings WHERE key IN ('app_pin', 'is_pin_enabled')");
+                const now = new Date().toISOString();
+                await db.execute("DELETE FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?", [localPensionId]);
                 setPin(null);
                 setIsPinEnabled(true);
-                setPinError("");
+                setPinError(null);
             }
         } catch (err) {
             console.error("Failed to remove PIN:", err);
@@ -105,11 +113,13 @@ export default function AccountPage() {
     const handleTogglePinEnabled = async (enabled: boolean) => {
         try {
             const db = await initDb();
-            if (db) {
-                const value = enabled ? "true" : "false";
-                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('is_pin_enabled', ?)", [value]);
-                setIsPinEnabled(enabled);
-            }
+            if (!db) return;
+            const now = new Date().toISOString();
+            await db.execute(
+                "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                ["is_pin_enabled", enabled ? "true" : "false", now, localPensionId]
+            );
+            setIsPinEnabled(enabled);
         } catch (err) {
             console.error("Failed to toggle PIN enabled:", err);
         }
