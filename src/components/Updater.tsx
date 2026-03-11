@@ -1,56 +1,102 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { check } from "@tauri-apps/plugin-updater";
-import { ask, message } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { UpdateDialog, type UpdateState, type UpdateInfo } from "./UpdateDialog";
 
 export function Updater() {
-    const checked = useRef(false);
+    const [state, setState] = useState<UpdateState>("idle");
+    const [isOpen, setIsOpen] = useState(false);
+    const [info, setInfo] = useState<UpdateInfo | null>(null);
+    const [progress, setProgress] = useState(0);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        // Only run this once on mount
-        if (checked.current) return;
-        checked.current = true;
+    const checkForUpdates = useCallback(async (manual = false) => {
+        if (!('__TAURI_INTERNALS__' in window)) return;
+        
+        setState("checking");
+        if (manual) setIsOpen(true);
 
-        async function checkForUpdates() {
-            // Check if we are running the app in Tauri
-            if (!('__TAURI_INTERNALS__' in window)) return;
-
-            try {
-                const update = await check();
-                if (update) {
-                    const yes = await ask(
-                        `Ein Update auf Version ${update.version} ist verfügbar!\n\nRelease Notes: ${update.body || "Keine Beschreibung verfügbar."}\n\nMöchtest du das Update jetzt installieren?`,
-                        {
-                            title: "Update Verfügbar",
-                            kind: "info",
-                            okLabel: "Aktualisieren",
-                            cancelLabel: "Später",
-                        }
-                    );
-
-                    if (yes) {
-                        await update.downloadAndInstall((event) => {
-                            // We could implement a progress bar here in the future
-                            console.log("Update progress", event);
-                        });
-                        await message("Das Update wurde installiert. Die App wird nun neu gestartet.", { title: "Update erfolgreich" });
-                        await relaunch();
-                    }
-                }
-            } catch (error) {
-                const isExpected = String(error).includes("Could not fetch a valid release JSON");
-                if (isExpected) {
-                    console.info("Kein Update verfügbar (oder release.json noch nicht erstellt).");
-                } else {
-                    console.error("Fehler bei der Update-Prüfung:", error);
-                }
+        try {
+            const update = await check();
+            if (update) {
+                setInfo({
+                    version: update.version,
+                    body: update.body
+                });
+                setState("available");
+                setIsOpen(true);
+            } else {
+                setState(manual ? "uptodate" : "idle");
             }
+        } catch (err) {
+            console.error("Update error:", err);
+            setError(String(err));
+            setState("error");
+            if (manual) setIsOpen(true);
         }
-
-        checkForUpdates();
     }, []);
 
-    return null;
+    const handleInstall = async () => {
+        if (!('__TAURI_INTERNALS__' in window)) return;
+        
+        try {
+            const update = await check();
+            if (!update) {
+                 setState("idle");
+                 return;
+            }
+
+            setState("downloading");
+            setProgress(0);
+
+            let lastProgress = 0;
+            await update.downloadAndInstall((event) => {
+                if (event.event === 'Started') {
+                    setState("downloading");
+                } else if (event.event === 'Progress') {
+                    // Update progress (0-100)
+                    if (event.data.chunkLength) {
+                        // Sometimes chunkLength is missing or 0
+                        lastProgress += (event.data.chunkLength / 1024 / 1024); // mock-ish progress or just use steps
+                    }
+                    // Since Tauri v2 event data might vary, we show a semi-determined progress if possible
+                    // Realistically we often get a total and current.
+                } else if (event.event === 'Finished') {
+                    setState("installing");
+                }
+            });
+
+            setState("ready");
+        } catch (err) {
+            console.error("Install error:", err);
+            setError(String(err));
+            setState("error");
+        }
+    };
+
+    useEffect(() => {
+        // Initial check on mount
+        setTimeout(() => checkForUpdates(false), 2000);
+
+        // Global listener for manual checks
+        const handleManualCheck = () => checkForUpdates(true);
+        window.addEventListener('check-for-updates', handleManualCheck);
+
+        return () => window.removeEventListener('check-for-updates', handleManualCheck);
+    }, [checkForUpdates]);
+
+    return (
+        <UpdateDialog
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+            updateInfo={info}
+            state={state}
+            progress={progress}
+            error={error}
+            onInstall={handleInstall}
+            onCheck={() => checkForUpdates(true)}
+        />
+    );
 }

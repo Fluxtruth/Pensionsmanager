@@ -51,7 +51,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
     const [feedbackType, setFeedbackType] = useState<"bug" | "feature" | null>(null);
     const [hasPin, setHasPin] = useState(false);
-    const [appVersion, setAppVersion] = useState("v1.0.8"); // Fallback for web or initial load
+    const [appVersion, setAppVersion] = useState("v1.10.0"); // Fallback for web or initial load
 
     React.useEffect(() => {
         const loadSettings = async () => {
@@ -155,13 +155,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 ))}
             </nav>
             <div className="px-7 pb-2 flex items-center justify-between">
-                <span className="text-xs text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+                <span 
+                    onClick={() => window.dispatchEvent(new CustomEvent('check-for-updates'))}
+                    className="text-xs text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                >
                     {appVersion}
                 </span>
                 {updateAvailable && (
                     <span
+                        onClick={() => window.dispatchEvent(new CustomEvent('check-for-updates'))}
                         title={`Update auf ${updateAvailable} verfügbar! Starte das Update beim nächsten Neustart der App.`}
-                        className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 px-2 py-0.5 rounded-full animate-pulse cursor-help"
+                        className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 px-2 py-0.5 rounded-full animate-pulse cursor-pointer hover:bg-blue-700 transition-colors"
                     >
                         <Download className="w-3 h-3" />
                         Update

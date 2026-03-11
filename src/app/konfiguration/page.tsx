@@ -17,7 +17,7 @@ export default function ConfigurationPage() {
     const [logo, setLogo] = useState("/logo.jpg");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [appVersion, setAppVersion] = useState("v1.0.8");
+    const [appVersion, setAppVersion] = useState("v1.10.0");
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -168,40 +168,7 @@ export default function ConfigurationPage() {
                                         alert("Update-Prüfung nur in der Desktop-App verfügbar.");
                                         return;
                                     }
-                                    try {
-                                        const { check } = await import("@tauri-apps/plugin-updater");
-                                        const { ask, message } = await import("@tauri-apps/plugin-dialog");
-                                        const { relaunch } = await import("@tauri-apps/plugin-process");
-
-                                        const update = await check();
-                                        if (update) {
-                                            const yes = await ask(
-                                                `Ein Update auf Version ${update.version} ist verfügbar!\n\nRelease Notes: ${update.body || "Keine Beschreibung verfügbar."}\n\nMöchtest du das Update jetzt installieren?`,
-                                                {
-                                                    title: "Update Verfügbar",
-                                                    kind: "info",
-                                                    okLabel: "Aktualisieren",
-                                                    cancelLabel: "Später",
-                                                }
-                                            );
-
-                                            if (yes) {
-                                                await update.downloadAndInstall((event) => {
-                                                    console.log("Update progress", event);
-                                                });
-                                                await message("Das Update wurde installiert. Die App wird nun neu gestartet.", { title: "Update erfolgreich" });
-                                                await relaunch();
-                                            }
-                                        } else {
-                                            await message("Die Anwendung ist bereits auf dem neuesten Stand.", {
-                                                title: "Kein Update verfügbar",
-                                                kind: "info"
-                                            });
-                                        }
-                                    } catch (error) {
-                                        console.error("Update error:", error);
-                                        alert("Fehler bei der Update-Prüfung. Bitte versuchen Sie es später erneut.");
-                                    }
+                                    window.dispatchEvent(new CustomEvent('check-for-updates'));
                                 }}
                             >
                                 <Download className="mr-2 h-4 w-4" />
