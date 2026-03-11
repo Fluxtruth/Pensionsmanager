@@ -48,6 +48,7 @@ export default function DatabasePage() {
     const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [selectedBackup, setSelectedBackup] = useState<Backup | null>(null);
+    const [pendingDetails, setPendingDetails] = useState<{table: string, count: number}[]>([]);
 
     const [devices, setDevices] = useState<ConnectedDevice[]>([]);
     const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
@@ -65,6 +66,9 @@ export default function DatabasePage() {
         const count = await syncService.getPendingCount();
         setPendingCount(count);
         setSyncStatus(count > 0 ? "warning" : "success");
+
+        const details = await syncService.getPendingDetails();
+        setPendingDetails(details);
 
         // Status update
         const localDb = await initDb();
@@ -286,12 +290,6 @@ export default function DatabasePage() {
                                     <CardDescription>Automatische Sicherung zwischen Ihrem Gerät und unserer sicheren Cloud, betrieben am Standort Frankfurt (Main).</CardDescription>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/10 dark:text-green-400 dark:border-green-900/30 gap-1.5 py-1">
-                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                    Auto-Sync Aktiv
-                                </Badge>
-                            </div>
                         </div>
                         {syncMessage && (
                             <div className={cn(
@@ -323,12 +321,25 @@ export default function DatabasePage() {
                                 )}
                             </div>
                             <div className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-                                <div className="flex items-center gap-2 text-zinc-500 text-xs font-medium mb-1 uppercase tracking-wider">
-                                    <RefreshCw className={cn("w-3 h-3", pendingCount > 0 && "text-orange-500")} />
-                                    Ausstehend
+                                <div className="flex items-center justify-between gap-2 text-zinc-500 text-xs font-medium mb-1 uppercase tracking-wider">
+                                    <div className="flex items-center gap-2">
+                                        <RefreshCw className={cn("w-3 h-3", pendingCount > 0 && "text-orange-500")} />
+                                        Ausstehend
+                                    </div>
+                                    {syncService.isAutoSyncActive() && (
+                                        <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400 capitalize normal-case text-[10px]">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                            Auto-Sync
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                                    {pendingCount} Änderungen
+                                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex flex-col">
+                                    <span>{pendingCount} Änderung{pendingCount !== 1 ? 'en' : ''}</span>
+                                    {pendingDetails.length > 0 && (
+                                        <span className="mt-1 text-[10px] text-zinc-500 font-normal truncate max-w-[120px] sm:max-w-[200px]" title={pendingDetails.map(d => `${d.table} (${d.count})`).join(', ')}>
+                                            {pendingDetails.map(d => `${d.table} (${d.count})`).join(', ')}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                             <div className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">

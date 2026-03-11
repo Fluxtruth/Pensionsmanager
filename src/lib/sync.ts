@@ -108,10 +108,18 @@ export class SyncService {
    * Identifiziert die Anzahl der lokal geänderten Datensätze, die noch nicht synchronisiert wurden.
    */
   public async getPendingCount(): Promise<number> {
-    const db = await this.ensureDb();
-    if (!db) return 0;
+    const details = await this.getPendingDetails();
+    return details.reduce((sum, item) => sum + item.count, 0);
+  }
 
-    let totalPending = 0;
+  /**
+   * Gibt detaillierte Informationen über ausstehende Änderungen pro Tabelle zurück.
+   */
+  public async getPendingDetails(): Promise<{table: string, count: number}[]> {
+    const db = await this.ensureDb();
+    if (!db) return [];
+
+    const details: {table: string, count: number}[] = [];
     for (const table of TABLES_TO_SYNC) {
       try {
         const result = await db.select<any>(
@@ -119,19 +127,13 @@ export class SyncService {
         );
         const count = result[0]?.count || 0;
         if (count > 0) {
-          console.debug(`[Sync] Table ${table} has ${count} pending changes.`);
-          // Optionally log details of pending rows (avoid logging sensitive data like value)
-          const pendingDetails = await db.select<any[]>(
-            `SELECT ${table === 'settings' ? 'key' : 'id'}, updated_at, synced_at FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
-          );
-          console.debug(`[Sync] Pending rows in ${table}:`, pendingDetails);
+          details.push({ table, count });
         }
-        totalPending += count;
       } catch (error) {
         console.error(`Error counting pending rows for ${table}:`, error);
       }
     }
-    return totalPending;
+    return details;
   }
 
   /**
@@ -210,13 +212,13 @@ export class SyncService {
          try {
            const localDevs = await db.select<any[]>("SELECT id FROM connected_devices WHERE device_id = ?", [this.currentDeviceId]);
            if (localDevs.length > 0) {
-              await db.execute("UPDATE connected_devices SET last_seen_at = ?, updated_at = ?, device_name = ?, device_type = ?, status = 'active' WHERE device_id = ?", 
-                [now, now, deviceName, deviceType, this.currentDeviceId]);
+              await db.execute("UPDATE connected_devices SET last_seen_at = ?, updated_at = ?, synced_at = ?, device_name = ?, device_type = ?, status = 'active' WHERE device_id = ?", 
+                [now, now, now, deviceName, deviceType, this.currentDeviceId]);
            } else {
               // Gen random uuid for primary key
               const pk = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-              await db.execute("INSERT INTO connected_devices (id, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, is_leading_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [pk, this.currentDeviceId, pensionId, deviceName, deviceType, now, now, 0]);
+              await db.execute("INSERT INTO connected_devices (id, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, synced_at, is_leading_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [pk, this.currentDeviceId, pensionId, deviceName, deviceType, now, now, now, 0]);
            }
          } catch(e) {
            console.error("Failed to update local connected_devices:", e);
