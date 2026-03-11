@@ -25,7 +25,7 @@ vi.mock('@/lib/db', () => ({
 
 describe('Sidebar Component', () => {
     it('renders correctly with default values', async () => {
-        render(<Sidebar />);
+        render(<Sidebar isOpen={true} onClose={() => {}} />);
 
         // Check if basic navigation items are present
         expect(screen.getByText('Dashboard')).toBeInTheDocument();
@@ -34,7 +34,7 @@ describe('Sidebar Component', () => {
     });
 
     it('loads branding title and logo from db', async () => {
-        render(<Sidebar />);
+        render(<Sidebar isOpen={true} onClose={() => {}} />);
 
         // Wait for useEffect to load the mock DB values
         const titleElement = await screen.findByText('Test Pension', {}, { timeout: 2000 });

@@ -34,7 +34,8 @@ import {
     Building2,
     User,
     Ban,
-    Crown
+    Crown,
+    AlertTriangle
 } from "lucide-react";
 import { ROOM_TYPES } from "@/lib/constants";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -280,6 +281,7 @@ function BookingsList() {
     const [editGuestSearch, setEditGuestSearch] = useState<string>("");
     const [isEditGuestSearchFocused, setIsEditGuestSearchFocused] = useState(false);
     const [editRoomType, setEditRoomType] = useState<string>("");
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     // Breakfast Save States
     const [pendingBreakfastChanges, setPendingBreakfastChanges] = useState<Record<string, { time?: string, comments?: string }>>({});
@@ -576,7 +578,7 @@ function BookingsList() {
         const booking = bookings.find(b => b.id === id);
         if (booking && (newStatus === "Hard-Booked" || newStatus === "Checked-In")) {
             if (checkRoomOverlap(booking.room_id, booking.start_date, booking.end_date, id)) {
-                alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
+                setErrorMessage("Dieser Raum ist im gewählten Zeitraum bereits fest belegt (fest gebucht oder eingecheckt).");
                 return;
             }
         }
@@ -616,7 +618,7 @@ function BookingsList() {
             }
         } catch (error) {
             console.error("Failed to finalize check-out:", error);
-            alert("Fehler beim Check-Out.");
+            setErrorMessage("Fehler beim Check-Out.");
         }
     };
 
@@ -639,7 +641,7 @@ function BookingsList() {
 
         if (editingBooking.status === "Hard-Booked" || editingBooking.status === "Checked-In") {
             if (checkRoomOverlap(editingBooking.room_id, editingBooking.start_date, editingBooking.end_date, editingBooking.id)) {
-                alert("Fehler: Dieser Raum ist im gewählten Zeitraum bereits fest belegt.");
+                setErrorMessage("Dieser Raum ist im gewählten Zeitraum bereits fest belegt.");
                 return;
             }
         }
@@ -648,7 +650,7 @@ function BookingsList() {
         for (const tab of editTabs) {
             const b = tab.booking;
             if (b.status !== "Draft" && (!b.room_id || b.room_id === "")) {
-                alert(`Fehler: Bitte wählen Sie einen Raum für "${b.guest_name || tab.label}" oder setzen Sie den Status auf 'Entwurf' (Draft).`);
+                setErrorMessage(`Bitte wählen Sie einen Raum für "${b.guest_name || tab.label}" oder setzen Sie den Status auf 'Entwurf' (Draft).`);
                 return;
             }
         }
@@ -656,38 +658,37 @@ function BookingsList() {
         try {
             const db = await initDb();
             if (db) {
-                let finalGroupId = editGroupId;
-                if (finalGroupId === "new") {
-                    const newName = editNewGroupName;
-                    if (newName) {
-                        const existingGroup = groups.find(g => g.name.toLowerCase() === newName.toLowerCase());
-                        if (existingGroup) {
-                            finalGroupId = existingGroup.id;
-                        } else {
-                            const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                            await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, newName]);
-                            finalGroupId = newId;
-                        }
-                    } else {
-                        // Inherit from current booking if it has one? Or keep empty? 
-                        // If user added multiple tabs but didn't give a group name, we might have an issue.
-                        // Ideally we force a group name or auto-generate one if multiple tabs exist.
-                        if (editTabs.length > 1) {
-                            const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                            const autoName = `Gruppe ${(editingBooking.guest_name || "Gast").split(' ').pop()}`;
-                            await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, autoName]);
-                            finalGroupId = newId;
-                        } else {
-                            finalGroupId = "";
-                        }
-                    }
-                }
+                // Refactored Save Loop with Guest Creation and Per-Tab Grouping
 
-                // Refactored Save Loop with Guest Creation
                 for (const tab of editTabs) {
                     const b = tab.booking;
                     let thisGuestId = b.guest_id;
-                    const thisGroupId = (finalGroupId === "none" || !finalGroupId) ? null : finalGroupId;
+                    let thisGroupId = b.group_id;
+
+                    // Handle new group creation per tab
+                    if (thisGroupId === "new") {
+                        // Der Name der neuen Gruppe ist in editNewGroupName gespeichert (bzw. sollte es sein, wenn der User "neu erstellen" klickt)
+                        const newName = editNewGroupName; // Note: if the user edits multiple tabs with DIFFERENT "new" groups before saving, this fails. 
+                        // But since the UI only allows editing one tab at a time, and we don't have a tab-specific new group name field yet, we'll use the global one for now, or fall back:
+                        if (newName) {
+                           const existingGroup = groups.find(g => g.name.toLowerCase() === newName.toLowerCase());
+                           if (existingGroup) {
+                               thisGroupId = existingGroup.id;
+                           } else {
+                               const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                               await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, newName]);
+                               thisGroupId = newId;
+                               // Refresh groups locally to prevent creating duplicates if multiple tabs use the same new group name
+                               groups.push({ id: newId, name: newName });
+                           }
+                        } else {
+                            thisGroupId = undefined; // Should not happen with new UI, but fallback
+                        }
+                    }
+
+                    if (thisGroupId === "none" || !thisGroupId) {
+                        thisGroupId = undefined;
+                    }
 
                     // Validate guest
                     if (!thisGuestId && b.guest_name !== "Neuer Gast") { // Allow if name is set but id is new? No, must resolve.
@@ -720,7 +721,7 @@ function BookingsList() {
                         } else {
                             // Only alert if we REALLY can't find a guest ID (neither direct nor inherited)
                             if (!b.guest_name || b.guest_name === "Neuer Gast") {
-                                alert(`Fehler: Bitte wählen Sie einen Gast für Tab "${tab.label}".`);
+                                setErrorMessage(`Bitte wählen Sie einen Gast für Tab "${tab.label}".`);
                                 return;
                             }
                         }
@@ -731,7 +732,7 @@ function BookingsList() {
 
                     if (!subExists) {
                         if (checkRoomOverlap(b.room_id, b.start_date, b.end_date, b.id)) {
-                            alert(`Fehler: Raum für ${b.guest_name || "Gast"} ist bereits belegt.`);
+                            setErrorMessage(`Raum für ${b.guest_name || "Gast"} ist bereits belegt.`);
                             return; // Abort all
                         }
                     }
@@ -748,7 +749,7 @@ function BookingsList() {
                                 b.status,
                                 b.payment_status,
                                 b.estimated_arrival_time,
-                                thisGroupId, // Already handles null
+                                thisGroupId || null, // Already handles null for db 
                                 b.is_family_room,
                                 b.has_dog,
                                 b.is_allergy_friendly,
@@ -777,7 +778,7 @@ function BookingsList() {
                                 b.status,
                                 b.payment_status || "Offen",
                                 b.estimated_arrival_time,
-                                thisGroupId,
+                                thisGroupId || null,
                                 b.is_family_room,
                                 b.has_dog,
                                 b.is_allergy_friendly,
@@ -1261,20 +1262,20 @@ function BookingsList() {
                 // Main guest MUST be selected
                 if (i === 0 && !tab.data.guestId) {
                     setActiveWizardTabId(tab.id);
-                    alert(`Bitte wählen Sie einen Gast für "${tab.label}".`);
+                    setErrorMessage(`Bitte wählen Sie einen Gast für "${tab.label}".`);
                     return;
                 }
 
                 // Room MUST be selected for all
                 if (!tab.data.roomId) {
                     setActiveWizardTabId(tab.id);
-                    alert(`Bitte wählen Sie ein Zimmer für "${tab.label}".`);
+                    setErrorMessage(`Bitte wählen Sie ein Zimmer für "${tab.label}".`);
                     return;
                 }
 
                 if (checkRoomOverlap(tab.data.roomId, tab.data.startDate, tab.data.endDate)) {
                     setActiveWizardTabId(tab.id);
-                    alert(`Hinweis: Der Raum für "${tab.label}" ist in diesem Zeitraum bereits belegt.`);
+                    setErrorMessage(`Der Raum für "${tab.label}" ist in diesem Zeitraum bereits belegt.`);
                     return;
                 }
             }
@@ -1371,7 +1372,7 @@ function BookingsList() {
 
     const handleExport = async () => {
         if (filteredBookings.length === 0) {
-            alert("No bookings to export.");
+            setErrorMessage("Keine Buchungen zum Exportieren vorhanden.");
             return;
         }
 
@@ -1555,6 +1556,9 @@ function BookingsList() {
                                                 onClick={() => {
                                                     setActiveWizardTabId(tab.id);
                                                     if (editingTabId !== tab.id) setEditingTabId(null);
+                                                    // Sync group search input with this tab's group
+                                                    const groupName = groups.find(g => g.id === tab.data.groupId)?.name || "";
+                                                    setGroupSearch(tab.data.groupId === "new" ? tab.data.newGroupName || "" : groupName);
                                                 }}
                                                 onDoubleClick={() => setEditingTabId(tab.id)}
                                             >
@@ -2845,6 +2849,10 @@ function BookingsList() {
                                 onClick={() => {
                                     setActiveEditTabId(tab.id);
                                     loadBreakfast(tab.id); // Reload breakfast for the new tab
+                                    
+                                    // Sync group search input with this tab's group
+                                    const groupName = groups.find(g => g.id === tab.booking.group_id)?.name || "";
+                                    setEditGroupSearch(tab.booking.group_id === "new" ? editNewGroupName : groupName);
                                 }}
                             >
                                 <div className={cn(
@@ -2859,56 +2867,46 @@ function BookingsList() {
                                 {tab.label}
                             </div>
                         ))}
-                        <button
-                            onClick={() => {
-                                const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                                // Determine group ID: use existing, or create new "virtual" one if none exists
-                                let groupId = editGroupId;
-                                if (!groupId || groupId === "none") {
-                                    groupId = "new";
-                                    if (!editNewGroupName) {
-                                        const firstGuestName = editTabs[0]?.booking?.guest_name?.split(' ').pop() || "Gast";
-                                        setEditNewGroupName(`Gruppe ${firstGuestName}`);
-                                    }
-                                }
+                        {editingBooking?.group_id && editingBooking.group_id !== "none" && (
+                            <div
+                                className="px-3 py-2 text-sm font-bold rounded-t-lg border-b-2 border-transparent cursor-pointer transition-colors flex items-center justify-center hover:bg-zinc-50 opacity-60 hover:opacity-100"
+                                onClick={() => {
+                                    setEditTab("details");
+                                    const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                                    
+                                    const newBooking: Booking = {
+                                        id: newId,
+                                        room_id: "",
+                                        guest_id: "",
+                                        start_date: editingBooking?.start_date || today,
+                                        end_date: editingBooking?.end_date || new Date(Date.now() + 86400000).toISOString().split('T')[0],
+                                        status: "Hard-Booked",
+                                        payment_status: "Offen",
+                                        group_id: editingBooking.group_id,
+                                        is_family_room: 0,
+                                        has_dog: 0,
+                                        is_allergy_friendly: 0,
+                                        has_mobility_impairment: 0,
+                                        guests_per_room: 1,
+                                        stay_type: "privat",
+                                        dog_count: 0,
+                                        child_count: 0,
+                                        extra_bed_count: 0,
+                                        is_main_guest: 0
+                                    };
 
-                                const newBooking: Booking = {
-                                    id: newId,
-                                    room_id: "",
-                                    guest_id: "",
-                                    start_date: editingBooking?.start_date || today, // inherit dates
-                                    end_date: editingBooking?.end_date || new Date(Date.now() + 86400000).toISOString().split('T')[0],
-                                    status: "Draft",
-                                    payment_status: "Offen",
-                                    group_id: groupId,
-                                    is_family_room: 0,
-                                    has_dog: 0,
-                                    is_allergy_friendly: 0,
-                                    has_mobility_impairment: 0,
-                                    guests_per_room: 1,
-                                    stay_type: "privat",
-                                    dog_count: 0,
-                                    child_count: 0,
-                                    extra_bed_count: 0,
-                                    is_main_guest: 0
-                                };
-
-                                setEditTabs(prev => [...prev, {
-                                    id: newId,
-                                    label: "Neuer Gast",
-                                    booking: newBooking
-                                }]);
-                                setActiveEditTabId(newId);
-
-                                if (editGroupId === "none") {
-                                    setEditGroupId("new");
-                                }
-                            }}
-                            disabled={(!editGroupId || editGroupId === "none") && !editNewGroupName}
-                            className={`p-1 rounded-full ml-2 ${(!editGroupId || editGroupId === "none") && !editNewGroupName ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-100'}`}
-                            title={(!editGroupId || editGroupId === "none") && !editNewGroupName ? "Bitte erstellen Sie zuerst eine Gruppe oder geben Sie einen Gruppennamen ein" : "Weiteren Gast hinzufügen"}
-                        >
-                        </button>
+                                    setEditTabs(prev => [...prev, {
+                                        id: newId,
+                                        label: "Neuer Gast",
+                                        booking: newBooking
+                                    }]);
+                                    setActiveEditTabId(newId);
+                                }}
+                                title="Weiteren Gast zur Gruppe hinzufügen"
+                            >
+                                <Plus className="w-5 h-5 text-zinc-500" />
+                            </div>
+                        )}
                     </div>
 
                     {
@@ -3042,18 +3040,20 @@ function BookingsList() {
                                                         onChange={(e) => {
                                                             setEditGroupSearch(e.target.value);
                                                             if (e.target.value === "") {
-                                                                setEditGroupId("none");
+                                                                setEditingBooking(prev => prev ? ({...prev, group_id: "none"}) : null);
                                                                 setEditNewGroupName("");
+
                                                             } else {
                                                                 const match = groups.find(g => g.name.toLowerCase() === e.target.value.toLowerCase());
                                                                 if (match) {
-                                                                    setEditGroupId(match.id);
+                                                                    setEditingBooking(prev => prev ? ({...prev, group_id: match.id}) : null);
                                                                     setEditNewGroupName("");
                                                                 } else {
-                                                                    setEditGroupId("new");
+                                                                    setEditingBooking(prev => prev ? ({...prev, group_id: "new"}) : null);
                                                                     setEditNewGroupName(e.target.value);
                                                                 }
                                                             }
+
                                                         }}
                                                     />
 
@@ -3065,7 +3065,7 @@ function BookingsList() {
                                                                     className="w-full text-left flex items-center gap-2 px-2 py-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md text-blue-700 dark:text-blue-300 font-medium text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors mb-1"
                                                                     onMouseDown={(e) => {
                                                                         e.preventDefault();
-                                                                        setEditGroupId("new");
+                                                                        setEditingBooking(prev => prev ? ({...prev, group_id: "new"}) : null);
                                                                         setEditNewGroupName(editGroupSearch);
                                                                         setIsEditGroupSearchFocused(false);
                                                                     }}
@@ -3083,7 +3083,7 @@ function BookingsList() {
                                                                         onMouseDown={(e) => {
                                                                             e.preventDefault();
                                                                             setEditGroupSearch(g.name);
-                                                                            setEditGroupId(g.id);
+                                                                            setEditingBooking(prev => prev ? ({...prev, group_id: g.id}) : null);
                                                                             setEditNewGroupName("");
                                                                             setIsEditGroupSearchFocused(false);
                                                                         }}
@@ -3452,7 +3452,10 @@ function BookingsList() {
                                                 </button>
                                             ))}
                                             {editingBooking?.status !== "Draft" && editingBooking?.status !== "Hard-Booked" && (
-                                                <div className="px-4 py-1.5 text-[10px] font-bold rounded-md bg-emerald-600 text-white shadow-sm ml-1 flex items-center">
+                                                <div className={cn(
+                                                    "px-4 py-1.5 text-[10px] font-bold rounded-md text-white shadow-sm ml-1 flex items-center",
+                                                    editingBooking?.status === "Storniert" ? "bg-red-600" : "bg-emerald-600"
+                                                )}>
                                                     {editingBooking?.status}
                                                 </div>
                                             )}
@@ -3676,6 +3679,29 @@ function BookingsList() {
                 confirmText={deleteConfirm.confirmText}
                 variant={deleteConfirm.variant as any}
             />
+
+            {/* Styled Error Dialog */}
+            <Dialog open={!!errorMessage} onOpenChange={(open) => { if (!open) setErrorMessage(null); }}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2.5 rounded-full bg-red-100 dark:bg-red-900/30">
+                                <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                            </div>
+                            <DialogTitle className="text-lg font-bold">Fehler</DialogTitle>
+                        </div>
+                    </DialogHeader>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400 pl-[52px] -mt-2">{errorMessage}</p>
+                    <div className="flex justify-end mt-4">
+                        <Button
+                            onClick={() => setErrorMessage(null)}
+                            className="px-6 h-10 font-bold bg-blue-600 hover:bg-blue-700 shadow-md"
+                        >
+                            Verstanden
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

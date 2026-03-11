@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase/client";
 import { Sidebar } from "@/components/Sidebar";
 import { initDb } from "@/lib/db";
 import { PinEntry } from "@/components/PinEntry";
-
-// Client-side Supabase client (only uses public anon key)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { SyncService } from "@/lib/sync";
+import { Menu, X } from "lucide-react";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
@@ -20,6 +16,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [appPin, setAppPin] = useState<string | null>(null);
     const [isPinVerified, setIsPinVerified] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    const syncService = SyncService.getInstance();
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -31,13 +30,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 if (!session && !isAuthRoute) {
                     router.replace('/login');
                 } else {
+                    // If we have a session, ensure critical settings are pulled on web
+                    if (session && !isAuthRoute) {
+                        await syncService.initializeWebContext();
+                    }
+                    
                     setIsAuthorized(true);
 
                     // Check for local PIN
                     if (session && !isAuthRoute) {
                         const db = await initDb();
                         if (db) {
-                            const pinSetting = await db.select<any[]>("SELECT value FROM settings WHERE key = 'app_pin'");
+                            const pinSetting = await db.select<any[]>("SELECT value FROM settings WHERE key = ?", ['app_pin']);
                             if (pinSetting && pinSetting.length > 0) {
                                 setAppPin(pinSetting[0].value);
                             } else {
@@ -64,12 +68,37 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         // Set up a listener for auth state changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+
             if (event === 'SIGNED_OUT' && !isAuthRoute) {
                 router.replace('/login');
             } else if (event === 'SIGNED_IN' && isAuthRoute) {
                 router.replace('/');
+            } else if (event === 'TOKEN_REFRESHED' && !session) {
+                // Token refresh failed — session is invalid (e.g. refresh token was rotated
+                // by another device or expired server-side). Redirect to login gracefully.
+                console.warn("[Auth] Token refresh failed — session invalid, redirecting to login.");
+                supabase.auth.signOut().catch(() => {}); // Clean up local state
+                router.replace('/login');
             }
         });
+
+        // Global handler for auth errors (e.g. "Refresh Token Not Found")
+        // This catches errors from automatic token refresh attempts
+        const originalConsoleError = console.error;
+        const authErrorHandler = (...args: any[]) => {
+            const errorMsg = args.map(a => String(a)).join(' ');
+            if (errorMsg.includes('Refresh Token Not Found') || errorMsg.includes('Invalid Refresh Token')) {
+                console.warn("[Auth] Invalid refresh token detected, signing out gracefully.");
+                supabase.auth.signOut().catch(() => {});
+                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+                if (!isAuthRoute) {
+                    router.replace('/login');
+                }
+                return; // Suppress the error from flooding the console
+            }
+            originalConsoleError.apply(console, args);
+        };
+        console.error = authErrorHandler;
 
         // Manual lock listener
         const handleManualLock = () => {
@@ -80,6 +109,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return () => {
             subscription.unsubscribe();
             window.removeEventListener('app-lock', handleManualLock);
+            console.error = originalConsoleError; // Restore original console.error
         };
     }, [pathname, router]);
 
@@ -121,8 +151,28 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     }}
                 />
             )}
-            <Sidebar />
+
+            {/* Backdrop for mobile */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
+            <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+
             <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+                <div className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 z-30">
+                    <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg"
+                    >
+                        <Menu className="w-6 h-6" />
+                    </button>
+                    <span className="font-bold text-zinc-900 dark:text-white">Pensionsmanager</span>
+                    <div className="w-10" /> {/* Spacer */}
+                </div>
                 <div className="flex-1 p-6 max-w-7xl mx-auto w-full">
                     {children}
                 </div>

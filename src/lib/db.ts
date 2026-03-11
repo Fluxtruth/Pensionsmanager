@@ -39,6 +39,7 @@ const mockData: Record<string, any[]> = {
   cleaning_task_suggestions: [],
 
   breakfast_options: [],
+  connected_devices: [],
   settings: [
     { key: "branding_title", value: "Pensionsmanager", updated_at: "2026-01-01T00:00:00", synced_at: null, pension_id: "00000000-0000-0000-0000-000000000001" },
     { key: "branding_logo", value: "/logo.jpg", updated_at: "2026-01-01T00:00:00", synced_at: null, pension_id: "00000000-0000-0000-0000-000000000001" }
@@ -130,6 +131,31 @@ async function _initDb(): Promise<DatabaseMock | null> {
                 mockData.cleaning_tasks.push({ id: params?.[0], room_id: params?.[1], staff_id: params?.[2], date: params?.[3], status: params?.[4], is_manual: params?.[5], source: params?.[6], title: params?.[7], task_type: params?.[8] || 'cleaning', comments: params?.[9] });
               } else if (table === "cleaning_task_suggestions") {
                 mockData.cleaning_task_suggestions.push({ id: params?.[0], title: params?.[1], weekday: params?.[2], frequency_weeks: params?.[3] });
+              } else if (table === "connected_devices") {
+                if (params?.length === 9) {
+                    // [pk, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, is_leading_db, status]
+                    mockData.connected_devices.push({
+                        id: params[0], device_id: params[1], pension_id: params[2], 
+                        device_name: params[3], device_type: params[4], 
+                        last_seen_at: params[5], updated_at: params[6], 
+                        is_leading_db: params[7], status: params[8] || 'active'
+                    });
+                } else if (params?.length === 8) {
+                    // [pk, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, is_leading_db]
+                    mockData.connected_devices.push({
+                        id: params[0], device_id: params[1], pension_id: params[2], 
+                        device_name: params[3], device_type: params[4], 
+                        last_seen_at: params[5], updated_at: params[6], 
+                        is_leading_db: params[7], status: 'active'
+                    });
+                } else {
+                    mockData.connected_devices.push({
+                        id: params?.[0], device_id: params?.[1], device_name: params?.[2],
+                        device_type: params?.[3], status: params?.[4] || 'active', 
+                        is_leading_db: params?.[5] || 0,
+                        last_seen_at: params?.[6] || new Date().toISOString()
+                    });
+                }
               } else if (table === "settings") {
                 // Upsert for settings
                 const key = params?.[0];
@@ -197,9 +223,10 @@ async function _initDb(): Promise<DatabaseMock | null> {
 
             if (mockData[table]) {
               // Try to find the identifier in the WHERE clause
-              const idField = table === 'settings' ? 'key' : 'id';
-              const idValue = params?.[params.length - 1]; // Assuming ID is the last param
-              const index = mockData[table].findIndex(item => item[idField] === idValue);
+              const idFieldCandidate = upperQuery.includes("DEVICE_ID = ?") ? "device_id" : (table === 'settings' ? 'key' : 'id');
+              const idValue = params?.[params.length - 1]; // Assuming ID/Key/DeviceID is the last param
+              const index = mockData[table].findIndex(item => item[idFieldCandidate] === idValue);
+              
               if (index !== -1) {
                 // Initialize a partial updates object
                 const updates: any = {};
@@ -218,9 +245,6 @@ async function _initDb(): Promise<DatabaseMock | null> {
                     }
                   }
                 }
-
-                // Keep ID immutable
-                delete updates["id"];
 
                 // Apply ONLY the requested dynamic updates to the object
                 mockData[table][index] = {
@@ -253,9 +277,42 @@ async function _initDb(): Promise<DatabaseMock | null> {
 
         for (const table of Object.keys(mockData)) {
           if (upperQuery.includes(`FROM ${table.toUpperCase()}`)) {
-            if (upperQuery.includes("WHERE ID = ?")) {
-              const res = (mockData[table].find(item => item.id === params?.[0]) || null);
-              return (query.includes("COUNT") ? [{ count: res ? 1 : 0 }] : res) as unknown as T;
+            if (upperQuery.includes("WHERE")) {
+              const wherePart = upperQuery.split("WHERE")[1].trim();
+              
+              // Helper to get value from condition
+              const getConditionValue = (condition: string): any => {
+                const parts = condition.split("=");
+                if (parts.length !== 2) return null;
+                const val = parts[1].trim();
+                if (val === "?") return params?.[0];
+                // Handle literal 'value' or "value"
+                return val.replace(/^['"]|['"]$/g, '');
+              };
+
+              // Identify field and value
+              let field = "";
+              let value: any = null;
+
+              if (wherePart.includes("ID =") || wherePart.includes("ID=")) {
+                field = "id";
+                value = getConditionValue(wherePart);
+              } else if (wherePart.includes("KEY =") || wherePart.includes("KEY=")) {
+                field = "key";
+                value = getConditionValue(wherePart);
+              } else if (wherePart.includes("DEVICE_ID =") || wherePart.includes("DEVICE_ID=")) {
+                field = "device_id";
+                value = getConditionValue(wherePart);
+              }
+
+              if (field) {
+                const results = mockData[table].filter(item => String(item[field]) === String(value));
+                if (query.includes("COUNT")) return [{ count: results.length }] as unknown as T;
+                return results as unknown as T;
+              }
+              
+              // If we have a WHERE but couldn't parse it reliably, return empty rather than whole table
+              return [] as unknown as T;
             }
 
             if (table === "bookings" && (upperQuery.includes("JOIN GUESTS") || upperQuery.includes("LEFT JOIN"))) {
@@ -428,6 +485,20 @@ async function _initDb(): Promise<DatabaseMock | null> {
         synced_at TEXT,
         pension_id TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS connected_devices (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        device_name TEXT,
+        device_type TEXT,
+        status TEXT DEFAULT 'active',
+        is_leading_db INTEGER DEFAULT 0,
+        last_seen_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        synced_at TEXT,
+        pension_id TEXT,
+        UNIQUE(device_id)
+      );
     `);
 
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN is_prepared INTEGER DEFAULT 0"); } catch (e) { }
@@ -456,7 +527,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
 
     // Add updated_at and synced_at to all tables (ALTER for existing DBs)
-    const tables = ["rooms", "room_configs", "guests", "booking_groups", "occasions", "bookings", "staff", "cleaning_tasks", "cleaning_task_suggestions", "breakfast_options", "settings"];
+    const tables = ["rooms", "room_configs", "guests", "booking_groups", "occasions", "bookings", "staff", "cleaning_tasks", "cleaning_task_suggestions", "breakfast_options", "connected_devices", "settings"];
     for (const table of tables) {
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN synced_at TEXT`); } catch (e) { }

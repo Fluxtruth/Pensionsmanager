@@ -64,12 +64,13 @@ export default function RoomsPage() {
         value: string, 
         setter: (v: string) => void, 
         errorSetter: (e: boolean) => void, 
-        textSetter: (t: string) => void
+        textSetter: (t: string) => void,
+        currentId?: string
     ) => {
         // If it's the error text, treat any input as potentially "clearing the error"
-        if (value.includes("Nur Zahlen erlaubt")) {
-            const newValue = value.replace("Nur Zahlen erlaubt", "");
-            if (/^\d*$/.test(newValue)) {
+        if (value.includes("Nur Zahlen erlaubt") || value.includes("Nummer existiert bereits")) {
+            const newValue = value.replace("Nur Zahlen erlaubt", "").replace("Nummer existiert bereits", "");
+            if (/^\d*$/.test(newValue) && newValue.length <= 7) {
                 setter(newValue);
             }
             textSetter("");
@@ -79,11 +80,22 @@ export default function RoomsPage() {
 
         // Only allow digits
         if (/^\d*$/.test(value)) {
+            if (value.length > 7) return;
+
             setter(value);
-            errorSetter(false);
-            textSetter("");
+            
+            // Check for existence (if it's not the same ID we are already editing)
+            const exists = rooms.some(r => r.id === value && r.id !== currentId);
+            
+            if (exists) {
+                errorSetter(true);
+                textSetter("Nummer existiert bereits");
+            } else {
+                errorSetter(false);
+                textSetter("");
+            }
         } else {
-            // Trigger error feedback
+            // Trigger error feedback for non-numeric
             errorSetter(true);
             textSetter("Nur Zahlen erlaubt");
             setTimeout(() => {
@@ -233,6 +245,14 @@ export default function RoomsPage() {
         try {
             const db = await initDb();
             if (db) {
+                // Final check before insertion
+                const exists = rooms.some(r => r.id === newRoomId);
+                if (exists) {
+                    setNewRoomError(true);
+                    setNewRoomErrorText("Nummer existiert bereits");
+                    return;
+                }
+
                 await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)", [
                     newRoomId,
                     name,
@@ -246,9 +266,14 @@ export default function RoomsPage() {
                 setNewRoomId("");
                 form.reset();
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to add room:", error);
-            alert("Fehler beim Hinzufügen des Zimmers.");
+            if (error.toString().includes("UNIQUE constraint failed")) {
+                setNewRoomError(true);
+                setNewRoomErrorText("Nummer existiert bereits");
+            } else {
+                alert("Fehler beim Hinzufügen des Zimmers.");
+            }
         }
     };
 
@@ -271,6 +296,14 @@ export default function RoomsPage() {
                 const idChanged = newId !== editingRoom.id;
 
                 if (idChanged) {
+                    // Final check before insertion
+                    const exists = rooms.some(r => r.id === newId);
+                    if (exists) {
+                        setEditRoomError(true);
+                        setEditRoomErrorText("Nummer existiert bereits");
+                        return;
+                    }
+
                     // 1. Create the new room record first
                     await db.execute(
                         "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)",
@@ -296,9 +329,14 @@ export default function RoomsPage() {
                 setIsConfigOpen(false);
                 setEditingRoom(null);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to update room:", error);
-            alert("Fehler beim Aktualisieren des Zimmers. Evtl. existiert die Zimmernummer bereits.");
+            if (error.toString().includes("UNIQUE constraint failed")) {
+                setEditRoomError(true);
+                setEditRoomErrorText("Nummer existiert bereits");
+            } else {
+                alert("Fehler beim Aktualisieren des Zimmers.");
+            }
         }
     };
 
@@ -672,7 +710,7 @@ export default function RoomsPage() {
                                     type="text" 
                                     required 
                                     value={editRoomErrorText || editRoomId}
-                                    onChange={(e) => handleRoomIdChange(e.target.value, setEditRoomId, setEditRoomError, setEditRoomErrorText)}
+                                    onChange={(e) => handleRoomIdChange(e.target.value, setEditRoomId, setEditRoomError, setEditRoomErrorText, editingRoom.id)}
                                     className={cn(
                                         "transition-all duration-300",
                                         editRoomError ? "border-red-500 ring-2 ring-red-500/20 animate-shake text-red-500 font-medium" : ""

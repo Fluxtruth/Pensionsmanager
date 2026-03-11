@@ -35,8 +35,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Pensionsmanager ${{ github.ref_name }}'
@@ -49,32 +49,59 @@ jobs:
         shell: pwsh
         run: |
           $VERSION = "${{ github.ref_name }}".Substring(1)
+          $BUNDLE_PATH = "src-tauri/target/release/bundle"
           
-          Write-Host "Looking for signature files in bundle directories..."
-          $SIG_FILE = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.sig" | Select-Object -First 1
+          Write-Host "Searching for artifacts in: $BUNDLE_PATH"
+          $SIG_FILES = Get-ChildItem -Path $BUNDLE_PATH -Recurse -Filter "*.sig"
           
-          if ($SIG_FILE) {
-            $SIG_PATH = $SIG_FILE.FullName
-            $SIG = Get-Content $SIG_PATH
-            $ASSET_NAME = $SIG_FILE.Name.Replace(".sig", "")
-            Write-Host "Found signature for asset: $ASSET_NAME"
-            
-            $JSON = @{
-              version = $VERSION
-              pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ").ToString()
-              platforms = @{
-                "windows-x86_64" = @{
-                  signature = $SIG
-                  url = "https://github.com/Fluxtruth/Pensionsmanager/releases/download/${{ github.ref_name }}/$ASSET_NAME"
-                }
-              }
-            } | ConvertTo-Json -Depth 5
-            Set-Content update.json $JSON
-            gh release upload ${{ github.ref_name }} update.json --clobber
-          } else {
-            Write-Error "Signature file not found in bundle directory! Showing all files:"
-            Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse
+          if ($SIG_FILES.Count -eq 0) {
+            Write-Error "No .sig files found! Updater JSON cannot be generated."
+            Get-ChildItem -Path $BUNDLE_PATH -Recurse | Select-Object FullName
             exit 1
           }
+
+          $PLATFORMS = @{}
+          
+          foreach ($SIG_FILE in $SIG_FILES) {
+            $SIG = Get-Content $SIG_FILE.FullName -Raw
+            $ASSET_NAME = $SIG_FILE.Name.Replace(".sig", "")
+            
+            Write-Host "Processing signature for: $ASSET_NAME"
+            
+            # Identify platform based on filename
+            $PLATFORM_KEY = $null
+            if ($ASSET_NAME -like "*x86_64*" -and $ASSET_NAME -like "*.msi*") {
+              $PLATFORM_KEY = "windows-x86_64"
+            } elseif ($ASSET_NAME -like "*aarch64*" -and $ASSET_NAME -like "*.msi*") {
+              $PLATFORM_KEY = "windows-aarch64"
+            }
+            # Add more platform checks if needed (macos, linux)
+
+            if ($PLATFORM_KEY) {
+              $PLATFORMS[$PLATFORM_KEY] = @{
+                signature = $SIG.Trim()
+                url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$ASSET_NAME"
+              }
+              Write-Host "Mapped $ASSET_NAME to $PLATFORM_KEY"
+            }
+          }
+
+          if ($PLATFORMS.Count -eq 0) {
+            Write-Error "Could not map any signatures to supported platforms."
+            exit 1
+          }
+
+          $JSON = @{
+            version = $VERSION
+            notes = "Release ${{ github.ref_name }}"
+            pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ").ToString()
+            platforms = $PLATFORMS
+          } | ConvertTo-Json -Depth 10
+          
+          Set-Content update.json $JSON
+          Write-Host "Generated update.json:"
+          Write-Host $JSON
+          
+          gh release upload ${{ github.ref_name }} update.json --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -146,6 +146,15 @@
     animation: shake 0.4s ease-in-out;
   }
 
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
   @keyframes rotate-border {
     0% {
       transform: rotate(0deg);

@@ -130,6 +130,7 @@ export default function CleaningPage() {
     const [exportType, setExportType] = useState<"Gesamt" | "Einzel">("Gesamt");
     const [exportStaffSelection, setExportStaffSelection] = useState<Record<string, boolean>>({});
     const [downloadSuccess, setDownloadSuccess] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
     const [suggestionFilter, setSuggestionFilter] = useState<string>("all");
@@ -325,17 +326,20 @@ export default function CleaningPage() {
                 );
 
                 if (checkouts.length === 0) {
-                    alert("Keine Check-Outs für diesen Tag gefunden.");
+                    setErrorMessage("Keine Check-Outs für diesen Tag gefunden.");
                     return;
                 }
 
-                const existingTaskRoomIds = tasks.map(t => t.room_id);
+                const existingTaskRoomIds = tasks
+                    .filter(t => t.room_id && (t.task_type === 'cleaning' || !t.task_type))
+                    .map(t => t.room_id);
+
                 const roomsToClean = checkouts
                     .map(b => b.room_id)
                     .filter(id => !existingTaskRoomIds.includes(id));
 
                 if (roomsToClean.length === 0) {
-                    alert("Alle fälligen Zimmer sind bereits im Reinigungsplan.");
+                    setErrorMessage("Alle fälligen Zimmer sind bereits im Reinigungsplan.");
                     return;
                 }
 
@@ -709,7 +713,7 @@ export default function CleaningPage() {
             }
         } catch (error) {
             console.error("PDF Export failed:", error);
-            alert("Der PDF Export ist fehlgeschlagen.");
+            setErrorMessage("Der PDF Export ist fehlgeschlagen.");
         }
     };
 
@@ -761,13 +765,14 @@ export default function CleaningPage() {
                         className={cn(
                             "h-10 shadow-lg transition-all",
                             needsGeneration
-                                ? "bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 animate-pulse ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-zinc-950"
-                                : "bg-purple-600 hover:bg-purple-700 shadow-purple-500/20"
+                                ? "bg-purple-600 hover:bg-purple-700 shadow-purple-500/20 animate-pulse ring-2 ring-purple-600 ring-offset-2 dark:ring-offset-zinc-950"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed shadow-none"
                         )}
                         onClick={generateCleaningPlan}
+                        disabled={!needsGeneration}
                     >
-                        <Clock className="w-4 h-4 mr-2" />
-                        {needsGeneration ? "Plan aktualisieren" : "Plan generieren"}
+                        {needsGeneration ? <Clock className="w-4 h-4 mr-2" /> : <Check className="w-4 h-4 mr-2" />}
+                        {needsGeneration ? "Plan aktualisieren" : "Plan aktuell"}
                     </Button>
                 </div>
             </div>
@@ -1648,6 +1653,26 @@ export default function CleaningPage() {
                                 <><Download className="w-4 h-4 mr-2" /> Plan herunterladen</>
                             )}
                         </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Error Dialog */}
+            <Dialog open={!!errorMessage} onOpenChange={(open) => !open && setErrorMessage(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            Information
+                        </DialogTitle>
+                        <DialogDescription className="text-base py-4">
+                            {errorMessage}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex justify-end">
+                        <Button onClick={() => setErrorMessage(null)}>Verstanden</Button>
                     </div>
                 </DialogContent>
             </Dialog>

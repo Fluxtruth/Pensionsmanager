@@ -19,7 +19,8 @@ import {
     User,
     Lightbulb,
     Bug,
-    Lock
+    Lock,
+    X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
@@ -38,7 +39,12 @@ const navigation = [
     { name: "Tourismusmeldung", href: "/tourismusmeldung", icon: BarChart3 },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+    isOpen: boolean;
+    onClose: () => void;
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
     const [title, setTitle] = useState("Pensionsmanager");
     const [logo, setLogo] = useState("/logo.jpg");
@@ -52,7 +58,10 @@ export function Sidebar() {
                 const db = await initDb();
                 if (db) {
                     const titleRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
-                    if (titleRes.length > 0) setTitle(titleRes[0].value);
+                    if (titleRes.length > 0) {
+                        setTitle(titleRes[0].value);
+                        document.title = titleRes[0].value;
+                    }
 
                     const logoRes = await db.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_logo"]);
                     if (logoRes.length > 0) setLogo(logoRes[0].value);
@@ -65,6 +74,18 @@ export function Sidebar() {
             }
         };
         loadSettings();
+
+        const handleSettingsChanged = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.title) {
+                setTitle(detail.title);
+                document.title = detail.title;
+            }
+            if (detail?.logo) {
+                setLogo(detail.logo);
+            }
+        };
+        window.addEventListener('settings-changed', handleSettingsChanged);
 
         // Check for updates
         const checkForUpdatesInfo = async () => {
@@ -79,11 +100,16 @@ export function Sidebar() {
             }
         };
         checkForUpdatesInfo();
+
+        return () => window.removeEventListener('settings-changed', handleSettingsChanged);
     }, []);
 
     return (
-        <div className="flex flex-col w-64 bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 h-screen sticky top-0">
-            <div className="p-6">
+        <div className={cn(
+            "fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 h-screen transition-transform duration-300 ease-in-out lg:translate-x-0 lg:sticky lg:top-0",
+            isOpen ? "translate-x-0" : "-translate-x-full"
+        )}>
+            <div className="p-6 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <img
                         src={logo}
@@ -94,6 +120,12 @@ export function Sidebar() {
                         {title}
                     </h1>
                 </div>
+                <button
+                    onClick={onClose}
+                    className="lg:hidden p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg"
+                >
+                    <X className="w-5 h-5" />
+                </button>
             </div>
             <nav className="flex-1 px-4 space-y-1">
                 {navigation.map((item) => (
@@ -106,6 +138,11 @@ export function Sidebar() {
                                 ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                                 : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
                         )}
+                        onClick={() => {
+                            if (window.innerWidth < 1024) {
+                                onClose();
+                            }
+                        }}
                     >
                         <item.icon className="w-4 h-4" />
                         {item.name}
@@ -135,6 +172,11 @@ export function Sidebar() {
                             ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                             : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
                     )}
+                    onClick={() => {
+                        if (window.innerWidth < 1024) {
+                            onClose();
+                        }
+                    }}
                 >
                     <Palette className="w-4 h-4" />
                     Konfiguration
@@ -147,6 +189,11 @@ export function Sidebar() {
                             ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                             : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
                     )}
+                    onClick={() => {
+                        if (window.innerWidth < 1024) {
+                            onClose();
+                        }
+                    }}
                 >
                     <Database className="w-4 h-4" />
                     Datenbank
@@ -159,6 +206,11 @@ export function Sidebar() {
                             ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                             : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
                     )}
+                    onClick={() => {
+                        if (window.innerWidth < 1024) {
+                            onClose();
+                        }
+                    }}
                 >
                     <User className="w-4 h-4" />
                     Mein Account
@@ -166,7 +218,10 @@ export function Sidebar() {
 
                 <div className="pt-2 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
                     <button
-                        onClick={() => setFeedbackType("feature")}
+                        onClick={() => {
+                            setFeedbackType("feature");
+                            if (window.innerWidth < 1024) onClose();
+                        }}
                         className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors group"
                     >
                         <div className="flex items-center gap-3">
@@ -175,7 +230,10 @@ export function Sidebar() {
                         </div>
                     </button>
                     <button
-                        onClick={() => setFeedbackType("bug")}
+                        onClick={() => {
+                            setFeedbackType("bug");
+                            if (window.innerWidth < 1024) onClose();
+                        }}
                         className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors group"
                     >
                         <div className="flex items-center gap-3">
@@ -185,14 +243,17 @@ export function Sidebar() {
                     </button>
                     {hasPin && (
                         <button
-                            onClick={() => window.dispatchEvent(new CustomEvent('app-lock'))}
-                            className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/10 rounded-lg transition-colors group"
-                        >
-                            <div className="flex items-center gap-3">
-                                <Lock className="w-4 h-4" />
-                                App Sperren
-                            </div>
-                        </button>
+                            onClick={() => {
+                            window.dispatchEvent(new CustomEvent('app-lock'));
+                            if (window.innerWidth < 1024) onClose();
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/10 rounded-lg transition-colors group"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Lock className="w-4 h-4" />
+                            App Sperren
+                        </div>
+                    </button>
                     )}
                 </div>
             </div>

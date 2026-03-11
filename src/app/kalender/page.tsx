@@ -267,8 +267,15 @@ export default function KalenderPage() {
     const [resizingState, setResizingState] = useState<{ bookingId: string, newStart: string, newEnd: string } | null>(null);
     const [shakeId, setShakeId] = useState<string | null>(null); // State for shake animation
     const lastScrollTime = useRef<number>(0); // Throttle for auto-scroll
-
     const dates = getDaysArray(viewDate);
+    const headerScrollRef = useRef<HTMLDivElement>(null);
+    const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+    const handleBodyScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        if (headerScrollRef.current) {
+            headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+        }
+    };
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -616,13 +623,13 @@ export default function KalenderPage() {
     }
 
     return (
-        <div className="h-full flex flex-col space-y-4">
-            <div className="flex flex-col gap-4 sticky top-0 bg-white dark:bg-zinc-950 z-50 pb-2">
-                <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-3">
+        <div className="h-full flex flex-col">
+            <div className="flex flex-col sticky top-0 bg-zinc-50 dark:bg-zinc-950 z-[60] pt-6 -mt-6 -mx-6 px-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-3">
                         <CalendarRange className="w-8 h-8 text-blue-600" />
                         Kalender-Übersicht
-                    </h1>
+                    </h2>
                     <div className="flex items-center gap-4">
                         {/* Date Picker */}
                         <div className="flex items-center gap-2">
@@ -646,31 +653,60 @@ export default function KalenderPage() {
                 </div>
 
                 {/* Legend */}
-                <div className="flex gap-4 text-xs">
-                    <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded bg-zinc-100 border border-zinc-200"></div>
-                        <span>Entwurf</span>
+                <div className="flex items-center gap-6 px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm w-fit text-xs mb-4">
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded border bg-zinc-100 dark:bg-zinc-800" />
+                        <span className="text-zinc-600 dark:text-zinc-400">Entwurf</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded bg-blue-100 border border-blue-200"></div>
-                        <span>Fest gebucht</span>
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded border bg-blue-100 dark:bg-blue-900/40" />
+                        <span className="text-zinc-600 dark:text-zinc-400">Fest gebucht</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded bg-green-100 border border-green-200"></div>
-                        <span>Eingecheckt</span>
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded border bg-green-100 dark:bg-green-900/40" />
+                        <span className="text-zinc-600 dark:text-zinc-400">Eingecheckt</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded bg-orange-100 border border-orange-200"></div>
-                        <span>Ausgecheckt</span>
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded border bg-orange-100 dark:bg-orange-900/40" />
+                        <span className="text-zinc-600 dark:text-zinc-400">Ausgecheckt</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded bg-red-100 border border-red-200"></div>
-                        <span>Storniert</span>
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded border bg-red-100 dark:bg-red-900/40" />
+                        <span className="text-zinc-600 dark:text-zinc-400">Storniert</span>
+                    </div>
+                </div>
+
+                {/* --- SEPARATE STICKY ROOM HEADER --- */}
+                <div className="border-t border-l border-r border-b border-zinc-200 dark:border-zinc-800 rounded-t-lg bg-zinc-50 dark:bg-zinc-900 overflow-hidden shadow-sm">
+                    <div
+                        ref={headerScrollRef}
+                        className="overflow-hidden scrollbar-hide"
+                    >
+                        <div className="flex w-max">
+                            {/* Empty corner cell - visual anchor */}
+                            <div className="w-24 flex-shrink-0 p-3 bg-zinc-100 dark:bg-zinc-800 border-r border-zinc-200 dark:border-zinc-700 font-bold text-zinc-500 dark:text-zinc-400 text-[10px] uppercase tracking-wider sticky left-0 z-50">
+                                Datum
+                            </div>
+                            {/* Room Columns */}
+                            {rooms.map((room) => (
+                                <div
+                                    key={room.id}
+                                    className="w-40 flex-shrink-0 p-3 border-r border-zinc-200 dark:border-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100 text-sm truncate"
+                                    title={room.name}
+                                >
+                                    {room.name}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-auto border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm bg-white dark:bg-zinc-950">
+            <div
+                ref={bodyScrollRef}
+                onScroll={handleBodyScroll}
+                className="flex-1 border-b border-l border-r border-zinc-200 dark:border-zinc-800 rounded-b-lg shadow-sm bg-white dark:bg-zinc-950 relative overflow-auto rounded-t-none"
+            >
                 <DndContext
                     sensors={sensors}
                     onDragStart={handleDragStart}
@@ -681,20 +717,7 @@ export default function KalenderPage() {
                     }}
                 >
                     <div className="min-w-fit inline-block">
-                        {/* Header Row: Rooms */}
-                        <div className="flex sticky top-0 z-40 bg-white dark:bg-zinc-950 shadow-sm border-b border-zinc-200 dark:border-zinc-800 w-max">
-                            {/* Empty corner cell - visual anchor */}
-                            <div className="w-24 flex-shrink-0 p-3 bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 font-medium text-zinc-500 text-sm sticky left-0 z-50">
-                                Datum
-                            </div>
-                            {/* Room Columns */}
-                            {rooms.map(room => (
-                                <div key={room.id} className="w-40 flex-shrink-0 p-3 bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 font-medium text-zinc-700 dark:text-zinc-300 text-sm truncate" title={room.name}>
-                                    {room.name}
-                                </div>
-                            ))}
-                        </div>
-
+                        {/* Internal table content (no header here anymore) */}
                         {/* Calendar Body */}
                         <div className="flex flex-col w-max">
                             {dates.map((date, dateIndex) => (

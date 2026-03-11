@@ -7,4 +7,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn("Supabase environment variables are missing!");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Determine platform to use separate storage keys for Tauri vs Web.
+// This prevents sessions from overwriting each other when both are used simultaneously.
+const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ !== undefined;
+const storageKey = isTauri
+  ? "sb-pensionsmanager-tauri-auth"
+  : "sb-pensionsmanager-web-auth";
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storageKey,
+    autoRefreshToken: true,
+    persistSession: true,
+  },
+});

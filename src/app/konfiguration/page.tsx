@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { initDb, DatabaseMock } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Check, Upload } from "lucide-react";
+import { Check, Upload, Download } from "lucide-react";
 
 export default function ConfigurationPage() {
+    const router = useRouter();
     const [db, setDb] = useState<DatabaseMock | null>(null);
     const [title, setTitle] = useState("Pensionsmanager");
     const [logo, setLogo] = useState("/logo.jpg");
@@ -39,8 +41,10 @@ export default function ConfigurationPage() {
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["branding_title", title]);
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["branding_logo", logo]);
 
-            // Force a reload to update the sidebar (simplest way effectively)
-            window.location.reload();
+            // Dispatch event with the new values directly so listeners can update immediately
+            window.dispatchEvent(new CustomEvent('settings-changed', {
+                detail: { title, logo }
+            }));
         } catch (error) {
             console.error("Failed to save settings:", error);
         } finally {
@@ -83,9 +87,11 @@ export default function ConfigurationPage() {
                             <Input
                                 id="title"
                                 value={title}
-                                onChange={(e) => setTitle(e.target.value)}
+                                onChange={(e) => setTitle(e.target.value.slice(0, 25))}
                                 placeholder="z.B. Pension Petersohn"
+                                maxLength={25}
                             />
+                            <p className="text-xs text-muted-foreground">{title.length}/25 Zeichen</p>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="logo">Logo</Label>
@@ -120,6 +126,73 @@ export default function ConfigurationPage() {
                                         Einstellungen speichern
                                     </>
                                 )}
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="col-span-2">
+                    <CardHeader>
+                        <CardTitle>Software-Update</CardTitle>
+                        <CardDescription>
+                            Prüfen Sie, ob eine neue Version der Anwendung verfügbar ist.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                                <p className="text-sm font-medium leading-none">
+                                    Aktuelle Version
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    v.1.0.2
+                                </p>
+                            </div>
+                            <Button
+                                variant="outline"
+                                onClick={async () => {
+                                    if (!('__TAURI_INTERNALS__' in window)) {
+                                        alert("Update-Prüfung nur in der Desktop-App verfügbar.");
+                                        return;
+                                    }
+                                    try {
+                                        const { check } = await import("@tauri-apps/plugin-updater");
+                                        const { ask, message } = await import("@tauri-apps/plugin-dialog");
+                                        const { relaunch } = await import("@tauri-apps/plugin-process");
+
+                                        const update = await check();
+                                        if (update) {
+                                            const yes = await ask(
+                                                `Ein Update auf Version ${update.version} ist verfügbar!\n\nRelease Notes: ${update.body || "Keine Beschreibung verfügbar."}\n\nMöchtest du das Update jetzt installieren?`,
+                                                {
+                                                    title: "Update Verfügbar",
+                                                    kind: "info",
+                                                    okLabel: "Aktualisieren",
+                                                    cancelLabel: "Später",
+                                                }
+                                            );
+
+                                            if (yes) {
+                                                await update.downloadAndInstall((event) => {
+                                                    console.log("Update progress", event);
+                                                });
+                                                await message("Das Update wurde installiert. Die App wird nun neu gestartet.", { title: "Update erfolgreich" });
+                                                await relaunch();
+                                            }
+                                        } else {
+                                            await message("Die Anwendung ist bereits auf dem neuesten Stand.", {
+                                                title: "Kein Update verfügbar",
+                                                kind: "info"
+                                            });
+                                        }
+                                    } catch (error) {
+                                        console.error("Update error:", error);
+                                        alert("Fehler bei der Update-Prüfung. Bitte versuchen Sie es später erneut.");
+                                    }
+                                }}
+                            >
+                                <Download className="mr-2 h-4 w-4" />
+                                Nach Updates suchen
                             </Button>
                         </div>
                     </CardContent>
