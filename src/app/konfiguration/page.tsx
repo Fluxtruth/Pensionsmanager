@@ -17,6 +17,7 @@ export default function ConfigurationPage() {
     const [logo, setLogo] = useState("/logo.jpg");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [appVersion, setAppVersion] = useState("v1.0.8");
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -29,6 +30,18 @@ export default function ConfigurationPage() {
                 const logoRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_logo"]);
                 if (logoRes.length > 0) setLogo(logoRes[0].value);
             }
+
+            // Get Version if in Tauri
+            if ('__TAURI_INTERNALS__' in window) {
+                try {
+                    const { getVersion } = await import("@tauri-apps/api/app");
+                    const version = await getVersion();
+                    setAppVersion(`v${version}`);
+                } catch (e) {
+                    console.error("Failed to fetch version:", e);
+                }
+            }
+
             setLoading(false);
         };
         loadSettings();
@@ -145,7 +158,7 @@ export default function ConfigurationPage() {
                                     Aktuelle Version
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                    v.1.0.2
+                                    {appVersion}
                                 </p>
                             </div>
                             <Button

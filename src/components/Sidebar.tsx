@@ -51,6 +51,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
     const [feedbackType, setFeedbackType] = useState<"bug" | "feature" | null>(null);
     const [hasPin, setHasPin] = useState(false);
+    const [appVersion, setAppVersion] = useState("v1.0.8"); // Fallback for web or initial load
 
     React.useEffect(() => {
         const loadSettings = async () => {
@@ -87,10 +88,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         };
         window.addEventListener('settings-changed', handleSettingsChanged);
 
-        // Check for updates
-        const checkForUpdatesInfo = async () => {
+        // Check for updates and get version
+        const fetchAppInfo = async () => {
             if (!('__TAURI_INTERNALS__' in window)) return;
             try {
+                const { getVersion } = await import("@tauri-apps/api/app");
+                const version = await getVersion();
+                setAppVersion(`v${version}`);
+
                 const update = await check();
                 if (update) {
                     setUpdateAvailable(update.version);
@@ -99,7 +104,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 // Ignore errors here, they are handled by the main Updater component
             }
         };
-        checkForUpdatesInfo();
+        fetchAppInfo();
 
         return () => window.removeEventListener('settings-changed', handleSettingsChanged);
     }, []);
@@ -151,7 +156,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </nav>
             <div className="px-7 pb-2 flex items-center justify-between">
                 <span className="text-xs text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-                    v.1.0.2
+                    {appVersion}
                 </span>
                 {updateAvailable && (
                     <span
