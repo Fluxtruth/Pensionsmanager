@@ -51,7 +51,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
     const [feedbackType, setFeedbackType] = useState<"bug" | "feature" | null>(null);
     const [hasPin, setHasPin] = useState(false);
-    const [appVersion, setAppVersion] = useState("v1.10.0"); // Fallback for web or initial load
+    const [appVersion, setAppVersion] = useState("v1.11.0"); // Fallback for web or initial load
 
     React.useEffect(() => {
         const loadSettings = async () => {
