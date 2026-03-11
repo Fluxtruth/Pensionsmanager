@@ -72,8 +72,10 @@ jobs:
             
             # Identify platform based on filename
             $PLATFORM_KEY = $null
-            if ($ASSET_NAME -like "*x86_64*" -and $ASSET_NAME -like "*.msi*") {
-              $PLATFORM_KEY = "windows-x86_64"
+            if ($ASSET_NAME -like "*x64*" -or $ASSET_NAME -like "*x86_64*") {
+              if ($ASSET_NAME -like "*.msi*") {
+                $PLATFORM_KEY = "windows-x86_64"
+              }
             } elseif ($ASSET_NAME -like "*aarch64*" -and $ASSET_NAME -like "*.msi*") {
               $PLATFORM_KEY = "windows-aarch64"
             }
