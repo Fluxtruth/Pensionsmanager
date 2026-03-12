@@ -382,7 +382,12 @@ async function _initDb(): Promise<DatabaseMock | null> {
   }
 
   try {
-    const db = await Database.load("sqlite:pensionsmanager.db");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const projectRef = supabaseUrl.match(/https:\/\/(.*?)\.supabase\.co/)?.[1] || "default";
+    const dbName = `pensionsmanager_${projectRef}.db`;
+    
+    console.log(`[DB] Loading isolated database: ${dbName}`);
+    const db = await Database.load(`sqlite:${dbName}`);
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS pensions (
