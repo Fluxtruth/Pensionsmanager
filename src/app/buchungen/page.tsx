@@ -1607,35 +1607,38 @@ function BookingsList() {
                                             </div>
                                         ))}
 
-                                        <button
-                                            disabled={(!wizardTabs[0].data.groupId || wizardTabs[0].data.groupId === "none") && (!wizardTabs[0].data.newGroupName)}
-                                            onClick={() => {
-                                                const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                                                const mainTab = wizardTabs[0];
-                                                setWizardTabs(prev => [...prev, {
-                                                    id: newId,
-                                                    label: `Gast ${prev.length + 1}`,
-                                                    data: {
-                                                        ...DEFAULT_WIZARD_DATA,
-                                                        roomId: "",
-                                                        guestId: "",
-                                                        guestName: "",
-                                                        // Inherit Group & Dates
-                                                        groupId: mainTab.data.groupId,
-                                                        newGroupName: mainTab.data.newGroupName,
-                                                        startDate: mainTab.data.startDate,
-                                                        endDate: mainTab.data.endDate,
-                                                        arrivalTime: mainTab.data.arrivalTime
-                                                    },
-                                                    breakfastData: {}
-                                                }]);
-                                                setActiveWizardTabId(newId);
-                                            }}
-                                            className="p-1 rounded-full hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed ml-2"
-                                            title={(!wizardTabs[0].data.groupId && !wizardTabs[0].data.newGroupName) ? "Bitte erst eine Gruppe am Hauptgast festlegen" : "Weiteren Gast hinzufügen"}
-                                        >
-                                            <Plus className="w-5 h-5 text-zinc-400" />
-                                        </button>
+                                {/* Gästeweiterung im Wizard beim Neuanlegen deaktiviert (Vorgabe: erst beim Bearbeiten möglich) */}
+                                {/*
+                                <button
+                                    disabled={(!wizardTabs[0].data.groupId || wizardTabs[0].data.groupId === "none") && (!wizardTabs[0].data.newGroupName)}
+                                    onClick={() => {
+                                        const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                                        const mainTab = wizardTabs[0];
+                                        setWizardTabs(prev => [...prev, {
+                                            id: newId,
+                                            label: `Gast ${prev.length + 1}`,
+                                            data: {
+                                                ...DEFAULT_WIZARD_DATA,
+                                                roomId: "",
+                                                guestId: "",
+                                                guestName: "",
+                                                // Inherit Group & Dates
+                                                groupId: mainTab.data.groupId,
+                                                newGroupName: mainTab.data.newGroupName,
+                                                startDate: mainTab.data.startDate,
+                                                endDate: mainTab.data.endDate,
+                                                arrivalTime: mainTab.data.arrivalTime
+                                            },
+                                            breakfastData: {}
+                                        }]);
+                                        setActiveWizardTabId(newId);
+                                    }}
+                                    className="p-1 rounded-full hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed ml-2"
+                                    title={(!wizardTabs[0].data.groupId && !wizardTabs[0].data.newGroupName) ? "Bitte erst eine Gruppe am Hauptgast festlegen" : "Weiteren Gast hinzufügen"}
+                                >
+                                    <Plus className="w-5 h-5 text-zinc-400" />
+                                </button>
+                                */}
                                     </div>
                                 </DialogTitle>
                             </DialogHeader>
@@ -2002,7 +2005,7 @@ function BookingsList() {
                                                                 onClick={() => {
                                                                     setWizardData(prev => ({
                                                                         ...prev,
-                                                                        roomType: prev.roomType === type ? "" : type, // Toggle 
+                                                                        roomType: prev.roomType === type ? "" : type, // Toggle
                                                                         roomId: "" // Reset selection on change
                                                                     }))
                                                                 }}
@@ -2058,8 +2061,8 @@ function BookingsList() {
                                                                 const isOccupied = checkRoomOverlap(room.id, wizardData.startDate, wizardData.endDate);
                                                                 const isSelectedInOtherTab = wizardTabs.some(t => t.id !== activeWizardTabId && t.data.roomId === room.id);
 
-                                                                if (isOccupied && !isSelectedInOtherTab) return null; // Hide normally occupied rooms? Or show them disabled? Current logic seemed to hide them or show specific style. 
-                                                                // Logic above was: isOccupied ? "hidden" (if we want to hide) or disabled style. 
+                                                                if (isOccupied && !isSelectedInOtherTab) return null; // Hide normally occupied rooms? Or show them disabled? Current logic seemed to hide them or show specific style.
+                                                                // Logic above was: isOccupied ? "hidden" (if we want to hide) or disabled style.
                                                                 // Let's stick to showing available ones primarily, but for "Other Tab" we want to show and disable.
 
                                                                 return (
@@ -2305,7 +2308,7 @@ function BookingsList() {
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
                                         <Input
                                             placeholder="Gast, Firma oder Gruppe..."
-                                            className="pl-9 h-9 text-sm shadow-sm"
+                                            className="pl-9 h-10 text-sm shadow-sm"
                                             value={customerSearchQuery}
                                             onChange={(e) => {
                                                 const value = e.target.value;
@@ -2849,7 +2852,7 @@ function BookingsList() {
                                 onClick={() => {
                                     setActiveEditTabId(tab.id);
                                     loadBreakfast(tab.id); // Reload breakfast for the new tab
-                                    
+
                                     // Sync group search input with this tab's group
                                     const groupName = groups.find(g => g.id === tab.booking.group_id)?.name || "";
                                     setEditGroupSearch(tab.booking.group_id === "new" ? editNewGroupName : groupName);
@@ -2873,7 +2876,7 @@ function BookingsList() {
                                 onClick={() => {
                                     setEditTab("details");
                                     const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                                    
+
                                     const newBooking: Booking = {
                                         id: newId,
                                         room_id: "",
@@ -3032,12 +3035,17 @@ function BookingsList() {
                                                 <div className="relative group">
                                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
                                                     <Input
-                                                        placeholder="Gruppe suchen oder erstellen..."
-                                                        className="pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20"
+                                                        placeholder={editingBooking.is_main_guest === 1 ? "Gruppe suchen oder erstellen..." : "Gruppe fest durch Hauptgast vorgegeben"}
+                                                        className={cn(
+                                                            "pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20",
+                                                            editingBooking.is_main_guest !== 1 && "bg-zinc-50 opacity-70 cursor-not-allowed"
+                                                        )}
+                                                        disabled={editingBooking.is_main_guest !== 1}
                                                         value={editGroupSearch}
-                                                        onFocus={() => setIsEditGroupSearchFocused(true)}
+                                                        onFocus={() => editingBooking.is_main_guest === 1 && setIsEditGroupSearchFocused(true)}
                                                         onBlur={() => setTimeout(() => setIsEditGroupSearchFocused(false), 200)}
                                                         onChange={(e) => {
+                                                            if (editingBooking.is_main_guest !== 1) return;
                                                             setEditGroupSearch(e.target.value);
                                                             if (e.target.value === "") {
                                                                 setEditingBooking(prev => prev ? ({...prev, group_id: "none"}) : null);
