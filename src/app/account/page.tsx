@@ -86,6 +86,9 @@ export default function AccountPage() {
                 setIsEditingPin(false);
                 setNewPin("");
                 setPinError(null);
+                window.dispatchEvent(new CustomEvent('settings-changed', { 
+                    detail: { pin: newPin, isPinEnabled: true } 
+                }));
             }
         } catch (err) {
             console.error("Failed to save PIN:", err);
@@ -102,6 +105,9 @@ export default function AccountPage() {
                 setPin(null);
                 setIsPinEnabled(true);
                 setPinError(null);
+                window.dispatchEvent(new CustomEvent('settings-changed', { 
+                    detail: { pin: null, isPinEnabled: true } 
+                }));
             }
         } catch (err) {
             console.error("Failed to remove PIN:", err);
@@ -119,6 +125,9 @@ export default function AccountPage() {
                 ["is_pin_enabled", enabled ? "true" : "false", now, localPensionId]
             );
             setIsPinEnabled(enabled);
+            window.dispatchEvent(new CustomEvent('settings-changed', { 
+                detail: { isPinEnabled: enabled } 
+            }));
         } catch (err) {
             console.error("Failed to toggle PIN enabled:", err);
         }
@@ -186,7 +195,7 @@ export default function AccountPage() {
                         <Separator className="my-4" />
 
                         <div className="pt-2 flex flex-wrap gap-2">
-                            {pin && (
+                            {pin && isPinEnabled && (
                                 <Button
                                     variant="outline"
                                     className="border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/10 gap-2"

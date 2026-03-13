@@ -59,7 +59,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                             
                             if (pinSetting) {
                                 setAppPin(pinSetting.value);
-                                setIsPinEnabled(enabledSetting?.value !== 'false');
+                                const enabled = enabledSetting?.value !== 'false';
+                                setIsPinEnabled(enabled);
+                                if (!enabled) setIsPinVerified(true);
                             } else {
                                 setIsPinVerified(true); // No PIN set
                             }
@@ -112,13 +114,51 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         console.error = authErrorHandler;
 
         const handleManualLock = () => {
-            setIsPinVerified(false);
+            if (isPinEnabled) {
+                setIsPinVerified(false);
+            }
         };
+
+        const reloadPinSettings = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session && !isAuthRoute) {
+                    const db = await initDb();
+                    if (db) {
+                        const pensionId = await syncService.getPensionId();
+                        const settings = await db.select<any[]>(
+                            "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?",
+                            [pensionId]
+                        );
+                        const pinSetting = settings.find(s => s.key === 'app_pin');
+                        const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
+                        
+                        if (pinSetting) {
+                            setAppPin(pinSetting.value);
+                            const enabled = enabledSetting?.value !== 'false';
+                            setIsPinEnabled(enabled);
+                            // Only force verified on load if it's currently NOT locked or if it's disabled
+                            if (!enabled) {
+                                setIsPinVerified(true);
+                            }
+                        } else {
+                            setAppPin(null);
+                            setIsPinVerified(true);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to reload PIN settings:", err);
+            }
+        };
+
         window.addEventListener('app-lock', handleManualLock);
+        window.addEventListener('settings-changed', reloadPinSettings);
 
         return () => {
             subscription.unsubscribe();
             window.removeEventListener('app-lock', handleManualLock);
+            window.removeEventListener('settings-changed', reloadPinSettings);
             console.error = originalConsoleError;
         };
     }, [pathname, router]);
@@ -139,7 +179,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return null;
     }
 
-    const isLocked = isAuthorized && isPinEnabled && !isPinVerified;
+    // A lock should trigger if they are NOT verified, as long as a PIN actually exists
+    const isLocked = isAuthorized && appPin && !isPinVerified;
 
     if (isLocked && !isPublicRoute) {
         return (

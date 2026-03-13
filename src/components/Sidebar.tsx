@@ -94,6 +94,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             if (detail?.logo) {
                 setLogo(detail.logo);
             }
+            if (detail?.hasOwnProperty('isPinEnabled') || detail?.hasOwnProperty('pin')) {
+                // Determine hasPin based on current state or event detail
+                const pinToCheck = detail.hasOwnProperty('pin') ? detail.pin : hasPin;
+                const enabledToCheck = detail.hasOwnProperty('isPinEnabled') ? detail.isPinEnabled : true; // default to true if check exists
+                
+                // Since hasPin in state might not be the actual PIN string, we need to be careful.
+                // It's better to just re-trigger the loadSettings if any relevant settings changed.
+                loadSettings();
+            }
         };
         window.addEventListener('settings-changed', handleSettingsChanged);
 
