@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
 import { check } from "@tauri-apps/plugin-updater";
+import { SyncService } from "@/lib/sync";
 import { FeedbackDialog } from "./FeedbackDialog";
 
 // ... existing navigation const ...
@@ -59,7 +60,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             try {
                 const db = await initDb();
                 if (db) {
-                    const settings = await db.select<{ key: string, value: string }[]>("SELECT key, value FROM settings WHERE key IN ('branding_title', 'branding_logo', 'app_pin', 'is_pin_enabled')");
+                    const pensionId = await SyncService.getInstance().getPensionId();
+                    const settings = await db.select<{ key: string, value: string }[]>(
+                        "SELECT key, value FROM settings WHERE key IN ('branding_title', 'branding_logo', 'app_pin', 'is_pin_enabled') AND pension_id = ?",
+                        [pensionId]
+                    );
                     
                     const titleRes = settings.find(s => s.key === "branding_title");
                     if (titleRes) {

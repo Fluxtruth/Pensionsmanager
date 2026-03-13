@@ -49,7 +49,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     if (session && !isAuthRoute) {
                         const db = await initDb();
                         if (db) {
-                            const settings = await db.select<any[]>("SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled')");
+                            const pensionId = await syncService.getPensionId();
+                            const settings = await db.select<any[]>(
+                                "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?",
+                                [pensionId]
+                            );
                             const pinSetting = settings.find(s => s.key === 'app_pin');
                             const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
                             

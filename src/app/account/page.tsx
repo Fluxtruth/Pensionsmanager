@@ -35,18 +35,17 @@ export default function AccountPage() {
             try {
                 const db = await initDb();
                 if (db) {
-                    const settingsRes = await db.select<any[]>("SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled', 'pension_id')");
+                    const pId = await SyncService.getInstance().getPensionId();
+                    setLocalPensionId(pId || null);
+
+                    const settingsRes = await db.select<any[]>(
+                        "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?",
+                        [pId]
+                    );
                     const pinVal = settingsRes.find(s => s.key === 'app_pin')?.value;
                     const enabled = settingsRes.find(s => s.key === 'is_pin_enabled')?.value;
                     setPin(pinVal || null);
                     setIsPinEnabled(enabled !== 'false');
-                    
-                    // Get pension_id from settings or sync service
-                    let pId = settingsRes.find(s => s.key === 'pension_id')?.value;
-                    if (!pId) {
-                        pId = await SyncService.getInstance().getPensionId();
-                    }
-                    setLocalPensionId(pId || null);
                 }
             } catch (err) {
                 console.error("Failed to load PIN:", err);
