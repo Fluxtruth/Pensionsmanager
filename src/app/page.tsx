@@ -506,6 +506,12 @@ export default function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <footer className="pt-8 pb-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-center gap-4 text-xs text-zinc-400">
+        <span>&copy; {new Date().getFullYear()} Pensionsmanager</span>
+        <span className="text-zinc-200 dark:text-zinc-700">|</span>
+        <Link href="/impressum" className="hover:text-blue-600 transition-colors">Impressum</Link>
+      </footer>
     </div>
   );
 }

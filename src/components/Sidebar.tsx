@@ -20,7 +20,8 @@ import {
     Lightbulb,
     Bug,
     Lock,
-    X
+    X,
+    Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
@@ -226,6 +227,23 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 >
                     <User className="w-4 h-4" />
                     Mein Account
+                </Link>
+                <Link
+                    href="/impressum"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+                        pathname === "/impressum"
+                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                            : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                    )}
+                    onClick={() => {
+                        if (window.innerWidth < 1024) {
+                            onClose();
+                        }
+                    }}
+                >
+                    <Info className="w-4 h-4 text-zinc-400" />
+                    Impressum
                 </Link>
 
                 <div className="pt-2 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">

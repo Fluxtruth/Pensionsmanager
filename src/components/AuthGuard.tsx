@@ -26,7 +26,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             try {
                 const { data: { session } } = await supabase.auth.getSession();
 
-                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname === '/impressum';
 
                 if (!session && !isAuthRoute) {
                     router.replace('/login');
@@ -127,7 +127,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+    const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname === '/impressum';
     if (!isAuthorized && !isAuthRoute) {
         return null; // Will redirect shortly
     }
