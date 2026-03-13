@@ -182,38 +182,37 @@ async function _initDb(): Promise<DatabaseMock | null> {
             if (upperQuery.includes("WHERE")) {
               const wherePart = upperQuery.split("WHERE")[1].trim();
               
-              // Helper to get value from condition
-              const getConditionValue = (condition: string): any => {
-                const parts = condition.split("=");
-                if (parts.length !== 2) return null;
-                const val = parts[1].trim();
-                if (val === "?") return params?.[0];
-                // Handle literal 'value' or "value"
-                return val.replace(/^['"]|['"]$/g, '');
-              };
+              const conditions = wherePart.split(/\s+AND\s+/i);
+              const filterValues: Record<string, any> = {};
+              
+              let paramIdx = 0;
+              conditions.forEach(cond => {
+                const parts = cond.split("=");
+                if (parts.length === 2) {
+                  const field = parts[0].trim().toLowerCase();
+                  let val = parts[1].trim();
+                  if (val === "?") {
+                    filterValues[field] = params?.[paramIdx++];
+                  } else {
+                    filterValues[field] = val.replace(/^['"]|['"]$/g, '');
+                  }
+                }
+              });
 
-              // Identify field and value
-              let field = "";
-              let value: any = null;
-
-              if (wherePart.includes("ID =") || wherePart.includes("ID=")) {
-                field = "id";
-                value = getConditionValue(wherePart);
-              } else if (wherePart.includes("KEY =") || wherePart.includes("KEY=")) {
-                field = "key";
-                value = getConditionValue(wherePart);
-              } else if (wherePart.includes("DEVICE_ID =") || wherePart.includes("DEVICE_ID=")) {
-                field = "device_id";
-                value = getConditionValue(wherePart);
-              }
-
-              if (field) {
-                const results = mockData[table].filter(item => String(item[field]) === String(value));
+              if (Object.keys(filterValues).length > 0) {
+                const results = mockData[table].filter(item => {
+                  return Object.entries(filterValues).every(([field, value]) => {
+                    // Special case for pension_id to allow matching against default if not specified
+                    if (field === "pension_id" && !item[field]) {
+                       return value === "00000000-0000-0000-0000-000000000001";
+                    }
+                    return String(item[field]) === String(value);
+                  });
+                });
                 if (query.includes("COUNT")) return [{ count: results.length }] as unknown as T;
                 return results as unknown as T;
               }
               
-              // If we have a WHERE but couldn't parse it reliably, return empty rather than whole table
               return [] as unknown as T;
             }
 

@@ -78,9 +78,22 @@ export default function AccountPage() {
         try {
             const db = await initDb();
             if (db) {
+                // Determine pensionId - try to get a fresh one or fallback to what we have
+                let pId = localPensionId;
+                if (!pId) {
+                    pId = await SyncService.getInstance().getPensionId();
+                    if (pId) setLocalPensionId(pId);
+                }
+
+                if (!pId) {
+                    console.error("Cannot save PIN: Pension ID missing.");
+                    setPinError("Fehler: Sitzung ungültig oder Pension nicht gefunden.");
+                    return;
+                }
+
                 const now = new Date().toISOString();
-                await db.execute("INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)", ["app_pin", newPin, now, localPensionId]);
-                await db.execute("INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)", ["is_pin_enabled", "true", now, localPensionId]);
+                await db.execute("INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)", ["app_pin", newPin, now, pId]);
+                await db.execute("INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)", ["is_pin_enabled", "true", now, pId]);
                 setPin(newPin);
                 setIsPinEnabled(true);
                 setIsEditingPin(false);
@@ -101,7 +114,8 @@ export default function AccountPage() {
             const db = await initDb();
             if (db) {
                 const now = new Date().toISOString();
-                await db.execute("DELETE FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?", [localPensionId]);
+                // We try deleting for the specific pension_id, but also generally for safety if ID was null before
+                await db.execute("DELETE FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)", [localPensionId]);
                 setPin(null);
                 setIsPinEnabled(true);
                 setPinError(null);

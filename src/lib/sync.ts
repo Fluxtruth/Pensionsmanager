@@ -71,7 +71,13 @@ export class SyncService {
   public async getPensionId(): Promise<string | null> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+      if (!user) {
+        // Fallback to cached ID if we exist but lost session momentarily (or on fast loads)
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem("app_last_pension_id");
+        }
+        return null;
+      }
 
       const { data: profile, error } = await supabase
         .from('user_profiles')
@@ -81,12 +87,23 @@ export class SyncService {
 
       if (error || !profile) {
         console.warn("No pension profile found for user:", user.id);
+        // Fallback to cache
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem("app_last_pension_id");
+        }
         return null;
+      }
+
+      if (typeof window !== 'undefined' && profile.pension_id) {
+          localStorage.setItem("app_last_pension_id", profile.pension_id);
       }
 
       return profile.pension_id;
     } catch (error) {
       console.error("Error fetching pension_id:", error);
+      if (typeof window !== 'undefined') {
+          return localStorage.getItem("app_last_pension_id");
+      }
       return null;
     }
   }

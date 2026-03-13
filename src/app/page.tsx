@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BedDouble, Bed, Home as HomeIcon, Users, User, LogIn, LogOut, CheckCircle2, ChevronRight, Edit2, AlertTriangle, XCircle } from "lucide-react";
 import { initDb, type DatabaseMock } from "@/lib/db";
+import { SyncService } from "@/lib/sync";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -52,14 +53,17 @@ export default function Home() {
       if (db) {
         setIsDbReady(true);
 
+        // Get current pension_id from SyncService
+        const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+
         // Load Rooms
-        const roomResults = await db.select<Room[]>("SELECT * FROM rooms");
+        const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ?", [pensionId]);
         // Calculate Room Statuses
         const todayBookings = await db.select<any[]>(`
           SELECT room_id, status, start_date, end_date 
           FROM bookings 
-          WHERE (start_date <= ? AND end_date >= ?)
-        `, [today, today]);
+          WHERE (start_date <= ? AND end_date >= ?) AND pension_id = ?
+        `, [today, today, pensionId]);
 
         const roomsWithStatus = roomResults.map(room => {
           const roomBooking = todayBookings?.find(b => b.room_id === room.id);
@@ -92,8 +96,8 @@ export default function Home() {
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
-          WHERE b.start_date = ?
-        `, [today]);
+          WHERE b.start_date = ? AND b.pension_id = ?
+        `, [today, pensionId]);
 
         if (arrivalResults) {
           const sorted = [...arrivalResults].sort((a, b) => {
@@ -110,8 +114,8 @@ export default function Home() {
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
-          WHERE b.end_date = ?
-        `, [today]);
+          WHERE b.end_date = ? AND b.pension_id = ?
+        `, [today, pensionId]);
 
         if (departureResults) {
           // Sort Departures: Not yet checked out first

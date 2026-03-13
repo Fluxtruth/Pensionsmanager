@@ -49,13 +49,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     if (session && !isAuthRoute) {
                         const db = await initDb();
                         if (db) {
-                            const pensionId = await syncService.getPensionId();
+                            let pensionId = await syncService.getPensionId();
+                            
+                            // Query for settings. We try both the specific pensionId and NULL for compatibility/robustness
                             const settings = await db.select<any[]>(
-                                "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?",
+                                "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)",
                                 [pensionId]
                             );
-                            const pinSetting = settings.find(s => s.key === 'app_pin');
-                            const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
+                            
+                            // Prefer setting with matching pensionId, fallback to NULL
+                            const findSetting = (key: string) => {
+                                const matching = settings.find(s => s.key === key && s.pension_id === pensionId);
+                                return matching || settings.find(s => s.key === key);
+                            };
+
+                            const pinSetting = findSetting('app_pin');
+                            const enabledSetting = findSetting('is_pin_enabled');
                             
                             if (pinSetting) {
                                 setAppPin(pinSetting.value);
@@ -125,13 +134,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 if (session && !isAuthRoute) {
                     const db = await initDb();
                     if (db) {
-                        const pensionId = await syncService.getPensionId();
+                        let pensionId = await syncService.getPensionId();
+                        
+                        // Query for settings. We try both the specific pensionId and NULL
                         const settings = await db.select<any[]>(
-                            "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?",
+                            "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)",
                             [pensionId]
                         );
-                        const pinSetting = settings.find(s => s.key === 'app_pin');
-                        const enabledSetting = settings.find(s => s.key === 'is_pin_enabled');
+                        
+                        // Prefer matching pensionId
+                        const findSetting = (key: string) => {
+                            const matching = settings.find(s => s.key === key && s.pension_id === pensionId);
+                            return matching || settings.find(s => s.key === key);
+                        };
+
+                        const pinSetting = findSetting('app_pin');
+                        const enabledSetting = findSetting('is_pin_enabled');
                         
                         if (pinSetting) {
                             setAppPin(pinSetting.value);
@@ -179,8 +197,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return null;
     }
 
-    // A lock should trigger if they are NOT verified, as long as a PIN actually exists
-    const isLocked = isAuthorized && appPin && !isPinVerified;
+    // A lock should trigger if they are NOT verified, as long as a PIN actually exists AND is enabled
+    const isLocked = isAuthorized && isPinEnabled && appPin && !isPinVerified;
 
     if (isLocked && !isPublicRoute) {
         return (

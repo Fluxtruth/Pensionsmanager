@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import Link from "next/link";
 import { initDb } from "@/lib/db";
+import { SyncService } from "@/lib/sync";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ROOM_TYPES } from "@/lib/constants";
@@ -127,70 +128,52 @@ export default function RoomsPage() {
             const db = await initDb();
             if (db) {
                 const today = new Date().toISOString().split('T')[0];
-                const results = await db.select<Room[]>(`
-                    SELECT r.*, 
-                           (SELECT b.id
-                            FROM bookings b 
-                            WHERE b.room_id = r.id 
-                            AND b.start_date <= ? 
-                            AND b.end_date >= ?
-                            AND b.status NOT IN ('Draft', 'Checked-Out', 'Storniert')
-                            LIMIT 1) as current_booking_id,
-                           (SELECT b.status 
-                            FROM bookings b 
-                            WHERE b.room_id = r.id 
-                            AND b.start_date <= ? 
-                            AND b.end_date >= ?
-                            AND b.status NOT IN ('Draft', 'Checked-Out', 'Storniert')
-                            LIMIT 1) as current_booking_status,
-                           (SELECT g.name 
-                            FROM bookings b 
-                            JOIN guests g ON b.guest_id = g.id
-                            WHERE b.room_id = r.id 
-                            AND b.start_date <= ? 
-                            AND b.end_date >= ?
-                            AND b.status NOT IN ('Draft', 'Checked-Out', 'Storniert')
-                            LIMIT 1) as current_guest_name,
-                           (SELECT bg.name 
-                            FROM bookings b 
-                            JOIN booking_groups bg ON b.group_id = bg.id
-                            WHERE b.room_id = r.id 
-                            AND b.start_date <= ? 
-                            AND b.end_date >= ?
-                            AND b.status NOT IN ('Draft', 'Checked-Out', 'Storniert')
-                            LIMIT 1) as current_group_name,
-                           (SELECT b.end_date 
-                            FROM bookings b 
-                            WHERE b.room_id = r.id 
-                            AND b.start_date <= ? 
-                            AND b.end_date >= ?
-                            AND b.status NOT IN ('Draft', 'Checked-Out', 'Storniert')
-                            LIMIT 1) as current_booking_end_date
-                    FROM rooms r
-                    ORDER BY CAST(r.id AS INTEGER) ASC
-                `, [today, today, today, today, today, today, today, today, today, today]);
 
-                if (results) {
-                    const mappedRooms = results.map(room => {
+                // Get current pension_id from SyncService
+                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+
+                // 1. Fetch all rooms for this pension
+                const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ?", [pensionId]);
+                
+                // 2. Fetch all active bookings for these rooms for today
+                const activeBookings = await db.select<any[]>(`
+                    SELECT b.*, g.name as guest_name, bg.name as group_name
+                    FROM bookings b
+                    JOIN guests g ON b.guest_id = g.id
+                    LEFT JOIN booking_groups bg ON b.group_id = bg.id
+                    WHERE b.start_date <= ? AND b.end_date >= ?
+                    AND b.status NOT IN ('Draft', 'Checked-Out', 'Storniert')
+                    AND b.pension_id = ?
+                `, [today, today, pensionId]);
+
+                if (roomResults) {
+                    const mappedRooms = roomResults.map(room => {
+                        const roomBooking = activeBookings.find(b => b.room_id === room.id);
+                        
                         let displayStatus = "Verfügbar";
-                        const bStatus = (room as any).current_booking_status;
-
-                        if (bStatus) {
-                            if (bStatus === "Checked-In") displayStatus = "Belegt";
-                            else if (bStatus === "Checked-Out") displayStatus = "Verfügbar";
+                        if (roomBooking) {
+                            if (roomBooking.status === "Checked-In") displayStatus = "Belegt";
                             else displayStatus = "Reserviert";
                         }
 
                         return {
                             ...room,
                             status: displayStatus,
-                            current_booking_id: (room as any).current_booking_id,
-                            current_guest_name: (room as any).current_guest_name,
-                            current_group_name: (room as any).current_group_name,
-                            current_booking_end_date: (room as any).current_booking_end_date
+                            current_booking_id: roomBooking?.id,
+                            current_guest_name: roomBooking?.guest_name,
+                            current_group_name: roomBooking?.group_name,
+                            current_booking_end_date: roomBooking?.end_date
                         };
                     });
-                    setRooms(mappedRooms);
+
+                    // Sort manually in JS to avoid CAST issues in different engines
+                    const sortedRooms = mappedRooms.sort((a, b) => {
+                        const idA = parseInt(a.id, 10) || 0;
+                        const idB = parseInt(b.id, 10) || 0;
+                        return idA - idB;
+                    });
+
+                    setRooms(sortedRooms);
                 }
             }
         } catch (error) {
@@ -210,14 +193,18 @@ export default function RoomsPage() {
         try {
             const db = await initDb();
             if (db) {
+                // Get current pension_id from SyncService
+                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+
                 const results = await db.select<any[]>(`
                     SELECT b.*, g.name as guest_name
                     FROM bookings b
                     JOIN guests g ON b.guest_id = g.id
                     WHERE b.room_id = ? 
                     AND b.status != 'Storniert'
+                    AND b.pension_id = ?
                     ORDER BY b.start_date ASC
-                `, [roomId]);
+                `, [roomId, pensionId]);
                 setRoomBookings(results || []);
             }
         } catch (error) {
@@ -253,13 +240,17 @@ export default function RoomsPage() {
                     return;
                 }
 
-                await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)", [
+                // Get current pension_id for creation from SyncService
+                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+
+                await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?)", [
                     newRoomId,
                     name,
                     type,
                     0, // base_price
                     isAllergyFriendly,
-                    isAccessible
+                    isAccessible,
+                    pensionId
                 ]);
                 await loadRooms();
                 setIsOpen(false);
@@ -295,6 +286,8 @@ export default function RoomsPage() {
             if (db) {
                 const idChanged = newId !== editingRoom.id;
 
+                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+
                 if (idChanged) {
                     // Final check before insertion
                     const exists = rooms.some(r => r.id === newId);
@@ -306,22 +299,22 @@ export default function RoomsPage() {
 
                     // 1. Create the new room record first
                     await db.execute(
-                        "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible) VALUES (?, ?, ?, ?, ?, ?)",
-                        [newId, name, type, 0, isAllergyFriendly, isAccessible]
+                        "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [newId, name, type, 0, isAllergyFriendly, isAccessible, pensionId]
                     );
 
                     // 2. Update all related tables that reference this room_id
-                    await db.execute("UPDATE bookings SET room_id = ? WHERE room_id = ?", [newId, editingRoom.id]);
-                    await db.execute("UPDATE room_configs SET room_id = ? WHERE room_id = ?", [newId, editingRoom.id]);
-                    await db.execute("UPDATE cleaning_tasks SET room_id = ? WHERE room_id = ?", [newId, editingRoom.id]);
+                    await db.execute("UPDATE bookings SET room_id = ? WHERE room_id = ? AND pension_id = ?", [newId, editingRoom.id, pensionId]);
+                    await db.execute("UPDATE room_configs SET room_id = ? WHERE room_id = ? AND pension_id = ?", [newId, editingRoom.id, pensionId]);
+                    await db.execute("UPDATE cleaning_tasks SET room_id = ? WHERE room_id = ? AND pension_id = ?", [newId, editingRoom.id, pensionId]);
 
                     // 3. Delete the old room record
-                    await db.execute("DELETE FROM rooms WHERE id = ?", [editingRoom.id]);
+                    await db.execute("DELETE FROM rooms WHERE id = ? AND pension_id = ?", [editingRoom.id, pensionId]);
                 } else {
                     // Standard update if ID didn't change
                     await db.execute(
-                        "UPDATE rooms SET name = ?, type = ?, base_price = ?, is_allergy_friendly = ?, is_accessible = ? WHERE id = ?",
-                        [name, type, 0, isAllergyFriendly, isAccessible, editingRoom.id]
+                        "UPDATE rooms SET name = ?, type = ?, base_price = ?, is_allergy_friendly = ?, is_accessible = ? WHERE id = ? AND pension_id = ?",
+                        [name, type, 0, isAllergyFriendly, isAccessible, editingRoom.id, pensionId]
                     );
                 }
 
