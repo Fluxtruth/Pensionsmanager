@@ -9,6 +9,7 @@ import { UserPlus, Mail, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import Link from "next/link";
+import { getGermanAuthError } from "@/lib/auth-errors";
 
 export default function RegisterPage() {
     const [email, setEmail] = useState("");
@@ -44,7 +45,7 @@ export default function RegisterPage() {
             setMessage("Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach, um deine Adresse zu bestätigen.");
         } catch (err: any) {
             console.error(err);
-            setError(err.message || "Registrierung fehlgeschlagen.");
+            setError(getGermanAuthError(err.message));
         } finally {
             setIsLoading(false);
         }

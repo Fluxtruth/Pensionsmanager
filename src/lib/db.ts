@@ -32,6 +32,34 @@ const mockData: Record<string, any[]> = {
       status: "Draft", payment_status: "Offen",
       group_id: "bg1", guests_per_room: 1, is_main_guest: 0,
       notes: "Testnotiz"
+    },
+    {
+      id: "b3", room_id: "101", guest_id: "g1",
+      start_date: "2026-03-10", end_date: "2026-03-15",
+      status: "Hard-Booked", payment_status: "Bezahlt",
+      group_id: "bg1", guests_per_room: 1, is_main_guest: 1,
+      notes: "März Buchung 1"
+    },
+    {
+      id: "b4", room_id: "102", guest_id: "g2",
+      start_date: "2026-03-12", end_date: "2026-03-14",
+      status: "Checked-In", payment_status: "Offen",
+      group_id: "bg1", guests_per_room: 2, is_main_guest: 1,
+      notes: "März Buchung 2"
+    },
+    {
+      id: "b5", room_id: "103", guest_id: "g1",
+      start_date: "2026-03-20", end_date: "2026-03-25",
+      status: "Hard-Booked", payment_status: "Offen",
+      group_id: "bg1", guests_per_room: 1, is_main_guest: 1,
+      notes: "März Buchung 3"
+    },
+    {
+      id: "b6", room_id: "201", guest_id: "g2",
+      start_date: "2026-04-05", end_date: "2026-04-10",
+      status: "Hard-Booked", payment_status: "Offen",
+      group_id: "bg1", guests_per_room: 3, is_main_guest: 1,
+      notes: "April Buchung"
     }
   ],
   staff: [],
@@ -85,188 +113,143 @@ async function _initDb(): Promise<DatabaseMock | null> {
   if (!isTauri) {
     console.warn("Tauri environment not detected. Using mock in-memory database.");
     const mock: DatabaseMock = {
-      execute: async (query: string, params?: any[]) => {
-        console.log("Mock Execute:", query, params);
-        const upperQuery = query.trim().toUpperCase();
+      execute: async <T>(query: string, params?: any[]) => {
+        const uq = query.toUpperCase();
+        console.log("[Mock DB] Execute:", query, params);
 
-        if (upperQuery.startsWith("INSERT INTO") || upperQuery.startsWith("INSERT OR REPLACE INTO")) {
-          const tableMatch = query.match(/INSERT\s+(?:OR\s+REPLACE\s+)?INTO\s+(\w+)\s*\((.*?)\)\s*VALUES/i);
-          if (tableMatch) {
-            const table = tableMatch[1].toLowerCase();
-            const cols = tableMatch[2].split(',').map(c => c.trim().toLowerCase());
-            
-            if (mockData[table]) {
+        if (uq.startsWith("INSERT")) {
+          const table = Object.keys(mockData).find(t => uq.includes(`INTO ${t.toUpperCase()}`)) as keyof typeof mockData;
+          if (table) {
+            const colsMatch = query.match(/\((.*?)\)/);
+            if (colsMatch) {
+              const columns = colsMatch[1].split(",").map(c => c.trim().toLowerCase());
               const newRow: any = {};
-              cols.forEach((col, i) => {
+              columns.forEach((col, i) => {
                 newRow[col] = params?.[i];
               });
-
-              if (table === "settings") {
-                 const existingIndex = mockData.settings.findIndex(s => s.key === newRow.key);
-                 if (existingIndex !== -1) {
-                   mockData.settings[existingIndex] = { ...mockData.settings[existingIndex], ...newRow };
-                 } else {
-                   mockData.settings.push(newRow);
-                 }
+              const existingIndex = mockData[table].findIndex(item => item.id === newRow.id);
+              if (existingIndex !== -1 && uq.includes("REPLACE")) {
+                  mockData[table][existingIndex] = { ...mockData[table][existingIndex], ...newRow };
               } else {
-                // For other tables, we check if ID exists for replacement logic
-                if (upperQuery.includes("REPLACE")) {
-                  const existingIndex = mockData[table].findIndex(item => item.id === newRow.id);
-                  if (existingIndex !== -1) {
-                    mockData[table][existingIndex] = { ...mockData[table][existingIndex], ...newRow };
-                  } else {
-                    mockData[table].push(newRow);
-                  }
-                } else {
                   mockData[table].push(newRow);
-                }
               }
             }
           }
-        } else if (upperQuery.startsWith("UPDATE")) {
-          const updateMatch = query.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+)|$)/i);
-          if (updateMatch) {
-            const table = updateMatch[1].toLowerCase();
-            const setPart = updateMatch[2];
-            const wherePart = updateMatch[3] || "";
-
-            if (mockData[table]) {
-              // Parse assignments: col1 = ?, col2 = ?
-              const assignments = setPart.split(',').map(s => s.trim());
-              const updates: any = {};
-              let pIdx = 0;
-              
-              assignments.forEach(assign => {
-                const parts = assign.split('=');
-                const col = parts[0].trim().toLowerCase();
-                const val = parts[1].trim();
-                if (val === '?') {
-                  updates[col] = params?.[pIdx++];
+        } else if (uq.startsWith("UPDATE")) {
+            const table = Object.keys(mockData).find(t => uq.startsWith(`UPDATE ${t.toUpperCase()}`)) as keyof typeof mockData;
+            if (table) {
+                const idField = table === 'settings' ? 'key' : 'id';
+                const idMatch = query.match(/WHERE\s+(\w+)\s*=\s*\?/i);
+                if (idMatch) {
+                    const idValue = params?.[params.length - 1];
+                    const targetIdx = mockData[table].findIndex(item => String(item[idField]) === String(idValue));
+                    if (targetIdx !== -1) {
+                        const setPart = query.match(/SET\s+(.+?)\s+WHERE/i)?.[1] || "";
+                        const assignments = setPart.split(",").map(a => a.trim().toLowerCase());
+                        assignments.forEach((a, i) => {
+                            if (a.includes("=?") || a.includes("= ?")) {
+                                const col = a.split("=")[0].trim();
+                                mockData[table][targetIdx][col] = params?.[i];
+                            }
+                        });
+                    }
+                }
+            }
+        } else if (uq.startsWith("DELETE FROM")) {
+            const table = Object.keys(mockData).find(t => uq.includes(`FROM ${t.toUpperCase()}`)) as keyof typeof mockData;
+            if (table) {
+                if (!query.includes("WHERE")) {
+                    mockData[table] = [];
                 } else {
-                  updates[col] = val.replace(/^['"]|['"]$/g, '');
+                    const idValue = params?.[0];
+                    const idField = table === 'settings' ? 'key' : 'id';
+                    mockData[table] = mockData[table].filter(item => String(item[idField]) !== String(idValue));
                 }
-              });
-
-              // Find target(s) based on WHERE
-              const idField = table === 'settings' ? 'key' : (wherePart.includes("device_id") ? "device_id" : "id");
-              // Simple parser for ID = ?
-              const idValue = params?.[pIdx]; // Assume ID is usually the next param after SET ones
-              
-              mockData[table].forEach((item, idx) => {
-                if (String(item[idField]) === String(idValue)) {
-                  mockData[table][idx] = { ...item, ...updates };
-                }
-              });
             }
-          }
-        } else if (upperQuery.startsWith("DELETE FROM")) {
-          const match = query.match(/DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+)|$)/i);
-          if (match) {
-            const table = match[1].toLowerCase();
-            const id = params?.[0];
-            if (mockData[table]) {
-              const idField = table === 'settings' ? 'key' : 'id';
-              mockData[table] = mockData[table].filter(item => String(item[idField]) !== String(id));
-            }
-          }
         }
-
-        return { rowsAffected: 1, lastInsertId: 0 };
+        return { rowsAffected: 1, lastInsertId: 0 } as unknown as T;
       },
       select: async <T>(query: string, params?: any[]) => {
-        console.log("Mock Select:", query, params);
-        const upperQuery = query.toUpperCase();
+        const uq = query.toUpperCase();
+        console.log("[Mock DB] Select:", query, params);
 
-        for (const table of Object.keys(mockData)) {
-          if (upperQuery.includes(`FROM ${table.toUpperCase()}`)) {
-            if (upperQuery.includes("WHERE")) {
-              const wherePart = upperQuery.split("WHERE")[1].trim();
-              
-              const conditions = wherePart.split(/\s+AND\s+/i);
-              const filterValues: Record<string, any> = {};
-              
-              let paramIdx = 0;
-              conditions.forEach(cond => {
-                const parts = cond.split("=");
-                if (parts.length === 2) {
-                  const field = parts[0].trim().toLowerCase();
-                  let val = parts[1].trim();
-                  if (val === "?") {
-                    filterValues[field] = params?.[paramIdx++];
-                  } else {
-                    filterValues[field] = val.replace(/^['"]|['"]$/g, '');
-                  }
-                }
-              });
+        const table = Object.keys(mockData).find(t => uq.includes(`FROM ${t.toUpperCase()}`)) as keyof typeof mockData;
+        if (!table) {
+          if (uq.includes("COUNT(*)")) return [{ count: 0 }] as unknown as T;
+          return [] as unknown as T;
+        }
 
-              if (Object.keys(filterValues).length > 0) {
-                const results = mockData[table].filter(item => {
-                  return Object.entries(filterValues).every(([field, value]) => {
-                    // Special case for pension_id to allow matching against default if not specified
-                    if (field === "pension_id" && !item[field]) {
-                       return value === "00000000-0000-0000-0000-000000000001";
+        let res = [...(mockData[table] || [])];
+
+        if (table === "bookings" || uq.includes("BOOKINGS")) {
+            res = [...mockData.bookings];
+            if (uq.includes("STATUS IN")) {
+                const statusStr = (query.match(/IN\s*\((.*?)\)/i)?.[1] || "").toLowerCase();
+                res = res.filter(b => {
+                    const s = b.status?.toLowerCase() || "";
+                    if (statusStr.includes("hard-booked") && (s.includes("hard-booked") || s.includes("fest gebucht"))) return true;
+                    if (statusStr.includes("checked-in") && (s.includes("checked-in") || s.includes("eingecheckt"))) return true;
+                    if (statusStr.includes("checked-out") && (s.includes("checked-out") || s.includes("ausgecheckt"))) return true;
+                    if (statusStr.includes("draft") && (s.includes("draft") || s.includes("entwurf"))) return true;
+                    if (statusStr.includes("storniert") || statusStr.includes("canceled")) {
+                        if (s.includes("storniert") || s.includes("canceled")) return true;
                     }
-                    return String(item[field]) === String(value);
-                  });
+                    return false;
                 });
-                if (query.includes("COUNT")) return [{ count: results.length }] as unknown as T;
-                return results as unknown as T;
-              }
-              
-              return [] as unknown as T;
             }
-
-            if (table === "bookings" && (upperQuery.includes("JOIN GUESTS") || upperQuery.includes("LEFT JOIN"))) {
-              return mockData.bookings.map(b => {
+            if (params && params.length > 0) {
+                if (params.length >= 6) {
+                    const s = params[0], e = params[1];
+                    res = res.filter(b => b.start_date <= e && b.end_date >= s);
+                } else if (uq.includes(">=") && (uq.includes("END_DATE") || uq.includes("B.END_DATE"))) {
+                    res = res.filter(b => b.end_date >= params[0]);
+                } else if (uq.includes("<") && (uq.includes("START_DATE") || uq.includes("B.START_DATE"))) {
+                    res = res.filter(b => b.start_date < params[0]);
+                }
+            }
+            return res.map(b => {
                 const guest = mockData.guests.find(g => g.id === b.guest_id);
                 const room = mockData.rooms.find(r => r.id === b.room_id);
                 const group = mockData.booking_groups.find(g => g.id === b.group_id);
+                const occasion = mockData.occasions.find(o => o.id === b.occasion_id);
                 return {
-                  ...b,
-                  guest_name: guest?.name || "Unbekannt",
-                  guest_id: guest?.id,
-                  phone: guest?.phone,
-                  email: guest?.email,
-                  room_name: room?.name || `Zimmer ${b.room_id}`,
-                  occasion_title: mockData.occasions.find(o => o.id === b.occasion_id)?.title || "",
-                  group_name: group?.name || ""
+                    ...b,
+                    guest_name: guest?.name || "Unbekannt",
+                    guest_phone: guest?.phone,
+                    guest_email: guest?.email,
+                    guest_company: guest?.company,
+                    nationality: guest?.nationality || "DE",
+                    room_name: room?.name || `Zimmer ${b.room_id}`,
+                    room_type: room?.type || "Zimmer",
+                    group_name: group?.name || "",
+                    occasion_title: occasion?.title || ""
                 };
-              }) as unknown as T;
-            }
-
-            if (table === "booking_groups") {
-              return mockData.booking_groups as unknown as T;
-            }
-
-            if (upperQuery.includes("COUNT(*)")) {
-              if (upperQuery.includes("SYNCED_AT IS NULL")) {
-                const pending = mockData[table].filter(item => 
-                  item.synced_at === null || (item.updated_at && item.synced_at && item.updated_at > item.synced_at)
-                );
-                return [{ count: pending.length }] as unknown as T;
-              }
-              return [{ count: mockData[table].length }] as unknown as T;
-            }
-
-            if (upperQuery.includes("MAX(SYNCED_AT)")) {
-              const maxSync = mockData[table].reduce((max, item) => {
-                if (!item.synced_at) return max;
-                if (!max || item.synced_at > max) return item.synced_at;
-                return max;
-              }, null as string | null);
-              return [{ max_sync: maxSync }] as unknown as T;
-            }
-
-            return mockData[table] as unknown as T;
-          }
+            }) as unknown as T;
         }
 
-        return [] as unknown as T;
+        if (uq.includes("WHERE")) {
+            const matches = query.match(/(\w+)\s*=\s*(\?|'[^']*'|"[^"]*")/gi);
+            if (matches) {
+                let pIdx = 0;
+                const filters: Record<string, any> = {};
+                matches.forEach(m => {
+                    const [f, v] = m.split("=").map(s => s.trim());
+                    if (v === "?") filters[f.toLowerCase()] = params?.[pIdx++];
+                    else filters[f.toLowerCase()] = v.replace(/['"]/g, "");
+                });
+                res = res.filter(item => Object.entries(filters).every(([f, v]) => {
+                    if (f === "pension_id") return true;
+                    return String(item[f]) === String(v);
+                }));
+            }
+        }
+        if (uq.includes("COUNT(*)")) return [{ count: res.length }] as unknown as T;
+        if (uq.includes("MAX(SYNCED_AT)")) return [{ max_sync: "2026-03-01T00:00:00Z" }] as unknown as T;
+        return res as unknown as T;
       }
     };
     return mock;
   }
-
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     const projectRef = supabaseUrl.match(/https:\/\/(.*?)\.supabase\.co/)?.[1] || "default";
