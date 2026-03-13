@@ -87,199 +87,86 @@ async function _initDb(): Promise<DatabaseMock | null> {
     const mock: DatabaseMock = {
       execute: async (query: string, params?: any[]) => {
         console.log("Mock Execute:", query, params);
-        const upperQuery = query.toUpperCase();
+        const upperQuery = query.trim().toUpperCase();
 
-        if (upperQuery.includes("INSERT INTO")) {
-          const match = upperQuery.match(/INSERT INTO (\w+)/);
-          if (match) {
-            const table = match[1].toLowerCase();
+        if (upperQuery.startsWith("INSERT INTO") || upperQuery.startsWith("INSERT OR REPLACE INTO")) {
+          const tableMatch = query.match(/INSERT\s+(?:OR\s+REPLACE\s+)?INTO\s+(\w+)\s*\((.*?)\)\s*VALUES/i);
+          if (tableMatch) {
+            const table = tableMatch[1].toLowerCase();
+            const cols = tableMatch[2].split(',').map(c => c.trim().toLowerCase());
+            
             if (mockData[table]) {
-              if (table === "guests") {
-                mockData.guests.push({
-                  id: params?.[0], name: params?.[1], first_name: params?.[2], middle_name: params?.[3],
-                  last_name: params?.[4], email: params?.[5], phone: params?.[6], company: params?.[7],
-                  notes: params?.[8], contact_info: params?.[9], nationality: params?.[10]
-                });
-              } else if (table === "rooms") {
-                mockData.rooms.push({
-                  id: params?.[0],
-                  name: params?.[1],
-                  type: params?.[2],
-                  base_price: params?.[3] || 0,
-                  is_allergy_friendly: params?.[4] || 0,
-                  is_accessible: params?.[5] || 0
-                });
-              } else if (table === "occasions") {
-                mockData.occasions.push({ id: params?.[0], title: params?.[1], type: params?.[2], status: params?.[3], main_guest_id: params?.[4] });
-              } else if (table === "booking_groups") {
-                mockData.booking_groups.push({ id: params?.[0], name: params?.[1] });
-              } else if (table === "bookings") {
-                mockData.bookings.push({
-                  id: params?.[0], room_id: params?.[1], guest_id: params?.[2],
-                  occasion: params?.[3], start_date: params?.[4], end_date: params?.[5],
-                  status: params?.[6], payment_status: params?.[7], estimated_arrival_time: params?.[8],
-                  group_id: params?.[9],
-                  is_family_room: params?.[10], has_dog: params?.[11],
-                  is_allergy_friendly: params?.[12], has_mobility_impairment: params?.[13],
-                  guests_per_room: params?.[14], stay_type: params?.[15],
-                  dog_count: params?.[16], child_count: params?.[17], extra_bed_count: params?.[18],
-                  is_main_guest: params?.[19], notes: params?.[20]
-                });
-              } else if (table === "breakfast_options") {
-                mockData.breakfast_options.push({ id: params?.[0], booking_id: params?.[1], date: params?.[2], is_included: params?.[3], is_prepared: params?.[4] || 0, guest_count: params?.[5] || 1, time: params?.[6], comments: params?.[7], source: params?.[8] || 'auto', is_manual: params?.[9] || 0 });
-              } else if (table === "cleaning_tasks") {
-                mockData.cleaning_tasks.push({ id: params?.[0], room_id: params?.[1], staff_id: params?.[2], date: params?.[3], status: params?.[4], is_manual: params?.[5], source: params?.[6], title: params?.[7], task_type: params?.[8] || 'cleaning', comments: params?.[9] });
-              } else if (table === "cleaning_task_suggestions") {
-                mockData.cleaning_task_suggestions.push({ id: params?.[0], title: params?.[1], weekday: params?.[2], frequency_weeks: params?.[3] });
-              } else if (table === "connected_devices") {
-                if (params?.length === 9) {
-                    // [pk, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, is_leading_db, status]
-                    mockData.connected_devices.push({
-                        id: params[0], device_id: params[1], pension_id: params[2], 
-                        device_name: params[3], device_type: params[4], 
-                        last_seen_at: params[5], updated_at: params[6], 
-                        is_leading_db: params[7], status: params[8] || 'active'
-                    });
-                } else if (params?.length === 8) {
-                    // [pk, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, is_leading_db]
-                    mockData.connected_devices.push({
-                        id: params[0], device_id: params[1], pension_id: params[2], 
-                        device_name: params[3], device_type: params[4], 
-                        last_seen_at: params[5], updated_at: params[6], 
-                        is_leading_db: params[7], status: 'active'
-                    });
-                } else {
-                    mockData.connected_devices.push({
-                        id: params?.[0], device_id: params?.[1], device_name: params?.[2],
-                        device_type: params?.[3], status: params?.[4] || 'active', 
-                        is_leading_db: params?.[5] || 0,
-                        last_seen_at: params?.[6] || new Date().toISOString()
-                    });
-                }
-              } else if (table === "settings") {
-                // Upsert for settings
-                const key = params?.[0];
-                const value = params?.[1];
-                const existingIndex = mockData.settings.findIndex(s => s.key === key);
-                if (existingIndex !== -1) {
-                  mockData.settings[existingIndex].value = value;
-                } else {
-                  mockData.settings.push({ key, value });
-                }
-              }
-            }
-          }
-        } else if (upperQuery.includes("INSERT OR REPLACE INTO SETTINGS")) {
-          const key = params?.[0];
-          const value = params?.[1];
-          if (mockData.settings) {
-            const existingIndex = mockData.settings.findIndex(s => s.key === key);
-            if (existingIndex !== -1) {
-              mockData.settings[existingIndex].value = value;
-            } else {
-              mockData.settings.push({ key, value });
-            }
-          }
-          return { rowsAffected: 1, lastInsertId: 0 };
-        } else if (upperQuery.includes("UPDATE")) {
-          if (upperQuery.includes("SET STATUS = 'STORNIERT' WHERE GROUP_ID = ?")) {
-            const groupId = params?.[0];
-            mockData.bookings.forEach(b => {
-              if (b.group_id === groupId) b.status = 'Storniert';
-            });
-            return { rowsAffected: 1, lastInsertId: 0 };
-          }
-          if (upperQuery.includes("SET STATUS = 'STORNIERT' WHERE ID = ?")) {
-            const id = params?.[0];
-            const booking = mockData.bookings.find(b => b.id === id);
-            if (booking) booking.status = 'Storniert';
-            return { rowsAffected: 1, lastInsertId: 0 };
-          }
-          if (upperQuery.includes("SET STATUS = 'CHECKED-OUT'")) {
-            const id = params?.[params.length - 1];
-            const booking = mockData.bookings.find(b => b.id === id);
-            if (booking) {
-              booking.status = 'Checked-Out';
-              booking.actual_checkout_at = params?.[0];
-            }
-            return { rowsAffected: 1, lastInsertId: 0 };
-          }
-          if (upperQuery.includes("SET OCCASION_ID = NULL")) {
-            const occId = params?.[0];
-            mockData.bookings.forEach(b => {
-              if (b.occasion_id === occId) b.occasion_id = null;
-            });
-            return { rowsAffected: 1, lastInsertId: 0 };
-          }
+              const newRow: any = {};
+              cols.forEach((col, i) => {
+                newRow[col] = params?.[i];
+              });
 
-          const match = upperQuery.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+)|$)/i);
-          if (match) {
-            const table = match[1].toLowerCase();
-            const setPhrase = match[2];
-            const wherePhrase = match[3] || "";
-
-            // Handle SyncService explicit 'UPDATE table SET synced_at = ?, pension_id = ? WHERE key/id = ?'
-            if (upperQuery.includes("SET SYNCED_AT = ?")) {
-              const idField = table === 'settings' ? 'key' : 'id';
-              const idValue = params?.[params.length - 1]; // Assume ID is always last
-              const index = mockData[table]?.findIndex(item => item[idField] === idValue);
-              
-              if (index !== undefined && index !== -1) {
-                mockData[table][index].synced_at = params?.[0]; // synced_at is the first param
-                if (upperQuery.includes("PENSION_ID = ?")) {
-                   mockData[table][index].pension_id = params?.[1]; // pension_id is the second
-                }
-                return { rowsAffected: 1, lastInsertId: 0 };
-              }
-            }
-
-            // Extract all assigned columns: `col1 = ?, col2 = ?, col3 = 'val'`
-            const assignments = setPhrase.split(',').map(s => s.trim());
-
-            if (mockData[table]) {
-              // Try to find the identifier in the WHERE clause
-              const idFieldCandidate = upperQuery.includes("DEVICE_ID = ?") ? "device_id" : (table === 'settings' ? 'key' : 'id');
-              const idValue = params?.[params.length - 1]; // Assuming ID/Key/DeviceID is the last param
-              const index = mockData[table].findIndex(item => item[idFieldCandidate] === idValue);
-              
-              if (index !== -1) {
-                // Initialize a partial updates object
-                const updates: any = {};
-                let paramIndex = 0;
-
-                for (const assignment of assignments) {
-                  const parts = assignment.split('=');
-                  if (parts.length === 2) {
-                    const col = parts[0].trim().toLowerCase();
-                    const valExpr = parts[1].trim();
-                    if (valExpr === '?') {
-                      updates[col] = params?.[paramIndex++];
-                    } else {
-                      // Direct string/number assignment 'foo' -> foo
-                      updates[col] = valExpr.replace(/^['"]|['"]$/g, '');
-                    }
+              if (table === "settings") {
+                 const existingIndex = mockData.settings.findIndex(s => s.key === newRow.key);
+                 if (existingIndex !== -1) {
+                   mockData.settings[existingIndex] = { ...mockData.settings[existingIndex], ...newRow };
+                 } else {
+                   mockData.settings.push(newRow);
+                 }
+              } else {
+                // For other tables, we check if ID exists for replacement logic
+                if (upperQuery.includes("REPLACE")) {
+                  const existingIndex = mockData[table].findIndex(item => item.id === newRow.id);
+                  if (existingIndex !== -1) {
+                    mockData[table][existingIndex] = { ...mockData[table][existingIndex], ...newRow };
+                  } else {
+                    mockData[table].push(newRow);
                   }
+                } else {
+                  mockData[table].push(newRow);
                 }
-
-                // Apply ONLY the requested dynamic updates to the object
-                mockData[table][index] = {
-                  ...mockData[table][index],
-                  ...updates
-                };
               }
             }
           }
-        } else if (upperQuery.includes("DELETE FROM")) {
-          const match = upperQuery.match(/DELETE FROM (\w+)/);
+        } else if (upperQuery.startsWith("UPDATE")) {
+          const updateMatch = query.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+)|$)/i);
+          if (updateMatch) {
+            const table = updateMatch[1].toLowerCase();
+            const setPart = updateMatch[2];
+            const wherePart = updateMatch[3] || "";
+
+            if (mockData[table]) {
+              // Parse assignments: col1 = ?, col2 = ?
+              const assignments = setPart.split(',').map(s => s.trim());
+              const updates: any = {};
+              let pIdx = 0;
+              
+              assignments.forEach(assign => {
+                const parts = assign.split('=');
+                const col = parts[0].trim().toLowerCase();
+                const val = parts[1].trim();
+                if (val === '?') {
+                  updates[col] = params?.[pIdx++];
+                } else {
+                  updates[col] = val.replace(/^['"]|['"]$/g, '');
+                }
+              });
+
+              // Find target(s) based on WHERE
+              const idField = table === 'settings' ? 'key' : (wherePart.includes("device_id") ? "device_id" : "id");
+              // Simple parser for ID = ?
+              const idValue = params?.[pIdx]; // Assume ID is usually the next param after SET ones
+              
+              mockData[table].forEach((item, idx) => {
+                if (String(item[idField]) === String(idValue)) {
+                  mockData[table][idx] = { ...item, ...updates };
+                }
+              });
+            }
+          }
+        } else if (upperQuery.startsWith("DELETE FROM")) {
+          const match = query.match(/DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+)|$)/i);
           if (match) {
             const table = match[1].toLowerCase();
             const id = params?.[0];
             if (mockData[table]) {
-              mockData[table] = mockData[table].filter(item => item.id !== id);
-              // Cascading delete for groups
-              if (table === "booking_groups") {
-                mockData.bookings = mockData.bookings.filter(b => b.group_id !== id);
-              }
+              const idField = table === 'settings' ? 'key' : 'id';
+              mockData[table] = mockData[table].filter(item => String(item[idField]) !== String(id));
             }
           }
         }

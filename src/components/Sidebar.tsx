@@ -158,14 +158,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     </Link>
                 ))}
             </nav>
-            <div className="px-7 pb-2 flex items-center justify-between">
-                <span 
-                    onClick={() => window.dispatchEvent(new CustomEvent('check-for-updates'))}
-                    className="text-xs text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                >
-                    {appVersion}
-                </span>
-                {updateAvailable && (
+            {updateAvailable && (
+                <div className="px-7 pb-2 flex items-center justify-end">
                     <span
                         onClick={() => window.dispatchEvent(new CustomEvent('check-for-updates'))}
                         title={`Update auf ${updateAvailable} verfügbar! Starte das Update beim nächsten Neustart der App.`}
@@ -174,8 +168,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         <Download className="w-3 h-3" />
                         Update
                     </span>
-                )}
-            </div>
+                </div>
+            )}
             <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
                 <Link
                     href="/konfiguration"
