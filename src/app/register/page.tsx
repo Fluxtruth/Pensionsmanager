@@ -35,7 +35,7 @@ export default function RegisterPage() {
                 email,
                 password,
                 options: {
-                    emailRedirectTo: `${window.location.origin}/login`,
+                    emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/login`,
                 }
             });
 
