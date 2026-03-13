@@ -36,6 +36,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 } else {
                     if (session && !isAuthRoute) {
                         await syncService.initializeWebContext();
+                        // Start Auto-Sync automatically as soon as we have a session
+                        if (!syncService.isAutoSyncActive()) {
+                            console.log("[AuthGuard] Starting background auto-sync...");
+                            syncService.startAutoSync();
+                        }
                     }
                     
                     setIsAuthorized(true);
