@@ -2541,7 +2541,7 @@ function BookingsList() {
                                                                     {status === "Hard-Booked" ? "FEST" :
                                                                         status === "Checked-In" ? "EINGECHECKT" :
                                                                             status === "Checked-Out" ? "OUT" :
-                                                                                (status || "Entwurf").toUpperCase()}
+                                                                                String(status || "Entwurf").toUpperCase()}
                                                                 </Badge>
                                                             );
                                                         }
@@ -2704,7 +2704,7 @@ function BookingsList() {
                                                             booking.end_date < today ? "ABGESCHLOSSEN" :
                                                                 booking.status === "Hard-Booked" ? "FEST GEBUCHT" :
                                                                     booking.status === "Checked-In" ? "EINGECHECKT" :
-                                                                        booking.status === "Checked-Out" ? "ABGEREIST" : (booking.status || "Entwurf").toUpperCase()}
+                                                                        booking.status === "Checked-Out" ? "ABGEREIST" : String(booking.status || "Entwurf").toUpperCase()}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right px-6">

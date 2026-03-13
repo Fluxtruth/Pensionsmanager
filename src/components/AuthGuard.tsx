@@ -17,6 +17,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     const [appPin, setAppPin] = useState<string | null>(null);
     const [isPinEnabled, setIsPinEnabled] = useState(true);
     const [isPinVerified, setIsPinVerified] = useState(false);
+    const [hasSession, setHasSession] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const syncService = SyncService.getInstance();
@@ -25,13 +26,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         const checkAuth = async () => {
             try {
                 const { data: { session } } = await supabase.auth.getSession();
+                setHasSession(!!session);
 
-                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname === '/impressum';
+                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+                const isPublicRoute = isAuthRoute || pathname === '/impressum';
 
-                if (!session && !isAuthRoute) {
+                if (!session && !isPublicRoute) {
                     router.replace('/login');
                 } else {
-                    // If we have a session, ensure critical settings are pulled on web
                     if (session && !isAuthRoute) {
                         await syncService.initializeWebContext();
                     }
@@ -61,8 +63,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 }
             } catch (error) {
                 console.error("Auth check failed:", error);
-                setIsPinVerified(true); // Fail open to avoid lockout if DB fails? Or fail closed? 
-                // Let's fail open but log error for now, or just ensure DB is available.
+                setIsPinVerified(true); // Fail open
             } finally {
                 setIsLoading(false);
             }
@@ -70,8 +71,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
         checkAuth();
 
-        // Set up a listener for auth state changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            setHasSession(!!session);
             const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
 
             if (event === 'SIGNED_OUT' && !isAuthRoute) {
@@ -79,33 +80,28 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             } else if (event === 'SIGNED_IN' && isAuthRoute) {
                 router.replace('/');
             } else if (event === 'TOKEN_REFRESHED' && !session) {
-                // Token refresh failed — session is invalid (e.g. refresh token was rotated
-                // by another device or expired server-side). Redirect to login gracefully.
-                console.warn("[Auth] Token refresh failed — session invalid, redirecting to login.");
-                supabase.auth.signOut().catch(() => {}); // Clean up local state
+                console.warn("[Auth] Token refresh failed");
+                supabase.auth.signOut().catch(() => {});
                 router.replace('/login');
             }
         });
 
-        // Global handler for auth errors (e.g. "Refresh Token Not Found")
-        // This catches errors from automatic token refresh attempts
         const originalConsoleError = console.error;
         const authErrorHandler = (...args: any[]) => {
             const errorMsg = args.map(a => String(a)).join(' ');
             if (errorMsg.includes('Refresh Token Not Found') || errorMsg.includes('Invalid Refresh Token')) {
-                console.warn("[Auth] Invalid refresh token detected, signing out gracefully.");
+                console.warn("[Auth] Invalid refresh token detected");
                 supabase.auth.signOut().catch(() => {});
                 const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
                 if (!isAuthRoute) {
                     router.replace('/login');
                 }
-                return; // Suppress the error from flooding the console
+                return;
             }
             originalConsoleError.apply(console, args);
         };
         console.error = authErrorHandler;
 
-        // Manual lock listener
         const handleManualLock = () => {
             setIsPinVerified(false);
         };
@@ -114,11 +110,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return () => {
             subscription.unsubscribe();
             window.removeEventListener('app-lock', handleManualLock);
-            console.error = originalConsoleError; // Restore original console.error
+            console.error = originalConsoleError;
         };
     }, [pathname, router]);
 
-    // Don't render main content until we've checked auth (prevents flash of content)
+    const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+    const isPublicRoute = isAuthRoute || pathname === '/impressum';
+
+    // Don't render main content until we've checked auth
     if (isLoading) {
         return (
             <div className="flex items-center justify-center h-screen w-full bg-zinc-50 dark:bg-zinc-950">
@@ -127,26 +126,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname === '/impressum';
-    if (!isAuthorized && !isAuthRoute) {
-        return null; // Will redirect shortly
+    if (!isAuthorized && !isPublicRoute) {
+        return null;
     }
 
-    // If on an auth route, just render the children (no sidebar)
-    if (isAuthRoute) {
-        return <main className="h-full w-full">{children}</main>;
-    }
+    const isLocked = isAuthorized && isPinEnabled && !isPinVerified;
 
-    // If authorized and NOT on an auth route, render the standard layout structure expects children to be injected into
-    return (
-        <div className="flex h-full">
-            {appPin && isPinEnabled && !isPinVerified && (
+    if (isLocked && !isPublicRoute) {
+        return (
+            <div className="h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
                 <PinEntry 
-                    correctPin={appPin} 
+                    correctPin={appPin || ""} 
                     onSuccess={() => setIsPinVerified(true)} 
                     onCancel={() => {
-                        // If they cancel, sign them out? No, just keep the overlay.
-                        // Or redirect back to login?
                         supabase.auth.signOut();
                         router.replace('/login');
                     }}
@@ -155,8 +147,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                         router.replace('/login');
                     }}
                 />
-            )}
+            </div>
+        );
+    }
 
+    // showSidebar only if we HAVE A SESSION and are NOT LOCKED and NOT on an auth route
+    const showSidebar = hasSession && isAuthorized && !isLocked && !isAuthRoute;
+
+    if (!showSidebar) {
+        return <main className="min-h-screen w-full bg-zinc-50 dark:bg-zinc-950">{children}</main>;
+    }
+
+    // Standard Layout with Sidebar (Only for authorized + verified users on non-auth routes)
+    return (
+        <div className="flex h-full">
             {/* Backdrop for mobile */}
             {isSidebarOpen && (
                 <div 
