@@ -32,7 +32,9 @@ export function MyDayWidget({ refreshTrigger = 0 }: { refreshTrigger?: number })
                     const today = new Date().toISOString().split('T')[0];
 
                     // Get current pension_id from SyncService
-                    const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+                    const pensionId = await SyncService.getInstance().getPensionId();
+                    
+                    if (!pensionId) return;
 
                     // Total Check-ins expected today (based on start_date)
                     const insTotal = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE start_date = ? AND pension_id = ?", [today, pensionId]);

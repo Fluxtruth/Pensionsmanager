@@ -47,10 +47,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
                     // Check for local PIN
                     if (session && !isAuthRoute) {
-                        const db = await initDb();
+                        const pensionId = await syncService.getPensionId();
+                        const db = await initDb(pensionId || undefined);
                         if (db) {
-                            let pensionId = await syncService.getPensionId();
-                            
                             // Query for settings. We try both the specific pensionId and NULL for compatibility/robustness
                             const settings = await db.select<any[]>(
                                 "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)",
@@ -132,10 +131,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             try {
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session && !isAuthRoute) {
-                    const db = await initDb();
+                    const pensionId = await syncService.getPensionId();
+                    const db = await initDb(pensionId || undefined);
                     if (db) {
-                        let pensionId = await syncService.getPensionId();
-                        
                         // Query for settings. We try both the specific pensionId and NULL
                         const settings = await db.select<any[]>(
                             "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)",

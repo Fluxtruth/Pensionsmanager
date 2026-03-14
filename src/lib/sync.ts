@@ -46,6 +46,7 @@ export interface ConnectedDevice {
 export class SyncService {
   private static instance: SyncService;
   private db: DatabaseMock | null = null;
+  private currentPensionId: string | null = null;
   private autoSyncInterval: any = null;
   private currentDeviceId: string | null = null;
 
@@ -58,9 +59,14 @@ export class SyncService {
     return SyncService.instance;
   }
 
-  private async ensureDb() {
-    if (!this.db) {
-      this.db = await initDb();
+  private async ensureDb(pensionId?: string) {
+    const pId = pensionId || await this.getPensionId();
+    if (!pId) return null;
+
+    if (!this.db || this.currentPensionId !== pId) {
+      console.log(`[Sync] Switching database to pension: ${pId}`);
+      this.db = await initDb(pId);
+      this.currentPensionId = pId;
     }
     return this.db;
   }
@@ -257,9 +263,10 @@ export class SyncService {
 
     const pensionId = await this.getPensionId();
     if (!pensionId) {
+      console.error("[Sync] Sync rejected: No pension profile found. Ensure auto-provisioning trigger is active.");
       return { 
         success: false, 
-        error: "Keine zugeordnete Pension gefunden. Bitte kontaktieren Sie den Support oder vervollständigen Sie Ihr Profil." 
+        error: "Ihr Account wurde noch nicht vollständig initialisiert. Bitte laden Sie die Seite neu oder kontaktieren Sie den Support." 
       };
     }
 
@@ -356,7 +363,10 @@ export class SyncService {
     if (!db) return;
 
     const pensionId = await this.getPensionId();
-    if (!pensionId) return;
+    if (!pensionId) {
+      console.warn(`[Sync] Skipping pull for ${tableName}: No pensionId`);
+      return;
+    }
 
     try {
       const { data, error } = await supabase

@@ -1,7 +1,8 @@
 import Database from "@tauri-apps/plugin-sql";
 
 // In-memory storage for mock database
-const mockData: Record<string, any[]> = {
+// Template for initial mock database state
+const mockDataTemplate: Record<string, any[]> = {
   rooms: [
     { id: "101", name: "Zimmer 101", type: "Einzelzimmer", base_price: 50 },
     { id: "102", name: "Zimmer 102", type: "Doppelzimmer", base_price: 80 },
@@ -74,17 +75,35 @@ const mockData: Record<string, any[]> = {
   ]
 };
 
-// Helper to ensure mock rows have sync metadata
-Object.keys(mockData).forEach(table => {
-  mockData[table] = mockData[table].map(item => ({
-    pension_id: "00000000-0000-0000-0000-000000000001", // Default mock pension (matches Supabase injected test pension)
-    updated_at: "2026-01-01T00:00:00",
-    synced_at: null,
-    ...item
-  }));
-});
+// Storage for isolated mock data per pension
+const isolatedMockData: Record<string, Record<string, any[]>> = {};
 
-export const tableNames = Object.keys(mockData);
+function getIsolatedMockData(pensionId?: string): Record<string, any[]> {
+  const pId = pensionId || 'default';
+  const isDemoAccount = pId === 'default' || pId === "00000000-0000-0000-0000-000000000001";
+  
+  if (!isolatedMockData[pId]) {
+    // Only use template for the demo account. 
+    // New accounts should always start empty to ensure strict separation.
+    const initialData = isDemoAccount 
+        ? JSON.parse(JSON.stringify(mockDataTemplate))
+        : Object.keys(mockDataTemplate).reduce((acc, key) => ({ ...acc, [key]: [] }), {});
+
+    // Ensure all rows have the correct pension_id
+    Object.keys(initialData).forEach(table => {
+      initialData[table] = initialData[table].map((item: any) => ({
+        pension_id: isDemoAccount ? "00000000-0000-0000-0000-000000000001" : pId,
+        updated_at: "2026-01-01T00:00:00",
+        synced_at: null,
+        ...item
+      }));
+    });
+    isolatedMockData[pId] = initialData;
+  }
+  return isolatedMockData[pId];
+}
+
+export const tableNames = Object.keys(mockDataTemplate);
 
 interface DbResult {
   rowsAffected: number;
@@ -96,22 +115,33 @@ export interface DatabaseMock {
   select: <T>(query: string, params?: any[]) => Promise<T>;
 }
 
-let initPromise: Promise<DatabaseMock | null> | null = null;
+let initPromises: Record<string, Promise<DatabaseMock | null> | undefined> = {};
 
-export function initDb(): Promise<DatabaseMock | null> {
-  if (initPromise) return initPromise;
-  initPromise = _initDb();
-  return initPromise;
+export function initDb(pensionId?: string): Promise<DatabaseMock | null> {
+  // Use provided pensionId or fallback to the last known one from localStorage
+  const effectiveId = pensionId || (typeof window !== 'undefined' ? localStorage.getItem("app_last_pension_id") : null);
+  
+  if (!effectiveId) {
+    console.warn("[DB] No pension_id provided and none found in localStorage.");
+    return Promise.resolve(null);
+  }
+
+  const key = effectiveId;
+  if (initPromises[key]) return initPromises[key];
+  
+  initPromises[key] = _initDb(effectiveId);
+  return initPromises[key];
 }
 
-async function _initDb(): Promise<DatabaseMock | null> {
+async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
   if (typeof window === "undefined") return null;
 
   // Check if we are running inside Tauri
   const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
 
   if (!isTauri) {
-    console.warn("Tauri environment not detected. Using mock in-memory database.");
+    const mockData = getIsolatedMockData(pensionId);
+    console.warn(`Tauri environment not detected. Using mock in-memory database (Isolated: ${pensionId || 'default'}).`);
     const mock: DatabaseMock = {
       execute: async <T>(query: string, params?: any[]) => {
         const uq = query.toUpperCase();
@@ -238,7 +268,7 @@ async function _initDb(): Promise<DatabaseMock | null> {
                     else filters[f.toLowerCase()] = v.replace(/['"]/g, "");
                 });
                 res = res.filter(item => Object.entries(filters).every(([f, v]) => {
-                    if (f === "pension_id") return true;
+                    // Honor the pension_id filter to ensure strict data separation in the mock DB
                     return String(item[f]) === String(v);
                 }));
             }
@@ -253,9 +283,11 @@ async function _initDb(): Promise<DatabaseMock | null> {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     const projectRef = supabaseUrl.match(/https:\/\/(.*?)\.supabase\.co/)?.[1] || "default";
-    const dbName = `pensionsmanager_${projectRef}.db`;
+    // If we have a pensionId, we use a specific database file for that pension.
+    // This ensures physical data isolation and prevents leakage between accounts.
+    const dbName = `pensionsmanager_${projectRef}${pensionId ? `_${pensionId}` : ''}.db`;
     
-    console.log(`[DB] Loading isolated database: ${dbName}`);
+    console.log(`[DB] Loading isolated database: ${dbName} (Pension: ${pensionId || 'None'})`);
     const db = await Database.load(`sqlite:${dbName}`);
 
     await db.execute(`

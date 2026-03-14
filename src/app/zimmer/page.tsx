@@ -130,7 +130,12 @@ export default function RoomsPage() {
                 const today = new Date().toISOString().split('T')[0];
 
                 // Get current pension_id from SyncService
-                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+                const pensionId = await SyncService.getInstance().getPensionId();
+
+                if (!pensionId) {
+                    console.warn("[Zimmer] No pensionId found, skipping data load.");
+                    return;
+                }
 
                 // 1. Fetch all rooms for this pension
                 const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ?", [pensionId]);
@@ -194,7 +199,8 @@ export default function RoomsPage() {
             const db = await initDb();
             if (db) {
                 // Get current pension_id from SyncService
-                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+                const pensionId = await SyncService.getInstance().getPensionId();
+                if (!pensionId) return;
 
                 const results = await db.select<any[]>(`
                     SELECT b.*, g.name as guest_name
@@ -241,7 +247,8 @@ export default function RoomsPage() {
                 }
 
                 // Get current pension_id for creation from SyncService
-                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+                const pensionId = await SyncService.getInstance().getPensionId();
+                if (!pensionId) return;
 
                 await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?)", [
                     newRoomId,
@@ -286,7 +293,8 @@ export default function RoomsPage() {
             if (db) {
                 const idChanged = newId !== editingRoom.id;
 
-                const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+                const pensionId = await SyncService.getInstance().getPensionId();
+                if (!pensionId) return;
 
                 if (idChanged) {
                     // Final check before insertion

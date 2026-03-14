@@ -53,8 +53,13 @@ export default function Home() {
       if (db) {
         setIsDbReady(true);
 
-        // Get current pension_id from SyncService
-        const pensionId = await SyncService.getInstance().getPensionId() || "00000000-0000-0000-0000-000000000001";
+      // Get current pension_id from SyncService
+      const pensionId = await SyncService.getInstance().getPensionId();
+
+      if (!pensionId) {
+        console.warn("[Dashboard] No pensionId found, skipping data load.");
+        return;
+      }
 
         // Load Rooms
         const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ?", [pensionId]);
