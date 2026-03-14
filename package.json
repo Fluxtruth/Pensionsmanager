@@ -1,6 +1,6 @@
 {
   "name": "pensionsmanager",
-  "version": "1.11.2",
+  "version": "1.11.3",
   "description": "Eine moderne Next.js & Tauri App zur effizienten Verwaltung von Pensionen und Gästehäusern.",
   "private": true,
   "scripts": {
