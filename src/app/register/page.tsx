@@ -32,7 +32,7 @@ export default function RegisterPage() {
         setIsLoading(true);
 
         try {
-            const { error } = await supabase.auth.signUp({
+            const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
                 options: {
@@ -41,6 +41,13 @@ export default function RegisterPage() {
             });
 
             if (error) throw error;
+
+            // Supabase "silently succeeds" if the user already exists to prevent email enumeration.
+            // When this happens, data.user is returned but data.user.identities is an empty array.
+            if (data.user && (!data.user.identities || data.user.identities.length === 0)) {
+                setError(getGermanAuthError("User already registered"));
+                return;
+            }
 
             setMessage("Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach, um deine Adresse zu bestätigen.");
         } catch (err: any) {
