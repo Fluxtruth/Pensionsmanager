@@ -1,5 +1,6 @@
 import { initDb, DatabaseMock } from "./db";
 import { supabase } from "./supabase/client";
+import { syncEvents } from "./sync-events";
 
 export interface SyncStatus {
   lastSync: string | null;
@@ -274,21 +275,13 @@ export class SyncService {
       // First, update our own device's heartbeat and check if we are revoked
       await this.registerCurrentDevice();
 
+      syncEvents.emit("sync-started");
+
       let tablesProcessed = 0;
       let totalUpdated = 0;
 
-      // 1. PULL PHASE (Cloud -> Local)
-      // Pull all tables to ensure local DB matches remote state (especially for seed data)
-      const pullTables = TABLES_TO_SYNC.filter(t => t !== 'connected_devices'); // connected_devices is special, we handle it separately
-      for (const table of pullTables) {
-         try {
-           await this.pullTable(table);
-         } catch (e) {
-           console.error(`[Sync] Pull failed for table ${table}:`, e);
-         }
-      }
-
-      // 2. PUSH PHASE (Local -> Cloud)
+      // 1. PUSH PHASE (Local -> Cloud)
+      // We push first to ensure local changes are safe in the cloud before pulling potential conflicts
       for (const table of TABLES_TO_SYNC) {
         // Fetch pending rows. We compare timestamps if synced_at exists.
         const pendingRows = await db.select<any>(
@@ -314,6 +307,7 @@ export class SyncService {
 
           if (upsertError) {
             console.error(`[Sync] Supabase Upsert Error for ${table}:`, JSON.stringify(upsertError, null, 2));
+            syncEvents.emit("sync-failed", upsertError.message);
             return { 
               success: false, 
               error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message || 'FK-Verletzung oder RLS-Block'}. Details: ${JSON.stringify(upsertError)}` 
@@ -328,7 +322,7 @@ export class SyncService {
             const idValue = row[idField];
             
             try {
-              const updateResult = await db.execute(
+              await db.execute(
                 `UPDATE ${table} SET synced_at = ?, pension_id = ? WHERE ${idField} = ?`,
                 [now, pensionId, idValue]
               );
@@ -343,14 +337,32 @@ export class SyncService {
 
         tablesProcessed++;
         if (onProgress) {
-          onProgress(Math.round((tablesProcessed / TABLES_TO_SYNC.length) * 100));
+          onProgress(Math.round((tablesProcessed / TABLES_TO_SYNC.length) * 50)); // First 50% for push
         }
       }
 
-      console.log(`[Sync] Process complete. Total rows updated: ${totalUpdated}`);
+      // 2. PULL PHASE (Cloud -> Local)
+      // Pull all tables to ensure local DB matches remote state
+      const pullTables = TABLES_TO_SYNC.filter(t => t !== 'connected_devices');
+      let pullCount = 0;
+      for (const table of pullTables) {
+         try {
+           await this.pullTable(table);
+           pullCount++;
+           if (onProgress) {
+             onProgress(Math.round(50 + (pullCount / pullTables.length) * 50));
+           }
+         } catch (e) {
+           console.error(`[Sync] Pull failed for table ${table}:`, e);
+         }
+      }
+
+      console.log(`[Sync] Process complete. Total rows pushed: ${totalUpdated}`);
+      syncEvents.emit("sync-completed", { totalUpdated });
       return { success: true };
     } catch (error: any) {
       console.error("[Sync] process failed:", error);
+      syncEvents.emit("sync-failed", error.message);
       return { success: false, error: error.message || "Unbekannter Fehler während der Synchronisation" };
     }
   }

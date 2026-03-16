@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { BedDouble, Bed, Home as HomeIcon, Users, User, LogIn, LogOut, CheckCircle2, ChevronRight, Edit2, AlertTriangle, XCircle } from "lucide-react";
 import { initDb, type DatabaseMock } from "@/lib/db";
 import { SyncService } from "@/lib/sync";
+import { syncEvents } from "@/lib/sync-events";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -140,6 +141,17 @@ export default function Home() {
   useEffect(() => {
     loadData();
   }, [today]);
+
+  // Automatic refresh when sync completes
+  useEffect(() => {
+    const handleSyncComplete = () => {
+      console.log("[Dashboard] Sync completed, refreshing data...");
+      loadData();
+    };
+
+    syncEvents.on("sync-completed", handleSyncComplete);
+    return () => syncEvents.off("sync-completed", handleSyncComplete);
+  }, []);
 
   const handleQuickCheckIn = (e: React.MouseEvent, id: string, name: string) => {
     e.preventDefault();

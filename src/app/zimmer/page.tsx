@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { BedDouble, Bed, Home, Users, Pencil, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Flower2, Accessibility } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { initDb } from "@/lib/db";
 import { SyncService } from "@/lib/sync";
+import { syncEvents } from "@/lib/sync-events";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ROOM_TYPES } from "@/lib/constants";
@@ -186,13 +187,25 @@ export default function RoomsPage() {
         }
     };
 
-    useEffect(() => {
-        const setup = async () => {
-            await loadRooms();
-            setIsDbReady(true);
-        };
-        setup();
+    const loadData = useCallback(async () => {
+        await loadRooms();
+        setIsDbReady(true);
     }, []);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
+    // Automatic refresh when sync completes
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            console.log("[Rooms] Sync completed, refreshing data...");
+            loadData();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => syncEvents.off("sync-completed", handleSyncComplete);
+    }, [loadData]);
 
     const loadRoomBookings = async (roomId: string) => {
         try {
