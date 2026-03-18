@@ -139,7 +139,7 @@ export default function RoomsPage() {
                 }
 
                 // 1. Fetch all rooms for this pension
-                const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ?", [pensionId]);
+                const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [pensionId]);
                 
                 // 2. Fetch all active bookings for these rooms for today
                 const activeBookings = await db.select<any[]>(`
@@ -263,16 +263,23 @@ export default function RoomsPage() {
                 const pensionId = await SyncService.getInstance().getPensionId();
                 if (!pensionId) return;
 
-                await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+                const now = new Date().toISOString();
+                await db.execute("INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
                     newRoomId,
                     name,
                     type,
                     0, // base_price
                     isAllergyFriendly,
                     isAccessible,
-                    pensionId
+                    pensionId,
+                    now
                 ]);
                 await loadRooms();
+                
+                // Trigger sync immediately
+                SyncService.getInstance().performSync();
+                
+                setIsOpen(false);
                 setIsOpen(false);
                 setNewRoomId("");
                 form.reset();
@@ -309,6 +316,7 @@ export default function RoomsPage() {
                 const pensionId = await SyncService.getInstance().getPensionId();
                 if (!pensionId) return;
 
+                const now = new Date().toISOString();
                 if (idChanged) {
                     // Final check before insertion
                     const exists = rooms.some(r => r.id === newId);
@@ -320,8 +328,8 @@ export default function RoomsPage() {
 
                     // 1. Create the new room record first
                     await db.execute(
-                        "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [newId, name, type, 0, isAllergyFriendly, isAccessible, pensionId]
+                        "INSERT INTO rooms (id, name, type, base_price, is_allergy_friendly, is_accessible, pension_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [newId, name, type, 0, isAllergyFriendly, isAccessible, pensionId, now]
                     );
 
                     // 2. Update all related tables that reference this room_id
@@ -330,16 +338,19 @@ export default function RoomsPage() {
                     await db.execute("UPDATE cleaning_tasks SET room_id = ? WHERE room_id = ? AND pension_id = ?", [newId, editingRoom.id, pensionId]);
 
                     // 3. Delete the old room record
-                    await db.execute("DELETE FROM rooms WHERE id = ? AND pension_id = ?", [editingRoom.id, pensionId]);
+                    await db.execute("UPDATE rooms SET is_deleted = 1 WHERE id = ? AND pension_id = ?", [editingRoom.id, pensionId]);
                 } else {
                     // Standard update if ID didn't change
                     await db.execute(
-                        "UPDATE rooms SET name = ?, type = ?, base_price = ?, is_allergy_friendly = ?, is_accessible = ? WHERE id = ? AND pension_id = ?",
-                        [name, type, 0, isAllergyFriendly, isAccessible, editingRoom.id, pensionId]
+                        "UPDATE rooms SET name = ?, type = ?, base_price = ?, is_allergy_friendly = ?, is_accessible = ?, updated_at = ? WHERE id = ? AND pension_id = ?",
+                        [name, type, 0, isAllergyFriendly, isAccessible, now, editingRoom.id, pensionId]
                     );
                 }
 
                 await loadRooms();
+                
+                // Trigger sync immediately
+                SyncService.getInstance().performSync();
                 setIsConfigOpen(false);
                 setEditingRoom(null);
             }

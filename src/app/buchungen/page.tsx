@@ -71,7 +71,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
+import { SyncService } from "@/lib/sync";
 import { Switch } from "@/components/ui/switch";
+import { syncEvents } from "@/lib/sync-events";
 import { NationalitySelector } from "@/components/NationalitySelector";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
@@ -413,19 +415,24 @@ function BookingsList() {
         try {
             const db = await initDb();
             if (db) {
+                const pensionId = typeof window !== 'undefined' ? localStorage.getItem("app_last_pension_id") : null;
+
                 const bookingResults = await db.select<Booking[]>(`
-                    SELECT b.*, g.name as guest_name, g.phone as guest_phone, g.email as guest_email, g.company as guest_company, r.name as room_name, bg.name as group_name
-                    FROM bookings b 
+                    SELECT b.*, g.name as guest_name, g.phone as guest_phone, g.email as guest_email, g.company as guest_company, 
+                    r.name as room_name, bg.name as group_name
+                    FROM bookings b
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN rooms r ON b.room_id = r.id
                     LEFT JOIN booking_groups bg ON b.group_id = bg.id
-                `);
+                    WHERE (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                    AND (b.pension_id = ? OR ? IS NULL)
+                `, [pensionId, pensionId]);
                 setBookings(bookingResults || []);
 
                 const [roomResults, guestResults, groupResults] = await Promise.all([
-                    db.select<Room[]>("SELECT * FROM rooms"),
-                    db.select<Guest[]>("SELECT * FROM guests"),
-                    db.select<BookingGroup[]>("SELECT * FROM booking_groups")
+                    db.select<Room[]>("SELECT * FROM rooms WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)", [pensionId, pensionId]),
+                    db.select<Guest[]>("SELECT * FROM guests WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)", [pensionId, pensionId]),
+                    db.select<BookingGroup[]>("SELECT * FROM booking_groups WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)", [pensionId, pensionId])
                 ]);
 
                 setRooms(roomResults || []);
@@ -554,7 +561,7 @@ function BookingsList() {
             const db = await initDb();
             if (db) {
                 const results = await db.select<BreakfastOption[]>(
-                    "SELECT * FROM breakfast_options WHERE booking_id = ?",
+                    "SELECT * FROM breakfast_options WHERE booking_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)",
                     [bookingId]
                 );
                 setBreakfastOptions(results || []);
@@ -613,6 +620,7 @@ function BookingsList() {
                 );
 
                 await loadData();
+                syncEvents.emit("local-data-updated");
                 setIsCheckOutOpen(false);
                 setCheckOutBooking(null);
             }
@@ -676,7 +684,8 @@ function BookingsList() {
                                thisGroupId = existingGroup.id;
                            } else {
                                const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                               await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [newId, newName]);
+                               const pensionId = await SyncService.getInstance().getPensionId();
+                               await db.execute("INSERT INTO booking_groups (id, name, pension_id) VALUES (?, ?, ?)", [newId, newName, pensionId]);
                                thisGroupId = newId;
                                // Refresh groups locally to prevent creating duplicates if multiple tabs use the same new group name
                                groups.push({ id: newId, name: newName });
@@ -706,9 +715,10 @@ function BookingsList() {
                         const firstName = parts.join(' ');
 
                         const newGuestId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                        const pensionIdForGuest = await SyncService.getInstance().getPensionId();
                         await db.execute(
-                            "INSERT INTO guests (id, name, first_name, last_name) VALUES (?, ?, ?, ?)",
-                            [newGuestId, newGuestName, firstName, lastName]
+                            "INSERT INTO guests (id, name, first_name, last_name, pension_id) VALUES (?, ?, ?, ?, ?)",
+                            [newGuestId, newGuestName, firstName, lastName, pensionIdForGuest]
                         );
                         thisGuestId = newGuestId;
                     }
@@ -737,9 +747,11 @@ function BookingsList() {
                         }
                     }
 
+                    const currentPensionId = await SyncService.getInstance().getPensionId();
+
                     if (subExists) {
                         await db.execute(
-                            "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ?, is_main_guest = ?, notes = ? WHERE id = ?",
+                            "UPDATE bookings SET room_id = ?, guest_id = ?, occasion = ?, start_date = ?, end_date = ?, status = ?, payment_status = ?, estimated_arrival_time = ?, group_id = ?, is_family_room = ?, has_dog = ?, is_allergy_friendly = ?, has_mobility_impairment = ?, guests_per_room = ?, stay_type = ?, dog_count = ?, child_count = ?, extra_bed_count = ?, is_main_guest = ?, notes = ?, pension_id = ? WHERE id = ?",
                             [
                                 b.room_id || null,
                                 thisGuestId || null,
@@ -749,7 +761,7 @@ function BookingsList() {
                                 b.status,
                                 b.payment_status,
                                 b.estimated_arrival_time,
-                                thisGroupId || null, // Already handles null for db 
+                                thisGroupId || null, 
                                 b.is_family_room,
                                 b.has_dog,
                                 b.is_allergy_friendly,
@@ -761,13 +773,14 @@ function BookingsList() {
                                 b.extra_bed_count,
                                 b.is_main_guest || 0,
                                 b.notes || "",
+                                currentPensionId,
                                 b.id
                             ]
                         );
                     } else {
                         // INSERT
                         await db.execute(
-                            "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest, notes, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             [
                                 b.id,
                                 b.room_id || null,
@@ -790,9 +803,19 @@ function BookingsList() {
                                 b.extra_bed_count,
                                 b.is_main_guest || 0,
                                 b.notes || "",
-                                b.id
+                                currentPensionId
                             ]
                         );
+
+                        // Save Breakfast for newly created booking in group
+                        const days = getDaysArray(b.start_date, b.end_date);
+                        for (const date of days) {
+                            const bId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                            await db.execute(
+                                "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                [bId, b.id, date, 1, "08:00", 1, "", 0, "automatisch", 1, currentPensionId]
+                            );
+                        }
                     }
                 }
 
@@ -818,6 +841,7 @@ function BookingsList() {
                 }
 
                 await loadData();
+                syncEvents.emit("local-data-updated");
                 setIsEditOpen(false);
                 setEditingBooking(null);
             }
@@ -839,6 +863,7 @@ function BookingsList() {
                     if (db) {
                         await db.execute("UPDATE bookings SET status = 'Storniert' WHERE id = ?", [id]);
                         await loadData();
+                        syncEvents.emit("local-data-updated");
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }
                 } catch (error) {
@@ -859,9 +884,10 @@ function BookingsList() {
                 try {
                     const db = await initDb();
                     if (db) {
-                        await db.execute("DELETE FROM breakfast_options WHERE booking_id = ?", [id]);
-                        await db.execute("DELETE FROM bookings WHERE id = ?", [id]);
+                        await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE booking_id = ?", [id]);
+                        await db.execute("UPDATE bookings SET is_deleted = 1 WHERE id = ?", [id]);
                         await loadData();
+                        syncEvents.emit("local-data-updated");
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }
                 } catch (error) {
@@ -882,12 +908,13 @@ function BookingsList() {
                 // Delete breakfast options for all bookings in group
                 const groupBookings = bookings.filter(b => b.group_id === groupId);
                 for (const b of groupBookings) {
-                    await db.execute("DELETE FROM breakfast_options WHERE booking_id = ?", [b.id]);
+                    await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE booking_id = ?", [b.id]);
                 }
-                await db.execute("DELETE FROM bookings WHERE group_id = ?", [groupId]);
-                await db.execute("DELETE FROM booking_groups WHERE id = ?", [groupId]);
+                await db.execute("UPDATE bookings SET is_deleted = 1 WHERE group_id = ?", [groupId]);
+                await db.execute("UPDATE booking_groups SET is_deleted = 1 WHERE id = ?", [groupId]);
             }
             await loadData();
+            syncEvents.emit("local-data-updated");
             setIsGroupDeleteOpen(false);
             setDeletingGroup(null);
         } catch (error) {
@@ -925,9 +952,10 @@ function BookingsList() {
                         await db.execute(`UPDATE breakfast_options SET ${fields} WHERE id = ?`, [...values, existing.id]);
                     }
                 } else if (updates.is_included !== 0) {
+                    const pensionId = await SyncService.getInstance().getPensionId();
                     await db.execute(
-                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, updates.is_included ?? 0, updates.time ?? "08:00", updates.guest_count ?? 1, updates.comments ?? "", 0, "auto", 0]
+                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, updates.is_included ?? 0, updates.time ?? "08:00", updates.guest_count ?? 1, updates.comments ?? "", 0, "auto", 0, pensionId]
                     );
                 }
                 await loadBreakfast(editingBooking.id);
@@ -942,9 +970,10 @@ function BookingsList() {
         try {
             const db = await initDb();
             if (db) {
+                const pensionId = await SyncService.getInstance().getPensionId();
                 await db.execute(
-                    "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, 1, "08:00", 1, "", 0, "manuell", 1]
+                    "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, 1, "08:00", 1, "", 0, "manuell", 1, pensionId]
                 );
                 await loadBreakfast(editingBooking.id);
             }
@@ -958,7 +987,7 @@ function BookingsList() {
         try {
             const db = await initDb();
             if (db) {
-                await db.execute("DELETE FROM breakfast_options WHERE id = ?", [id]);
+                await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE id = ?", [id]);
                 await loadBreakfast(editingBooking.id);
             }
         } catch (error) {
@@ -1219,9 +1248,10 @@ function BookingsList() {
         try {
             const db = await initDb();
             if (db) {
+                const pensionId = await SyncService.getInstance().getPensionId();
                 await db.execute(
-                    "INSERT INTO guests (id, name, first_name, last_name, email, phone, company, contact_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    [id, fullName, firstName, lastName, email, phone, company, `${email} / ${phone}`]
+                    "INSERT INTO guests (id, name, first_name, last_name, email, phone, company, contact_info, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [id, fullName, firstName, lastName, email, phone, company, `${email} / ${phone}`, pensionId]
                 );
                 await loadData();
                 setWizardData(prev => ({ ...prev, guestId: id, guestName: fullName }));
@@ -1238,6 +1268,8 @@ function BookingsList() {
             const db = await initDb();
             if (!db) return;
 
+            const pensionId = await SyncService.getInstance().getPensionId();
+
             // 1. Resolve Group ID (Once for all tabs)
             // Use the first tab as the "Main" source for group info
             const mainTabData = wizardTabs[0].data;
@@ -1249,7 +1281,7 @@ function BookingsList() {
                     finalGroupId = existingGroup.id;
                 } else {
                     finalGroupId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
-                    await db.execute("INSERT INTO booking_groups (id, name) VALUES (?, ?)", [finalGroupId, mainTabData.newGroupName]);
+                    await db.execute("INSERT INTO booking_groups (id, name, pension_id) VALUES (?, ?, ?)", [finalGroupId, mainTabData.newGroupName, pensionId]);
                 }
             }
 
@@ -1286,7 +1318,7 @@ function BookingsList() {
             // Check if group already has a main guest
             let groupHasMainGuest = false;
             if (groupIdToUse) {
-                const existingMain = await db.select("SELECT id FROM bookings WHERE group_id = ? AND is_main_guest = 1 LIMIT 1", [groupIdToUse]);
+                const existingMain = await db.select("SELECT id FROM bookings WHERE group_id = ? AND is_main_guest = 1 AND (is_deleted = 0 OR is_deleted IS NULL) LIMIT 1", [groupIdToUse]);
                 if (existingMain && (existingMain as any[]).length > 0) {
                     groupHasMainGuest = true;
                 }
@@ -1300,8 +1332,8 @@ function BookingsList() {
                 const finalGuestId = data.guestId || mainGuestId;
 
                 await db.execute(
-                    "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [bookingId, data.roomId, finalGuestId, data.occasion, data.startDate, data.endDate, data.status || "Draft", "Offen", data.arrivalTime, groupIdToUse, data.isFamilyRoom ? 1 : 0, data.dogCount > 0 ? 1 : 0, data.isAllergyFriendly ? 1 : 0, data.hasMobilityImpairment ? 1 : 0, data.guestsPerRoom, data.stayType, data.dogCount, data.childCount, data.extraBedCount, (tab.id === wizardTabs[0].id && !groupHasMainGuest) ? 1 : 0, data.notes || ""]
+                    "INSERT INTO bookings (id, room_id, guest_id, occasion, start_date, end_date, status, payment_status, estimated_arrival_time, group_id, is_family_room, has_dog, is_allergy_friendly, has_mobility_impairment, guests_per_room, stay_type, dog_count, child_count, extra_bed_count, is_main_guest, notes, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [bookingId, data.roomId, finalGuestId, data.occasion, data.startDate, data.endDate, data.status || "Draft", "Offen", data.arrivalTime, groupIdToUse, data.isFamilyRoom ? 1 : 0, data.dogCount > 0 ? 1 : 0, data.isAllergyFriendly ? 1 : 0, data.hasMobilityImpairment ? 1 : 0, data.guestsPerRoom, data.stayType, data.dogCount, data.childCount, data.extraBedCount, (groupIdToUse && tab.id === wizardTabs[0].id && !groupHasMainGuest) ? 1 : 0, data.notes || "", pensionId]
                 );
 
                 // Save Breakfast
@@ -1312,8 +1344,8 @@ function BookingsList() {
                     if (dayOptions.length > 0) {
                         for (const opt of dayOptions) {
                             await db.execute(
-                                "INSERT INTO breakfast_options (id, booking_id, date, time, comments, is_included, is_prepared, guest_count, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1]
+                                "INSERT INTO breakfast_options (id, booking_id, date, time, comments, is_included, is_prepared, guest_count, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1, pensionId]
                             );
                         }
                     }
@@ -1322,6 +1354,7 @@ function BookingsList() {
 
             // 4. Cleanup & Success
             await loadData();
+            syncEvents.emit("local-data-updated");
             setIsBookingOpen(false);
 
             if (wizardTabs.some(t => t.data.status === "Hard-Booked")) {
@@ -1581,7 +1614,7 @@ function BookingsList() {
                                                     />
                                                 ) : (
                                                     <div className="flex items-center gap-1.5">
-                                                        {tab.id === wizardTabs[0].id && (
+                                                        {tab.id === wizardTabs[0].id && (wizardTabs[0].data.groupId && wizardTabs[0].data.groupId !== "none") && (
                                                             <Crown className="w-4 h-4 text-amber-500 fill-amber-500 mr-1.5 shrink-0" />
                                                         )}
                                                         <span className="truncate max-w-[120px]">{tab.label}</span>
@@ -2603,7 +2636,7 @@ function BookingsList() {
                                                                     : "text-zinc-900 hover:text-blue-600"
                                                             )}
                                                         >
-                                                            {booking.is_main_guest === 1 && (
+                                                            {booking.is_main_guest === 1 && booking.group_id && booking.group_id !== "none" && (
                                                                 <span title="Hauptgast" className="flex items-center">
                                                                     <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 mr-1.5 shrink-0" />
                                                                 </span>
@@ -2864,7 +2897,7 @@ function BookingsList() {
                                         tab.booking.status === "Storniert" ? "bg-red-500" :
                                             "bg-zinc-300"
                                 )} />
-                                {tab.booking.is_main_guest === 1 && (
+                                {tab.booking.is_main_guest === 1 && tab.booking.group_id && tab.booking.group_id !== "none" && (
                                     <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
                                 )}
                                 {tab.label}
@@ -3035,33 +3068,31 @@ function BookingsList() {
                                                 <div className="relative group">
                                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
                                                     <Input
-                                                        placeholder={editingBooking.is_main_guest === 1 ? "Gruppe suchen oder erstellen..." : "Gruppe fest durch Hauptgast vorgegeben"}
+                                                        placeholder={(editingBooking.is_main_guest === 1 || !editingBooking.group_id || editingBooking.group_id === "none") ? "Gruppe suchen oder erstellen..." : "Gruppe fest durch Hauptgast vorgegeben"}
                                                         className={cn(
                                                             "pl-9 h-10 shadow-sm transition-all border-zinc-200 focus:border-blue-500 focus:ring-blue-500/20",
-                                                            editingBooking.is_main_guest !== 1 && "bg-zinc-50 opacity-70 cursor-not-allowed"
+                                                            (editingBooking.group_id && editingBooking.group_id !== "none" && editingBooking.is_main_guest !== 1) && "bg-zinc-50 opacity-70 cursor-not-allowed"
                                                         )}
-                                                        disabled={editingBooking.is_main_guest !== 1}
+                                                        disabled={Boolean(editingBooking.group_id && editingBooking.group_id !== "none" && editingBooking.is_main_guest !== 1)}
                                                         value={editGroupSearch}
-                                                        onFocus={() => editingBooking.is_main_guest === 1 && setIsEditGroupSearchFocused(true)}
+                                                        onFocus={() => (editingBooking.is_main_guest === 1 || !editingBooking.group_id || editingBooking.group_id === "none") && setIsEditGroupSearchFocused(true)}
                                                         onBlur={() => setTimeout(() => setIsEditGroupSearchFocused(false), 200)}
                                                         onChange={(e) => {
-                                                            if (editingBooking.is_main_guest !== 1) return;
+                                                            if (editingBooking.group_id && editingBooking.group_id !== "none" && editingBooking.is_main_guest !== 1) return;
                                                             setEditGroupSearch(e.target.value);
                                                             if (e.target.value === "") {
-                                                                setEditingBooking(prev => prev ? ({...prev, group_id: "none"}) : null);
+                                                                setEditingBooking(prev => prev ? ({...prev, group_id: "none", is_main_guest: 0}) : null);
                                                                 setEditNewGroupName("");
-
                                                             } else {
                                                                 const match = groups.find(g => g.name.toLowerCase() === e.target.value.toLowerCase());
                                                                 if (match) {
-                                                                    setEditingBooking(prev => prev ? ({...prev, group_id: match.id}) : null);
+                                                                    setEditingBooking(prev => prev ? ({...prev, group_id: match.id, is_main_guest: 0}) : null);
                                                                     setEditNewGroupName("");
                                                                 } else {
-                                                                    setEditingBooking(prev => prev ? ({...prev, group_id: "new"}) : null);
+                                                                    setEditingBooking(prev => prev ? ({...prev, group_id: "new", is_main_guest: 1}) : null);
                                                                     setEditNewGroupName(e.target.value);
                                                                 }
                                                             }
-
                                                         }}
                                                     />
 

@@ -290,28 +290,29 @@ export default function KalenderPage() {
             const db = await initDb();
             if (!db) return;
 
+            const pensionId = typeof window !== 'undefined' ? localStorage.getItem("app_last_pension_id") : null;
+
             const fetchedRooms = await db.select<Room[]>(
-                "SELECT id, name, type FROM rooms ORDER BY name"
+                "SELECT id, name, type FROM rooms WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY name"
             );
             setRooms(fetchedRooms);
 
             // Fetch bookings that overlap with our 14 day window or are just generally active
-            // For simplicity, let's fetch active bookings (not far past)
-            // Ideally we filter by date range in SQL, but let's fetch all relevant ones for now to be safe with "rolling" view
-            const today = new Date().toISOString().split('T')[0];
+            const todayStr = new Date().toISOString().split('T')[0];
             const fetchedBookings = await db.select<Booking[]>(`
                 SELECT 
                     b.id, b.room_id, b.guest_id, b.start_date, b.end_date, b.status,
+                    b.occasion,
                     g.name as guest_name,
-                    bg.name as group_name,
-                    o.title as occasion_title
+                    bg.name as group_name
                 FROM bookings b
                 LEFT JOIN guests g ON b.guest_id = g.id
                 LEFT JOIN booking_groups bg ON b.group_id = bg.id
-                LEFT JOIN occasions o ON b.occasion_id = o.id
-                WHERE b.end_date >= ?
+                WHERE (b.end_date >= ? OR b.status = 'Draft')
+                  AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                  AND (b.pension_id = ? OR ? IS NULL)
                 ORDER BY b.start_date
-            `, [today]);
+            `, [todayStr, pensionId, pensionId]);
 
             setBookings(fetchedBookings);
 

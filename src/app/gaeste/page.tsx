@@ -72,7 +72,7 @@ function GuestsList() {
             const db = await initDb();
             if (db) {
                 setIsDbReady(true);
-                const results = await db.select<Guest[]>("SELECT * FROM guests ORDER BY last_name ASC, first_name ASC");
+                const results = await db.select<Guest[]>("SELECT * FROM guests WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY last_name ASC, first_name ASC");
                 if (results) setGuests(results);
             }
         } catch (error) {
@@ -190,9 +190,9 @@ function GuestsList() {
                         }
 
                         // Automatische Bereinigung alter Anlässe (Legacy-Daten), um Gastlöschung zu ermöglichen
-                        await db.execute("DELETE FROM occasions WHERE main_guest_id = ?", [id]);
+                        await db.execute("UPDATE occasions SET is_deleted = 1 WHERE main_guest_id = ?", [id]);
 
-                        await db.execute("DELETE FROM guests WHERE id = ?", [id]);
+                        await db.execute("UPDATE guests SET is_deleted = 1 WHERE id = ?", [id]);
                         await loadGuests();
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }

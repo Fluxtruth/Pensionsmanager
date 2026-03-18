@@ -39,7 +39,7 @@ export default function AccountPage() {
                     setLocalPensionId(pId || null);
 
                     const settingsRes = await db.select<any[]>(
-                        "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ?",
+                        "SELECT key, value FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)",
                         [pId]
                     );
                     const pinVal = settingsRes.find(s => s.key === 'app_pin')?.value;
@@ -115,7 +115,7 @@ export default function AccountPage() {
             if (db) {
                 const now = new Date().toISOString();
                 // We try deleting for the specific pension_id, but also generally for safety if ID was null before
-                await db.execute("DELETE FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)", [localPensionId]);
+                await db.execute("UPDATE settings SET is_deleted = 1 WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)", [localPensionId]);
                 setPin(null);
                 setIsPinEnabled(true);
                 setPinError(null);

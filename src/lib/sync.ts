@@ -295,8 +295,17 @@ export class SyncService {
           // Wir stellen sicher, dass pension_id gesetzt ist
           const uploadData = pendingRows.map((row: any) => {
             const { synced_at, ...data } = row;
+            
+            // Convert 0/1 to boolean for Supabase for all 'is_' columns
+            const processedData: any = { ...data };
+            Object.keys(processedData).forEach(key => {
+              if (key.startsWith('is_') && (processedData[key] === 0 || processedData[key] === 1)) {
+                processedData[key] = processedData[key] === 1;
+              }
+            });
+            
             return {
-              ...data,
+              ...processedData,
               pension_id: data.pension_id || pensionId
             };
           });
@@ -403,20 +412,35 @@ export class SyncService {
           const remoteTime = new Date(row.updated_at || 0).getTime();
 
           if (remoteTime > localTime && (localRow.synced_at !== null || remoteTime > localTime)) {
-            const columns = Object.keys(row).filter(col => col !== idField && col !== 'synced_at');
+            // Processing row for local SQLite (bool -> int for is_ columns)
+            const processedRow = { ...row };
+            Object.keys(processedRow).forEach(key => {
+              if (key.startsWith('is_') && typeof processedRow[key] === 'boolean') {
+                processedRow[key] = processedRow[key] ? 1 : 0;
+              }
+            });
+
+            const columns = Object.keys(processedRow).filter(col => col !== idField && col !== 'synced_at');
             const setStatement = columns.map(col => `${col} = ?`).join(", ");
-            const values = columns.map(col => row[col]);
+            const values = columns.map(col => processedRow[col]);
             
             await db.execute(
               `UPDATE ${tableName} SET ${setStatement}, synced_at = ? WHERE ${idField} = ?`,
-              [...values, now, row[idField]]
+              [...values, now, processedRow[idField]]
             );
           }
         } else {
-          // New row localy
-          const columns = Object.keys(row).filter(c => c !== 'synced_at');
+          // New row locally
+          const processedRow = { ...row };
+          Object.keys(processedRow).forEach(key => {
+            if (key.startsWith('is_') && typeof processedRow[key] === 'boolean') {
+              processedRow[key] = processedRow[key] ? 1 : 0;
+            }
+          });
+
+          const columns = Object.keys(processedRow).filter(c => c !== 'synced_at');
           const placeholders = columns.map(() => "?").join(", ");
-          const values = columns.map(col => row[col]);
+          const values = columns.map(col => processedRow[col]);
           
           await db.execute(
             `INSERT INTO ${tableName} (${columns.join(", ")}, synced_at) VALUES (${placeholders}, ?)`,

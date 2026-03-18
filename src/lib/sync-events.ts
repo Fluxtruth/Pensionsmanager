@@ -1,4 +1,4 @@
-type SyncEvent = "sync-started" | "sync-completed" | "sync-failed";
+type SyncEvent = "sync-started" | "sync-completed" | "sync-failed" | "local-data-updated";
 
 type SyncCallback = (data?: any) => void;
 

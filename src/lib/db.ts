@@ -171,17 +171,29 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
                 const idField = table === 'settings' ? 'key' : 'id';
                 const idMatch = query.match(/WHERE\s+(\w+)\s*=\s*\?/i);
                 if (idMatch) {
-                    const idValue = params?.[params.length - 1];
-                    const targetIdx = mockData[table].findIndex(item => String(item[idField]) === String(idValue));
-                    if (targetIdx !== -1) {
+                    // Find which parameter index corresponds to the ID field
+                    // This is a simplified mock - we assume the first ? after WHERE is the ID
+                    const wherePart = query.split(/WHERE/i)[1] || "";
+                    const whereConditions = wherePart.split(/AND/i).map(c => c.trim().toLowerCase());
+                    const idParamIdxInWhere = whereConditions.findIndex(c => c.includes(`${idField.toLowerCase()} = ?`) || c.includes(`${idField.toLowerCase()}=?`));
+                    
+                    if (idParamIdxInWhere !== -1) {
                         const setPart = query.match(/SET\s+(.+?)\s+WHERE/i)?.[1] || "";
-                        const assignments = setPart.split(",").map(a => a.trim().toLowerCase());
-                        assignments.forEach((a, i) => {
-                            if (a.includes("=?") || a.includes("= ?")) {
-                                const col = a.split("=")[0].trim();
-                                mockData[table][targetIdx][col] = params?.[i];
-                            }
-                        });
+                        const setParamsCount = (setPart.match(/\?/g) || []).length;
+                        const idValue = params?.[setParamsCount + idParamIdxInWhere];
+                        
+                        const targetIdx = mockData[table].findIndex(item => String(item[idField]) === String(idValue));
+                        if (targetIdx !== -1) {
+                            const assignments = setPart.split(",").map(a => a.trim().toLowerCase());
+                            let paramIdx = 0;
+                            assignments.forEach((a) => {
+                                if (a.includes("=?") || a.includes("= ?")) {
+                                    const col = a.split("=")[0].trim();
+                                    mockData[table][targetIdx][col] = params?.[paramIdx++];
+                                }
+                            });
+                            return { rowsAffected: 1, lastInsertId: 0 } as unknown as T;
+                        }
                     }
                 }
             }
@@ -295,7 +307,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT
       );
 
@@ -306,7 +318,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         base_price REAL DEFAULT 0,
         is_allergy_friendly INTEGER DEFAULT 0,
         is_accessible INTEGER DEFAULT 0,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         pension_id TEXT
       );
@@ -321,7 +333,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
        CREATE TABLE IF NOT EXISTS room_configs (
         id TEXT PRIMARY KEY, room_id TEXT NOT NULL, attributes TEXT, base_price REAL,
         available_from TEXT, available_until TEXT, is_default INTEGER DEFAULT 0,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id)
       );
@@ -331,7 +343,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         last_name TEXT, email TEXT, phone TEXT, company TEXT, notes TEXT,
         contact_info TEXT, identity_doc_info TEXT, preferences TEXT,
         relationships TEXT, total_revenue REAL DEFAULT 0,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         pension_id TEXT
       );
@@ -346,14 +358,14 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
        CREATE TABLE IF NOT EXISTS booking_groups (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS occasions (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, type TEXT, status TEXT,
         main_guest_id TEXT, room_suggestions TEXT,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         FOREIGN KEY (main_guest_id) REFERENCES guests(id)
       );
@@ -368,7 +380,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         guests_per_room INTEGER DEFAULT 1, stay_type TEXT DEFAULT 'private',
         dog_count INTEGER DEFAULT 0, child_count INTEGER DEFAULT 0, extra_bed_count INTEGER DEFAULT 0,
         is_main_guest INTEGER DEFAULT 0, notes TEXT,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (guest_id) REFERENCES guests(id),
@@ -378,7 +390,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
       
       CREATE TABLE IF NOT EXISTS staff (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT, daily_capacity INTEGER,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT
       );
 
@@ -386,7 +398,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         id TEXT PRIMARY KEY, room_id TEXT, staff_id TEXT, date TEXT, status TEXT,
         is_exception INTEGER DEFAULT 0, original_date TEXT, title TEXT,
         task_type TEXT DEFAULT 'cleaning',
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
         FOREIGN KEY (staff_id) REFERENCES staff(id)
@@ -394,7 +406,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
 
       CREATE TABLE IF NOT EXISTS cleaning_task_suggestions (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, weekday INTEGER, frequency_weeks INTEGER DEFAULT 1,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT
       );
 
@@ -402,7 +414,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         id TEXT PRIMARY KEY, booking_id TEXT, date TEXT, is_included INTEGER DEFAULT 0,
         is_prepared INTEGER DEFAULT 0, guest_count INTEGER DEFAULT 1, time TEXT,
         comments TEXT,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         FOREIGN KEY (booking_id) REFERENCES bookings(id)
       );
@@ -410,7 +422,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT,
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         pension_id TEXT
       );
@@ -423,7 +435,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         status TEXT DEFAULT 'active',
         is_leading_db INTEGER DEFAULT 0,
         last_seen_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         pension_id TEXT,
         UNIQUE(device_id)
@@ -461,6 +473,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN synced_at TEXT`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN pension_id TEXT`); } catch (e) { }
+      try { await db.execute(`ALTER TABLE ${table} ADD COLUMN is_deleted INTEGER DEFAULT 0`); } catch (e) { }
       
       // Add update triggers
       try {
@@ -476,7 +489,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
             (NEW.pension_id IS OLD.pension_id OR (NEW.pension_id IS NOT NULL AND OLD.pension_id IS NULL))
           )
           BEGIN
-            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') 
+            UPDATE ${table} SET updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'
             WHERE ${table === 'settings' ? 'key = OLD.key' : 'id = OLD.id'};
           END;
         `);

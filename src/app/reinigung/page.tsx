@@ -156,10 +156,10 @@ export default function CleaningPage() {
         try {
             const db = await initDb();
             if (db) {
-                const staffResults = await db.select<Staff[]>("SELECT * FROM staff");
+                const staffResults = await db.select<Staff[]>("SELECT * FROM staff WHERE is_deleted = 0 OR is_deleted IS NULL");
                 setStaff(staffResults || []);
 
-                const roomResults = await db.select<Room[]>("SELECT id, name FROM rooms");
+                const roomResults = await db.select<Room[]>("SELECT id, name FROM rooms WHERE is_deleted = 0 OR is_deleted IS NULL");
                 setRooms(roomResults || []);
 
                 const taskResults = await db.select<CleaningTask[]>(`
@@ -167,11 +167,11 @@ export default function CleaningPage() {
                     FROM cleaning_tasks ct
                     LEFT JOIN rooms r ON ct.room_id = r.id
                     LEFT JOIN staff s ON ct.staff_id = s.id
-                    WHERE ct.date = ? OR ct.delayed_from = ?
+                    WHERE (ct.date = ? OR ct.delayed_from = ?) AND (ct.is_deleted = 0 OR ct.is_deleted IS NULL)
                 `, [selectedDate, selectedDate]);
                 setTasks(taskResults || []);
 
-                const suggestionResults = await db.select<TaskSuggestion[]>("SELECT * FROM cleaning_task_suggestions");
+                const suggestionResults = await db.select<TaskSuggestion[]>("SELECT * FROM cleaning_task_suggestions WHERE is_deleted = 0 OR is_deleted IS NULL");
                 setSuggestions(suggestionResults || []);
 
                 // Load Check-Ins for today
@@ -182,7 +182,7 @@ export default function CleaningPage() {
                     FROM bookings b
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN rooms r ON b.room_id = r.id
-                    WHERE b.start_date = ? AND b.status != 'Draft' AND b.status != 'Storniert'
+                    WHERE b.start_date = ? AND b.status != 'Draft' AND b.status != 'Storniert' AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
                 `, [selectedDate]);
                 setCheckIns(checkInResults || []);
 
@@ -194,13 +194,13 @@ export default function CleaningPage() {
                     FROM bookings b
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN rooms r ON b.room_id = r.id
-                    WHERE b.end_date = ? AND b.status != 'Draft'
+                    WHERE b.end_date = ? AND b.status != 'Draft' AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
                 `, [selectedDate]);
                 setCheckouts(checkoutResults || []);
 
                 // Check if generation is needed (Checkouts or Check-Ins)
                 const checkoutsForGen = await db.select<Booking[]>(
-                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft'",
+                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND (is_deleted = 0 OR is_deleted IS NULL)",
                     [selectedDate]
                 );
                 const existingTaskRoomIds = (taskResults || []).filter(t => t.room_id && (t.task_type === 'cleaning' || !t.task_type)).map(t => t.room_id);
@@ -225,7 +225,7 @@ export default function CleaningPage() {
                         FROM cleaning_tasks ct
                         LEFT JOIN rooms r ON ct.room_id = r.id
                         LEFT JOIN staff s ON ct.staff_id = s.id
-                        WHERE ct.date = ? OR ct.delayed_from = ?
+                        WHERE ct.date = ? OR ct.delayed_from = ? AND (ct.is_deleted = 0 OR ct.is_deleted IS NULL)
                     `, [selectedDate, selectedDate]);
                     setTasks(updatedTaskResults || []);
                 }
@@ -256,7 +256,7 @@ export default function CleaningPage() {
                     );
                 } else {
                     await db.execute(
-                        "DELETE FROM cleaning_tasks WHERE room_id = ? AND date = ? AND task_type = ? AND (delayed_from IS NULL OR delayed_from != ?)",
+                        "UPDATE cleaning_tasks SET is_deleted = 1 WHERE room_id = ? AND date = ? AND task_type = ? AND (delayed_from IS NULL OR delayed_from != ?)",
                         [roomId, selectedDate, type, selectedDate]
                     );
                 }
@@ -321,7 +321,7 @@ export default function CleaningPage() {
             const db = await initDb();
             if (db) {
                 const checkouts = await db.select<Booking[]>(
-                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft'",
+                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND (is_deleted = 0 OR is_deleted IS NULL)",
                     [selectedDate]
                 );
 
@@ -446,7 +446,7 @@ export default function CleaningPage() {
                 try {
                     const db = await initDb();
                     if (db) {
-                        await db.execute("DELETE FROM staff WHERE id = ?", [id]);
+                        await db.execute("UPDATE staff SET is_deleted = 1 WHERE id = ?", [id]);
                         await loadData();
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }
@@ -490,7 +490,7 @@ export default function CleaningPage() {
                 try {
                     const db = await initDb();
                     if (db) {
-                        await db.execute("DELETE FROM cleaning_task_suggestions WHERE id = ?", [id]);
+                        await db.execute("UPDATE cleaning_task_suggestions SET is_deleted = 1 WHERE id = ?", [id]);
                         await loadData();
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }
@@ -937,7 +937,7 @@ export default function CleaningPage() {
                                                                         onConfirm: async () => {
                                                                             const db = await initDb();
                                                                             if (db) {
-                                                                                await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [activeTask!.id]);
+                                                                                await db.execute("UPDATE cleaning_tasks SET is_deleted = 1 WHERE id = ?", [activeTask!.id]);
                                                                                 await loadData();
                                                                                 setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                                                                             }
@@ -1246,7 +1246,7 @@ export default function CleaningPage() {
                                                                     onConfirm: async () => {
                                                                         const db = await initDb();
                                                                         if (db) {
-                                                                            await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [task.id]);
+                                                                            await db.execute("UPDATE cleaning_tasks SET is_deleted = 1 WHERE id = ?", [task.id]);
                                                                             await loadData();
                                                                             setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                                                                         }

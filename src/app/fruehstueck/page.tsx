@@ -67,9 +67,10 @@ export default function BreakfastPage() {
                     LEFT JOIN bookings b ON r.id = b.room_id 
                         AND b.status != 'Checked-Out' 
                         AND b.status != 'Draft'
-                        AND ? > b.start_date AND ? <= b.end_date
+                        AND ? > b.start_date AND ? <= b.end_date AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
                     LEFT JOIN guests g ON b.guest_id = g.id
-                    LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND bo.date = ?
+                    LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND bo.date = ? AND (bo.is_deleted = 0 OR bo.is_deleted IS NULL)
+                    WHERE r.is_deleted = 0 OR r.is_deleted IS NULL
                     ORDER BY r.id ASC, bo.time ASC, bo.id ASC
                 `, [selectedDate, selectedDate, selectedDate]);
                 setData(results || []);
@@ -159,7 +160,7 @@ export default function BreakfastPage() {
         try {
             const db = await initDb();
             if (db) {
-                await db.execute("DELETE FROM breakfast_options WHERE id = ?", [breakfastId]);
+                await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE id = ?", [breakfastId]);
                 await loadData();
             }
         } catch (error) {

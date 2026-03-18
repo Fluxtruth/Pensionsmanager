@@ -63,12 +63,12 @@ export default function Home() {
       }
 
         // Load Rooms
-        const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ?", [pensionId]);
+        const roomResults = await db.select<Room[]>("SELECT * FROM rooms WHERE pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [pensionId]);
         // Calculate Room Statuses
         const todayBookings = await db.select<any[]>(`
           SELECT room_id, status, start_date, end_date 
           FROM bookings 
-          WHERE (start_date <= ? AND end_date >= ?) AND pension_id = ?
+          WHERE (start_date <= ? AND end_date >= ?) AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
         `, [today, today, pensionId]);
 
         const roomsWithStatus = roomResults.map(room => {
@@ -102,7 +102,7 @@ export default function Home() {
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
-          WHERE b.start_date = ? AND b.pension_id = ?
+          WHERE b.start_date = ? AND b.pension_id = ? AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
         `, [today, pensionId]);
 
         if (arrivalResults) {
@@ -112,6 +112,7 @@ export default function Home() {
             return aVal - bVal;
           });
           setArrivals(sorted);
+          console.log("[Dashboard] Arrivals updated. Count:", sorted.length);
         }
 
         // Load Today's Departures
@@ -120,7 +121,7 @@ export default function Home() {
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
-          WHERE b.end_date = ? AND b.pension_id = ?
+          WHERE b.end_date = ? AND b.pension_id = ? AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
         `, [today, pensionId]);
 
         if (departureResults) {
@@ -142,15 +143,18 @@ export default function Home() {
     loadData();
   }, [today]);
 
-  // Automatic refresh when sync completes
+  // Automatic refresh when sync completes or local data changes
   useEffect(() => {
-    const handleSyncComplete = () => {
-      console.log("[Dashboard] Sync completed, refreshing data...");
+    const handleRefresh = () => {
       loadData();
     };
 
-    syncEvents.on("sync-completed", handleSyncComplete);
-    return () => syncEvents.off("sync-completed", handleSyncComplete);
+    syncEvents.on("sync-completed", handleRefresh);
+    syncEvents.on("local-data-updated", handleRefresh);
+    return () => {
+      syncEvents.off("sync-completed", handleRefresh);
+      syncEvents.off("local-data-updated", handleRefresh);
+    };
   }, []);
 
   const handleQuickCheckIn = (e: React.MouseEvent, id: string, name: string) => {

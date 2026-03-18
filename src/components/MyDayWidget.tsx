@@ -37,34 +37,34 @@ export function MyDayWidget({ refreshTrigger = 0 }: { refreshTrigger?: number })
                     if (!pensionId) return;
 
                     // Total Check-ins expected today (based on start_date)
-                    const insTotal = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE start_date = ? AND pension_id = ?", [today, pensionId]);
+                    const insTotal = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE start_date = ? AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
                     // Check-ins already done (today's start_date AND status is Checked-In or later)
-                    const insDone = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE start_date = ? AND status IN ('Checked-In', 'Checked-Out') AND pension_id = ?", [today, pensionId]);
+                    const insDone = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE start_date = ? AND status IN ('Checked-In', 'Checked-Out') AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
 
                     // Total Check-outs expected today (based on end_date)
-                    const outsTotal = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE end_date = ? AND pension_id = ?", [today, pensionId]);
+                    const outsTotal = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE end_date = ? AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
                     // Check-outs already done (today's end_date AND status is Checked-Out)
-                    const outsDone = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE end_date = ? AND status = 'Checked-Out' AND pension_id = ?", [today, pensionId]);
+                    const outsDone = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE end_date = ? AND status = 'Checked-Out' AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
 
                     // Count Total Rooms
-                    const rooms = await db.select<any[]>("SELECT COUNT(*) as count FROM rooms WHERE pension_id = ?", [pensionId]);
+                    const rooms = await db.select<any[]>("SELECT COUNT(*) as count FROM rooms WHERE pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [pensionId]);
 
                     // Count Currently Occupied Rooms (Not specifically today's checkins, but overall state)
-                    const occupied = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE status = 'Checked-In' AND pension_id = ?", [pensionId]);
+                    const occupied = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE status = 'Checked-In' AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [pensionId]);
 
                     // Count Draft Bookings
-                    const drafts = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE status = 'Draft' AND pension_id = ?", [pensionId]);
+                    const drafts = await db.select<any[]>("SELECT COUNT(*) as count FROM bookings WHERE status = 'Draft' AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [pensionId]);
 
                     // Breakfast Stats
-                    const bTotalResult = await db.select<any[]>("SELECT SUM(guest_count) as total FROM breakfast_options WHERE date = ? AND is_included = 1 AND pension_id = ?", [today, pensionId]);
-                    const bDoneResult = await db.select<any[]>("SELECT SUM(guest_count) as done FROM breakfast_options WHERE date = ? AND is_included = 1 AND is_prepared = 1 AND pension_id = ?", [today, pensionId]);
+                    const bTotalResult = await db.select<any[]>("SELECT SUM(guest_count) as total FROM breakfast_options WHERE date = ? AND is_included = 1 AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
+                    const bDoneResult = await db.select<any[]>("SELECT SUM(guest_count) as done FROM breakfast_options WHERE date = ? AND is_included = 1 AND is_prepared = 1 AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
 
                     // Cleaning Stats - Simplified and optimized
-                    const cleaningTasks = await db.select<any[]>("SELECT room_id, status FROM cleaning_tasks WHERE date = ? AND pension_id = ?", [today, pensionId]);
+                    const cleaningTasks = await db.select<any[]>("SELECT room_id, status FROM cleaning_tasks WHERE date = ? AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
                     const cTotal = cleaningTasks?.length || 0;
                     const cDone = cleaningTasks?.filter(t => t.status === 'Erledigt').length || 0;
 
-                    const checkouts = await db.select<any[]>("SELECT room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND pension_id = ?", [today, pensionId]);
+                    const checkouts = await db.select<any[]>("SELECT room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)", [today, pensionId]);
                     const existingTaskRoomIds = (cleaningTasks || []).map(t => t.room_id);
                     const hasMissingTasks = (checkouts || []).some(b => !existingTaskRoomIds.includes(b.room_id));
 
