@@ -95,6 +95,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
 
             if (event === 'SIGNED_OUT' && !isAuthRoute) {
+                SyncService.getInstance().clearSession();
                 router.replace('/login');
             } else if (event === 'SIGNED_IN' && isAuthRoute) {
                 router.replace('/');

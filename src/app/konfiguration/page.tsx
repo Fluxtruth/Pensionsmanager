@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Check, Upload, Download } from "lucide-react";
+import { SyncService, syncEvents } from "@/lib/sync";
 
 export default function ConfigurationPage() {
     const router = useRouter();
@@ -17,17 +18,18 @@ export default function ConfigurationPage() {
     const [logo, setLogo] = useState("/logo.jpg");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [appVersion, setAppVersion] = useState("v1.11.3");
+    const [appVersion, setAppVersion] = useState("v1.11.4");
 
     useEffect(() => {
         const loadSettings = async () => {
-            const database = await initDb();
+            const pId = await SyncService.getInstance().getPensionId();
+            const database = await initDb(pId || undefined);
             setDb(database);
             if (database) {
-                const titleRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_title"]);
+                const titleRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ? AND (pension_id = ? OR ? IS NULL)", ["branding_title", pId, pId]);
                 if (titleRes.length > 0) setTitle(titleRes[0].value);
 
-                const logoRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ?", ["branding_logo"]);
+                const logoRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ? AND (pension_id = ? OR ? IS NULL)", ["branding_logo", pId, pId]);
                 if (logoRes.length > 0) setLogo(logoRes[0].value);
             }
 
@@ -47,12 +49,38 @@ export default function ConfigurationPage() {
         loadSettings();
     }, []);
 
+    // Automatic refresh when sync completes
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            console.log("[Config] Sync completed, refreshing data...");
+            const refresh = async () => {
+                const pId = await SyncService.getInstance().getPensionId();
+                const database = await initDb(pId || undefined);
+                if (database) {
+                    const titleRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ? AND (pension_id = ? OR ? IS NULL)", ["branding_title", pId, pId]);
+                    if (titleRes.length > 0) setTitle(titleRes[0].value);
+
+                    const logoRes = await database.select<{ value: string }[]>("SELECT value FROM settings WHERE key = ? AND (pension_id = ? OR ? IS NULL)", ["branding_logo", pId, pId]);
+                    if (logoRes.length > 0) setLogo(logoRes[0].value);
+                }
+            };
+            refresh();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => syncEvents.off("sync-completed", handleSyncComplete);
+    }, []);
+
     const handleSave = async () => {
         if (!db) return;
         setSaving(true);
         try {
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["branding_title", title]);
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["branding_logo", logo]);
+            const pId = await SyncService.getInstance().getPensionId();
+            await db.execute("INSERT OR REPLACE INTO settings (key, value, pension_id) VALUES (?, ?, ?)", ["branding_title", title, pId]);
+            await db.execute("INSERT OR REPLACE INTO settings (key, value, pension_id) VALUES (?, ?, ?)", ["branding_logo", logo, pId]);
+
+            // Trigger sync
+            SyncService.getInstance().triggerSync();
 
             // Dispatch event with the new values directly so listeners can update immediately
             window.dispatchEvent(new CustomEvent('settings-changed', {

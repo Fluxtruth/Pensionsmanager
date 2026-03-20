@@ -69,11 +69,10 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, uuidv4 } from "@/lib/utils";
 import { initDb } from "@/lib/db";
-import { SyncService } from "@/lib/sync";
+import { SyncService, syncEvents } from "@/lib/sync";
 import { Switch } from "@/components/ui/switch";
-import { syncEvents } from "@/lib/sync-events";
 import { NationalitySelector } from "@/components/NationalitySelector";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
@@ -412,10 +411,13 @@ function BookingsList() {
     } | null>(null);
 
     const loadData = useCallback(async () => {
+        console.log("[Buchungen] loadData entry");
         try {
-            const db = await initDb();
+            console.log("[Buchungen] loadData calling getPensionId");
+            const pensionId = await SyncService.getInstance().getPensionId();
+            console.log(`[Buchungen] loadData getPensionId returned ${pensionId}`);
+            const db = await initDb(pensionId || undefined);
             if (db) {
-                const pensionId = typeof window !== 'undefined' ? localStorage.getItem("app_last_pension_id") : null;
 
                 const bookingResults = await db.select<Booking[]>(`
                     SELECT b.*, g.name as guest_name, g.phone as guest_phone, g.email as guest_email, g.company as guest_company, 
@@ -436,6 +438,7 @@ function BookingsList() {
                 ]);
 
                 setRooms(roomResults || []);
+                console.log(`[Buchungen] Loaded ${(guestResults || []).length} guests for pension ${pensionId}`);
                 setGuests(guestResults || []);
                 setGroups(groupResults || []);
             }
@@ -468,6 +471,7 @@ function BookingsList() {
                     "UPDATE guests SET name = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, phone = ?, company = ?, notes = ?, contact_info = ?, nationality = ? WHERE id = ?",
                     [fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality, editingGuestForMask.id]
                 );
+                SyncService.getInstance().triggerSync();
                 await loadData();
                 setIsGuestMaskOpen(false);
                 setEditingGuestForMask(null);
@@ -480,6 +484,19 @@ function BookingsList() {
 
     useEffect(() => {
         loadData();
+
+        const handleSyncRefresh = () => {
+            console.log("[Buchungen] Sync event received, reloading data...");
+            loadData();
+        };
+
+        syncEvents.on("sync-completed", handleSyncRefresh);
+        syncEvents.on("local-data-updated", handleSyncRefresh);
+
+        return () => {
+            syncEvents.off("sync-completed", handleSyncRefresh);
+            syncEvents.off("local-data-updated", handleSyncRefresh);
+        };
     }, [loadData]);
 
     useEffect(() => {
@@ -591,10 +608,12 @@ function BookingsList() {
         }
 
         try {
-            const db = await initDb();
+            const pensionId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pensionId || undefined);
             if (db) {
                 await db.execute("UPDATE bookings SET status = ? WHERE id = ?", [newStatus, id]);
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to update booking status:", error);
@@ -611,7 +630,8 @@ function BookingsList() {
         if (!checkOutBooking) return;
 
         try {
-            const db = await initDb();
+            const pensionId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pensionId || undefined);
             if (db) {
                 // 1. Update Booking Status (Revenue tracking removed)
                 await db.execute(
@@ -623,6 +643,7 @@ function BookingsList() {
                 syncEvents.emit("local-data-updated");
                 setIsCheckOutOpen(false);
                 setCheckOutBooking(null);
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to finalize check-out:", error);
@@ -683,7 +704,7 @@ function BookingsList() {
                            if (existingGroup) {
                                thisGroupId = existingGroup.id;
                            } else {
-                               const newId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                               const newId = uuidv4();
                                const pensionId = await SyncService.getInstance().getPensionId();
                                await db.execute("INSERT INTO booking_groups (id, name, pension_id) VALUES (?, ?, ?)", [newId, newName, pensionId]);
                                thisGroupId = newId;
@@ -714,7 +735,7 @@ function BookingsList() {
                         const lastName = parts.pop() || "";
                         const firstName = parts.join(' ');
 
-                        const newGuestId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                        const newGuestId = uuidv4();
                         const pensionIdForGuest = await SyncService.getInstance().getPensionId();
                         await db.execute(
                             "INSERT INTO guests (id, name, first_name, last_name, pension_id) VALUES (?, ?, ?, ?, ?)",
@@ -810,7 +831,7 @@ function BookingsList() {
                         // Save Breakfast for newly created booking in group
                         const days = getDaysArray(b.start_date, b.end_date);
                         for (const date of days) {
-                            const bId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                            const bId = uuidv4();
                             await db.execute(
                                 "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 [bId, b.id, date, 1, "08:00", 1, "", 0, "automatisch", 1, currentPensionId]
@@ -844,6 +865,7 @@ function BookingsList() {
                 syncEvents.emit("local-data-updated");
                 setIsEditOpen(false);
                 setEditingBooking(null);
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to update booking:", error);
@@ -862,9 +884,13 @@ function BookingsList() {
                     const db = await initDb();
                     if (db) {
                         await db.execute("UPDATE bookings SET status = 'Storniert' WHERE id = ?", [id]);
+                        await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE booking_id = ?", [id]);
+                        await db.execute("UPDATE cleaning_tasks SET is_deleted = 1 WHERE booking_id = ?", [id]);
                         await loadData();
                         syncEvents.emit("local-data-updated");
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                        // Trigger immediate sync
+                        SyncService.getInstance().triggerSync();
                     }
                 } catch (error) {
                     console.error("Failed to cancel booking:", error);
@@ -885,10 +911,13 @@ function BookingsList() {
                     const db = await initDb();
                     if (db) {
                         await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE booking_id = ?", [id]);
+                        await db.execute("UPDATE cleaning_tasks SET is_deleted = 1 WHERE booking_id = ?", [id]);
                         await db.execute("UPDATE bookings SET is_deleted = 1 WHERE id = ?", [id]);
                         await loadData();
                         syncEvents.emit("local-data-updated");
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                        // Trigger immediate sync
+                        SyncService.getInstance().triggerSync();
                     }
                 } catch (error) {
                     console.error("Failed to delete booking:", error);
@@ -904,11 +933,18 @@ function BookingsList() {
 
             if (action === 'storno') {
                 await db.execute("UPDATE bookings SET status = 'Storniert' WHERE group_id = ?", [groupId]);
-            } else {
-                // Delete breakfast options for all bookings in group
+                // Delete breakfast and cleaning for all bookings in group
                 const groupBookings = bookings.filter(b => b.group_id === groupId);
                 for (const b of groupBookings) {
                     await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE booking_id = ?", [b.id]);
+                    await db.execute("UPDATE cleaning_tasks SET is_deleted = 1 WHERE booking_id = ?", [b.id]);
+                }
+            } else {
+                // Delete breakfast and cleaning for all bookings in group
+                const groupBookings = bookings.filter(b => b.group_id === groupId);
+                for (const b of groupBookings) {
+                    await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE booking_id = ?", [b.id]);
+                    await db.execute("UPDATE cleaning_tasks SET is_deleted = 1 WHERE booking_id = ?", [b.id]);
                 }
                 await db.execute("UPDATE bookings SET is_deleted = 1 WHERE group_id = ?", [groupId]);
                 await db.execute("UPDATE booking_groups SET is_deleted = 1 WHERE id = ?", [groupId]);
@@ -917,6 +953,7 @@ function BookingsList() {
             syncEvents.emit("local-data-updated");
             setIsGroupDeleteOpen(false);
             setDeletingGroup(null);
+            SyncService.getInstance().triggerSync();
         } catch (error) {
             console.error("Failed to process group action:", error);
         }
@@ -933,6 +970,7 @@ function BookingsList() {
             setIsGroupDeleteOpen(false);
             setDeletingGroup(null);
             setRenameValue("");
+            SyncService.getInstance().triggerSync();
         } catch (error) {
             console.error("Failed to rename group:", error);
         }
@@ -955,10 +993,12 @@ function BookingsList() {
                     const pensionId = await SyncService.getInstance().getPensionId();
                     await db.execute(
                         "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, updates.is_included ?? 0, updates.time ?? "08:00", updates.guest_count ?? 1, updates.comments ?? "", 0, "auto", 0, pensionId]
+                        [uuidv4(), editingBooking.id, date, updates.is_included ?? 0, updates.time ?? "08:00", updates.guest_count ?? 1, updates.comments ?? "", 0, "auto", 0, pensionId]
                     );
                 }
                 await loadBreakfast(editingBooking.id);
+                // Trigger immediate sync
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to save breakfast:", error);
@@ -973,9 +1013,11 @@ function BookingsList() {
                 const pensionId = await SyncService.getInstance().getPensionId();
                 await db.execute(
                     "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, comments, is_prepared, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), editingBooking.id, date, 1, "08:00", 1, "", 0, "manuell", 1, pensionId]
+                    [uuidv4(), editingBooking.id, date, 1, "08:00", 1, "", 0, "manuell", 1, pensionId]
                 );
                 await loadBreakfast(editingBooking.id);
+                // Trigger immediate sync
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to add person to day:", error);
@@ -989,22 +1031,14 @@ function BookingsList() {
             if (db) {
                 await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE id = ?", [id]);
                 await loadBreakfast(editingBooking.id);
+                // Trigger immediate sync
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to remove person from day:", error);
         }
     };
 
-    const getDaysArray = (start: string, end: string) => {
-        const arr = [];
-        const dt = new Date(start);
-        const endDt = new Date(end);
-        while (dt <= endDt) {
-            arr.push(new Date(dt).toISOString().split('T')[0]);
-            dt.setDate(dt.getDate() + 1);
-        }
-        return arr;
-    };
 
     const resetFilters = () => {
         setStatusFilter("all");
@@ -1243,7 +1277,7 @@ function BookingsList() {
         const email = formData.get("email") as string;
         const phone = formData.get("phone") as string;
         const company = formData.get("company") as string;
-        const id = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+        const id = uuidv4();
 
         try {
             const db = await initDb();
@@ -1256,7 +1290,7 @@ function BookingsList() {
                 await loadData();
                 setWizardData(prev => ({ ...prev, guestId: id, guestName: fullName }));
                 setIsCreatingGuest(false);
-
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to create guest:", error);
@@ -1280,7 +1314,7 @@ function BookingsList() {
                 if (existingGroup) {
                     finalGroupId = existingGroup.id;
                 } else {
-                    finalGroupId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                    finalGroupId = uuidv4();
                     await db.execute("INSERT INTO booking_groups (id, name, pension_id) VALUES (?, ?, ?)", [finalGroupId, mainTabData.newGroupName, pensionId]);
                 }
             }
@@ -1326,7 +1360,7 @@ function BookingsList() {
 
             for (const tab of wizardTabs) {
                 const data = tab.data;
-                const bookingId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+                const bookingId = uuidv4();
 
                 // Use selected guest OR fallback to main guest
                 const finalGuestId = data.guestId || mainGuestId;
@@ -1345,7 +1379,7 @@ function BookingsList() {
                         for (const opt of dayOptions) {
                             await db.execute(
                                 "INSERT INTO breakfast_options (id, booking_id, date, time, comments, is_included, is_prepared, guest_count, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1, pensionId]
+                                [uuidv4(), bookingId, day, opt.time || "08:00", opt.comments || "", 1, 0, 1, "manual", 1, pensionId]
                             );
                         }
                     }
@@ -1356,6 +1390,7 @@ function BookingsList() {
             await loadData();
             syncEvents.emit("local-data-updated");
             setIsBookingOpen(false);
+            SyncService.getInstance().triggerSync();
 
             if (wizardTabs.some(t => t.data.status === "Hard-Booked")) {
                 const firstTab = wizardTabs[0];
@@ -1378,6 +1413,7 @@ function BookingsList() {
                     hasDog: firstTab.data.dogCount > 0
                 });
                 setShowSuccessModal(true);
+                SyncService.getInstance().triggerSync();
             }
 
             resetWizard();

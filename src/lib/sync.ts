@@ -1,6 +1,8 @@
-import { initDb, DatabaseMock } from "./db";
+import { initDb, resetDb, DatabaseMock } from "./db";
+import { uuidv4 } from "./utils";
 import { supabase } from "./supabase/client";
 import { syncEvents } from "./sync-events";
+export { syncEvents };
 
 export interface SyncStatus {
   lastSync: string | null;
@@ -20,8 +22,8 @@ const TABLES_TO_SYNC = [
   "cleaning_tasks",
   "cleaning_task_suggestions",
   "breakfast_options",
-  "connected_devices",
-  "settings"
+  "settings",
+  "pensions"
 ];
 
 export interface Backup {
@@ -50,6 +52,8 @@ export class SyncService {
   private currentPensionId: string | null = null;
   private autoSyncInterval: any = null;
   private currentDeviceId: string | null = null;
+  private syncTimeout: any = null;
+  private realtimeChannel: any = null;
 
   private constructor() {}
 
@@ -77,40 +81,37 @@ export class SyncService {
    */
   public async getPensionId(): Promise<string | null> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        // Fallback to cached ID if we exist but lost session momentarily (or on fast loads)
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem("app_last_pension_id");
+      // 1. Check current instance or localStorage first (fastest)
+      if (this.currentPensionId) return this.currentPensionId;
+      
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem("app_last_pension_id");
+        if (cached) {
+          this.currentPensionId = cached;
+          return cached;
         }
-        return null;
       }
 
-      const { data: profile, error } = await supabase
+      // 2. Fallback to Supabase ONLY if no cache exists
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data: profile } = await supabase
         .from('user_profiles')
         .select('pension_id')
         .eq('id', user.id)
         .single();
 
-      if (error || !profile) {
-        console.warn("No pension profile found for user:", user.id);
-        // Fallback to cache
+      if (profile?.pension_id) {
+        this.currentPensionId = profile.pension_id;
         if (typeof window !== 'undefined') {
-            return localStorage.getItem("app_last_pension_id");
+            localStorage.setItem("app_last_pension_id", profile.pension_id);
         }
-        return null;
+        return profile.pension_id;
       }
-
-      if (typeof window !== 'undefined' && profile.pension_id) {
-          localStorage.setItem("app_last_pension_id", profile.pension_id);
-      }
-
-      return profile.pension_id;
-    } catch (error) {
-      console.error("Error fetching pension_id:", error);
-      if (typeof window !== 'undefined') {
-          return localStorage.getItem("app_last_pension_id");
-      }
+      return null;
+    } catch (e) {
+      console.error("getPensionId error:", e);
       return null;
     }
   }
@@ -175,7 +176,7 @@ export class SyncService {
           this.currentDeviceId = storedId;
         } else {
           // Fallback simple UUID generator if uuid package isn't loaded everywhere
-          const newId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+          const newId = uuidv4();
           localStorage.setItem("app_device_id", newId);
           this.currentDeviceId = newId;
         }
@@ -240,7 +241,7 @@ export class SyncService {
                 [now, now, now, deviceName, deviceType, this.currentDeviceId]);
            } else {
               // Gen random uuid for primary key
-              const pk = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+              const pk = uuidv4();
               await db.execute("INSERT INTO connected_devices (id, device_id, pension_id, device_name, device_type, last_seen_at, updated_at, synced_at, is_leading_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [pk, this.currentDeviceId, pensionId, deviceName, deviceType, now, now, now, 0]);
            }
@@ -284,8 +285,15 @@ export class SyncService {
       // We push first to ensure local changes are safe in the cloud before pulling potential conflicts
       for (const table of TABLES_TO_SYNC) {
         // Fetch pending rows. We compare timestamps if synced_at exists.
+        let selectQuery = `SELECT * FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`;
+        if (table === 'pensions') {
+            // For pensions, we only ever want to push if we have data
+            selectQuery = `SELECT * FROM ${table} WHERE id = ? AND (synced_at IS NULL OR updated_at > synced_at)`;
+        }
+        
         const pendingRows = await db.select<any>(
-          `SELECT * FROM ${table} WHERE synced_at IS NULL OR updated_at > synced_at`
+          selectQuery,
+          table === 'pensions' ? [pensionId] : []
         );
 
         if (pendingRows.length > 0) {
@@ -304,6 +312,21 @@ export class SyncService {
               }
             });
             
+            // Virtual columns from Mock DB to exclude
+            const virtualColumns = [
+              'guest_name', 'guest_phone', 'guest_email', 'guest_company', 
+              'nationality', 'room_name', 'room_type', 'group_name', 'occasion_title'
+            ];
+            virtualColumns.forEach(col => delete processedData[col]);
+            
+            // Special case for pensions table: it doesn't have sync-specific columns in Supabase
+            if (table === 'pensions') {
+              delete processedData.is_deleted;
+              delete processedData.pension_id;
+              delete processedData.updated_at;
+              return processedData;
+            }
+
             return {
               ...processedData,
               pension_id: data.pension_id || pensionId
@@ -315,11 +338,18 @@ export class SyncService {
             .upsert(uploadData);
 
           if (upsertError) {
+            // RLS Block is common if policies are missing. Log it but don't fail the whole sync
+            // especially for the 'pensions' table which is a new addition.
+            if (upsertError.code === '42501') {
+              console.warn(`[Sync] RLS Policy violation for table ${table}. Skipping push.`, upsertError.message);
+              continue;
+            }
+
             console.error(`[Sync] Supabase Upsert Error for ${table}:`, JSON.stringify(upsertError, null, 2));
             syncEvents.emit("sync-failed", upsertError.message);
             return { 
               success: false, 
-              error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message || 'FK-Verletzung oder RLS-Block'}. Details: ${JSON.stringify(upsertError)}` 
+              error: `Upload-Fehler in Tabelle ${table}: ${upsertError.message || 'FK-Verletzung oder RLS-Block'}.` 
             };
           }
 
@@ -390,10 +420,15 @@ export class SyncService {
     }
 
     try {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .eq('pension_id', pensionId);
+      let queryBuilder = supabase.from(tableName).select('*');
+      
+      if (tableName === 'pensions') {
+         queryBuilder = queryBuilder.eq('id', pensionId);
+      } else {
+         queryBuilder = queryBuilder.eq('pension_id', pensionId);
+      }
+
+      const { data, error } = await queryBuilder;
 
       if (error) throw error;
       if (!data || data.length === 0) return;
@@ -653,22 +688,76 @@ export class SyncService {
     }
   }
 
-  /**
-   * Startet die automatische Synchronisation.
-   */
   public startAutoSync(callback?: (result: { success: boolean, error?: string }) => void) {
     if (this.autoSyncInterval) return;
 
-    // Alle 5 Minuten synchronisieren
+    // Alle 1 Minute synchronisieren (als Fallback zu Realtime)
     this.autoSyncInterval = setInterval(async () => {
       const result = await this.performSync();
       if (callback) callback(result);
-    }, 5 * 60 * 1000);
+    }, 60 * 1000);
+
+    // Echtzeit-Überwachung starten
+    this.startRealtimeSync();
 
     // Sofort einmal ausführen
     this.performSync().then(result => {
       if (callback) callback(result);
     });
+  }
+
+  /**
+   * Triggert eine sofortige Synchronisation nach einer Datenänderung.
+   * Mit 2 Sekunden Debouncing, um mehrere schnelle Änderungen zu bündeln.
+   */
+  public triggerSync() {
+    if (this.syncTimeout) {
+      clearTimeout(this.syncTimeout);
+    }
+    
+    this.syncTimeout = setTimeout(async () => {
+      console.log("[Sync] Triggering proactive synchronization after local data change...");
+      await this.performSync();
+      this.syncTimeout = null;
+    }, 2000);
+  }
+
+  /**
+   * Abonniert Supabase Realtime-Kanäle, um Änderungen von anderen Geräten sofort zu erhalten.
+   */
+  public async startRealtimeSync() {
+    if (this.realtimeChannel) return;
+
+    const pensionId = await this.getPensionId();
+    if (!pensionId) return;
+
+    console.log("[Sync] Starting Supabase Realtime subscription for near-instant updates...");
+
+    // Wir abonnieren Änderungen in der aktuellen Pension für alle relevanten Tabellen
+    this.realtimeChannel = supabase.channel('pension_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          filter: `pension_id=eq.${pensionId}`
+        },
+        async (payload) => {
+          console.log("[Sync] Realtime update received:", payload.table, payload.eventType);
+          
+          // Wir ziehen nur die betroffene Tabelle, anstatt einen vollen Sync zu machen (effizienter)
+          try {
+            await this.pullTable(payload.table);
+            // Informiere die UI über neue Daten
+            syncEvents.emit("sync-completed", { table: payload.table });
+          } catch (e) {
+            console.error(`[Sync] Realtime pull failed for ${payload.table}:`, e);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[Sync] Realtime subscription status for pension ${pensionId}:`, status);
+      });
   }
 
   /**
@@ -852,6 +941,35 @@ export class SyncService {
       console.error("[Sync] Local DB reset failed:", error);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Resets the entire session state (SyncService, localStorage, and DB cache).
+   * Call this on logout to ensure full data isolation.
+   */
+  public clearSession() {
+    console.log("[Sync] Clearing session and resetting all local state.");
+    
+    // 1. Stop auto-sync and realtime
+    this.stopAutoSync();
+    if (this.realtimeChannel) {
+      supabase.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+    }
+    
+    // 2. Clear internal state
+    this.currentPensionId = null;
+    this.db = null;
+    
+    // 3. Clear localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem("app_last_pension_id");
+      localStorage.removeItem("pension_id");
+      // Note: We keep "app_device_id" to recognize this installation in Supabase
+    }
+    
+    // 4. Reset database connection cache
+    resetDb();
   }
 
 }

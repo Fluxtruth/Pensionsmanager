@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useRef } from "react";
+import React, { useState, useEffect, Suspense, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Plus, Users, Search, GitBranch, Mail, Phone, Building2, UserCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { NationalitySelector } from "@/components/NationalitySelector";
 import { initDb } from "@/lib/db";
-import { cn } from "@/lib/utils";
+import { cn, uuidv4 } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SyncService, syncEvents } from "@/lib/sync";
 
 interface Guest {
     id: string;
@@ -67,22 +68,37 @@ function GuestsList() {
         onConfirm: () => { },
     });
 
-    const loadGuests = async () => {
+    const loadGuests = useCallback(async () => {
         try {
-            const db = await initDb();
+            const pId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pId || undefined);
             if (db) {
                 setIsDbReady(true);
-                const results = await db.select<Guest[]>("SELECT * FROM guests WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY last_name ASC, first_name ASC");
+                const results = await db.select<Guest[]>(
+                    "SELECT * FROM guests WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL) ORDER BY last_name ASC, first_name ASC",
+                    [pId, pId]
+                );
                 if (results) setGuests(results);
             }
         } catch (error) {
             console.error("Failed to load guests:", error);
         }
-    };
+    }, []);
 
     useEffect(() => {
         loadGuests();
-    }, []);
+    }, [loadGuests]);
+
+    // Automatic refresh when sync completes
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            console.log("[Guests] Sync completed, refreshing data...");
+            loadGuests();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => syncEvents.off("sync-completed", handleSyncComplete);
+    }, [loadGuests]);
 
     useEffect(() => {
         if (editId && guests.length > 0 && autoOpenHandled.current !== editId) {
@@ -114,18 +130,21 @@ function GuestsList() {
         // Construct visual full name
         const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
         const contactInfo = [email, phone].filter(Boolean).join(" / ");
-        const id = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+        const id = uuidv4();
 
         try {
-            const db = await initDb();
+            const pId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pId || undefined);
             if (db) {
                 await db.execute(
-                    "INSERT INTO guests (id, name, first_name, middle_name, last_name, email, phone, company, notes, contact_info, nationality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [id, fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality]
+                    "INSERT INTO guests (id, name, first_name, middle_name, last_name, email, phone, company, notes, contact_info, nationality, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [id, fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality, pId]
                 );
                 await loadGuests();
                 setIsOpen(false);
                 form.reset();
+                // Trigger immediate sync
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to add guest:", error);
@@ -152,17 +171,20 @@ function GuestsList() {
         const contactInfo = [email, phone].filter(Boolean).join(" / ");
 
         try {
-            const db = await initDb();
+            const pId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pId || undefined);
             if (db) {
                 await db.execute(
-                    "UPDATE guests SET name = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, phone = ?, company = ?, notes = ?, contact_info = ?, nationality = ? WHERE id = ?",
-                    [fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality, editingGuest.id]
+                    "UPDATE guests SET name = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, phone = ?, company = ?, notes = ?, contact_info = ?, nationality = ? WHERE id = ? AND (pension_id = ? OR ? IS NULL)",
+                    [fullName, firstName, middleName, lastName, email, phone, company, notes, contactInfo, nationality, editingGuest.id, pId, pId]
                 );
                 await loadGuests();
                 setIsEditOpen(false);
                 setEditingGuest(null);
                 // Clear search param
                 router.replace("/gaeste", { scroll: false });
+                // Trigger immediate sync
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to update guest:", error);
@@ -177,7 +199,8 @@ function GuestsList() {
             description: `Möchten Sie den Gast "${name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
             onConfirm: async () => {
                 try {
-                    const db = await initDb();
+                    const pId = await SyncService.getInstance().getPensionId();
+                    const db = await initDb(pId || undefined);
                     if (db) {
                         // Check for existing bookings
                         const bookingsRes = await db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM bookings WHERE guest_id = ?", [id]);
@@ -190,11 +213,13 @@ function GuestsList() {
                         }
 
                         // Automatische Bereinigung alter Anlässe (Legacy-Daten), um Gastlöschung zu ermöglichen
-                        await db.execute("UPDATE occasions SET is_deleted = 1 WHERE main_guest_id = ?", [id]);
+                        await db.execute("UPDATE occasions SET is_deleted = 1 WHERE main_guest_id = ? AND (pension_id = ? OR ? IS NULL)", [id, pId, pId]);
 
-                        await db.execute("UPDATE guests SET is_deleted = 1 WHERE id = ?", [id]);
+                        await db.execute("UPDATE guests SET is_deleted = 1 WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [id, pId, pId]);
                         await loadGuests();
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                        // Trigger immediate sync
+                        SyncService.getInstance().triggerSync();
                     }
                 } catch (error) {
                     console.error("Failed to delete guest:", error);

@@ -12,7 +12,7 @@ export default defineConfig({
         baseURL: 'http://localhost:3002',
     },
     webServer: {
-        command: 'npm run dev',
+        command: 'npm run dev -- -p 3002',
         url: 'http://localhost:3002',
         reuseExistingServer: true,
         timeout: 120 * 1000,

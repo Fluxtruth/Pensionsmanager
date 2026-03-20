@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { initDb } from "@/lib/db";
+import { SyncService, syncEvents } from "@/lib/sync";
 import { CalendarRange, Loader2, GripVertical, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -287,10 +288,9 @@ export default function KalenderPage() {
 
     const fetchData = async () => {
         try {
-            const db = await initDb();
+            const pensionId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pensionId || undefined);
             if (!db) return;
-
-            const pensionId = typeof window !== 'undefined' ? localStorage.getItem("app_last_pension_id") : null;
 
             const fetchedRooms = await db.select<Room[]>(
                 "SELECT id, name, type FROM rooms WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY name"
@@ -298,7 +298,6 @@ export default function KalenderPage() {
             setRooms(fetchedRooms);
 
             // Fetch bookings that overlap with our 14 day window or are just generally active
-            const todayStr = new Date().toISOString().split('T')[0];
             const fetchedBookings = await db.select<Booking[]>(`
                 SELECT 
                     b.id, b.room_id, b.guest_id, b.start_date, b.end_date, b.status,
@@ -308,11 +307,10 @@ export default function KalenderPage() {
                 FROM bookings b
                 LEFT JOIN guests g ON b.guest_id = g.id
                 LEFT JOIN booking_groups bg ON b.group_id = bg.id
-                WHERE (b.end_date >= ? OR b.status = 'Draft')
-                  AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                WHERE (b.is_deleted = 0 OR b.is_deleted IS NULL)
                   AND (b.pension_id = ? OR ? IS NULL)
-                ORDER BY b.start_date
-            `, [todayStr, pensionId, pensionId]);
+                ORDER BY substr(b.start_date, 1, 10)
+            `, [pensionId, pensionId]);
 
             setBookings(fetchedBookings);
 
@@ -325,6 +323,17 @@ export default function KalenderPage() {
 
     useEffect(() => {
         fetchData();
+    }, []);
+
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            fetchData();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => {
+            syncEvents.off("sync-completed", handleSyncComplete);
+        };
     }, []);
 
     const [blockingIds, setBlockingIds] = useState<string[]>([]); // State for highlighting overlapping bookings
@@ -524,6 +533,7 @@ export default function KalenderPage() {
                         "UPDATE bookings SET start_date = ?, end_date = ? WHERE id = ?",
                         [newStart, newEnd, booking.id]
                     );
+                    SyncService.getInstance().triggerSync();
                 }
             } catch (err) {
                 console.error("Failed to resize booking:", err);
@@ -606,6 +616,7 @@ export default function KalenderPage() {
                     "UPDATE bookings SET room_id = ?, start_date = ?, end_date = ? WHERE id = ?",
                     [targetRoomId, newStartDateStr, newEndDateStr, booking.id]
                 );
+                SyncService.getInstance().triggerSync();
             }
         } catch (err) {
             console.error("Failed to update booking:", err);

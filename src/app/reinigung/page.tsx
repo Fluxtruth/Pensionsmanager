@@ -32,11 +32,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { initDb } from "@/lib/db";
-import { cn } from "@/lib/utils";
+import { cn, uuidv4 } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { savePdfNative } from "@/lib/pdf-export";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SyncService } from "@/lib/sync";
+import { syncEvents } from "@/lib/sync-events";
 
 interface Staff {
     id: string;
@@ -154,12 +156,13 @@ export default function CleaningPage() {
 
     const loadData = useCallback(async () => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
-                const staffResults = await db.select<Staff[]>("SELECT * FROM staff WHERE is_deleted = 0 OR is_deleted IS NULL");
+                const staffResults = await db.select<Staff[]>("SELECT * FROM staff WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)", [pension_id, pension_id]);
                 setStaff(staffResults || []);
 
-                const roomResults = await db.select<Room[]>("SELECT id, name FROM rooms WHERE is_deleted = 0 OR is_deleted IS NULL");
+                const roomResults = await db.select<Room[]>("SELECT id, name FROM rooms WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)", [pension_id, pension_id]);
                 setRooms(roomResults || []);
 
                 const taskResults = await db.select<CleaningTask[]>(`
@@ -167,11 +170,13 @@ export default function CleaningPage() {
                     FROM cleaning_tasks ct
                     LEFT JOIN rooms r ON ct.room_id = r.id
                     LEFT JOIN staff s ON ct.staff_id = s.id
-                    WHERE (ct.date = ? OR ct.delayed_from = ?) AND (ct.is_deleted = 0 OR ct.is_deleted IS NULL)
-                `, [selectedDate, selectedDate]);
+                    WHERE (substr(ct.date, 1, 10) = ? OR substr(ct.delayed_from, 1, 10) = ?) 
+                    AND (ct.is_deleted = 0 OR ct.is_deleted IS NULL)
+                    AND (ct.pension_id = ? OR ? IS NULL)
+                `, [selectedDate, selectedDate, pension_id, pension_id]);
                 setTasks(taskResults || []);
 
-                const suggestionResults = await db.select<TaskSuggestion[]>("SELECT * FROM cleaning_task_suggestions WHERE is_deleted = 0 OR is_deleted IS NULL");
+                const suggestionResults = await db.select<TaskSuggestion[]>("SELECT * FROM cleaning_task_suggestions WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)", [pension_id, pension_id]);
                 setSuggestions(suggestionResults || []);
 
                 // Load Check-Ins for today
@@ -182,8 +187,10 @@ export default function CleaningPage() {
                     FROM bookings b
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN rooms r ON b.room_id = r.id
-                    WHERE b.start_date = ? AND b.status != 'Draft' AND b.status != 'Storniert' AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
-                `, [selectedDate]);
+                    WHERE substr(b.start_date, 1, 10) = ? AND b.status != 'Draft' AND b.status != 'Storniert' 
+                    AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                    AND (b.pension_id = ? OR ? IS NULL)
+                `, [selectedDate, pension_id, pension_id]);
                 setCheckIns(checkInResults || []);
 
                 // Load Check-Outs for today (Detailed)
@@ -194,40 +201,63 @@ export default function CleaningPage() {
                     FROM bookings b
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN rooms r ON b.room_id = r.id
-                    WHERE b.end_date = ? AND b.status != 'Draft' AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
-                `, [selectedDate]);
+                    WHERE substr(b.end_date, 1, 10) = ? AND b.status != 'Draft' 
+                    AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                    AND (b.pension_id = ? OR ? IS NULL)
+                `, [selectedDate, pension_id, pension_id]);
                 setCheckouts(checkoutResults || []);
 
                 // Check if generation is needed (Checkouts or Check-Ins)
                 const checkoutsForGen = await db.select<Booking[]>(
-                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND (is_deleted = 0 OR is_deleted IS NULL)",
-                    [selectedDate]
+                    "SELECT id, room_id FROM bookings WHERE substr(end_date, 1, 10) = ? AND status != 'Draft' AND (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)",
+                    [selectedDate, pension_id, pension_id]
                 );
                 const existingTaskRoomIds = (taskResults || []).filter(t => t.room_id && (t.task_type === 'cleaning' || !t.task_type)).map(t => t.room_id);
                 const hasMissingCleaningTasks = checkoutsForGen.some(b => !existingTaskRoomIds.includes(b.room_id));
 
-                const checkInsToGenerate = checkInResults.filter(b => {
-                    const existingTask = taskResults.find(t => t.room_id === b.room_id && t.date === selectedDate && t.task_type === 'checkin');
-                    return !existingTask;
+                // Identified orphaned Auto tasks that no longer have a matching booking
+                const tasksToCleanup = (taskResults || []).filter(t => {
+                    if (t.source !== 'Auto') return false;
+                    if (t.task_type === 'checkin') {
+                        return !checkInResults.some(b => b.room_id === t.room_id);
+                    }
+                    if (t.task_type === 'cleaning' || !t.task_type) {
+                        return !checkoutsForGen.some(b => b.room_id === t.room_id);
+                    }
+                    return false;
                 });
 
-                // Auto-generate missing check-in tasks immediately
-                if (checkInsToGenerate.length > 0) {
+                // Check if generation is needed (Check-Ins)
+                // Note: We only auto-generate check-in tasks if they have special requirements (dog, extra bed)
+                // to match the manual generateCleaningPlan logic.
+                const checkInsToGenerate = (checkInResults || []).filter(b => {
+                    const hasDog = b.dog_count > 0 || b.has_dog === 1;
+                    const hasExtraBed = b.extra_bed_count > 0;
+                    const existingTask = (taskResults || []).find(t => t.room_id === b.room_id && t.date === selectedDate && t.task_type === 'checkin');
+                    return (hasDog || hasExtraBed) && !existingTask;
+                });
+                
+                if (tasksToCleanup.length > 0 || checkInsToGenerate.length > 0) {
+                    for (const task of tasksToCleanup) {
+                        await db.execute("DELETE FROM cleaning_tasks WHERE id = ?", [task.id]);
+                    }
                     for (const booking of checkInsToGenerate) {
                         await db.execute(
-                            "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
+                            "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            [uuidv4(), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin', pension_id]
                         );
                     }
-                    // Refetch tasks after generation
-                    const updatedTaskResults = await db.select<CleaningTask[]>(`
+                    // Refetch tasks after changes
+                    const refreshedTaskResults = await db.select<CleaningTask[]>(`
                         SELECT ct.*, r.name as room_name, s.name as staff_name
                         FROM cleaning_tasks ct
                         LEFT JOIN rooms r ON ct.room_id = r.id
                         LEFT JOIN staff s ON ct.staff_id = s.id
-                        WHERE ct.date = ? OR ct.delayed_from = ? AND (ct.is_deleted = 0 OR ct.is_deleted IS NULL)
-                    `, [selectedDate, selectedDate]);
-                    setTasks(updatedTaskResults || []);
+                        WHERE (substr(ct.date, 1, 10) = ? OR substr(ct.delayed_from, 1, 10) = ?) 
+                        AND (ct.is_deleted = 0 OR ct.is_deleted IS NULL)
+                        AND (ct.pension_id = ? OR ? IS NULL)
+                    `, [selectedDate, selectedDate, pension_id, pension_id]);
+                    setTasks(refreshedTaskResults || []);
                 }
 
                 setNeedsGeneration(hasMissingCleaningTasks);
@@ -241,26 +271,39 @@ export default function CleaningPage() {
         loadData();
     }, [loadData]);
 
+    // Automatic refresh when sync completes
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            console.log("[Cleaning] Sync completed, refreshing data...");
+            loadData();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => syncEvents.off("sync-completed", handleSyncComplete);
+    }, [loadData]);
+
     useEffect(() => {
         setViewedWeekday(new Date(selectedDate).getDay());
     }, [selectedDate]);
 
     const toggleCleaning = async (roomId: string, isActive: boolean, type: 'cleaning' | 'checkin' = 'cleaning') => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 if (isActive) {
                     await db.execute(
-                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), roomId, selectedDate, "Offen", 1, 'Manuell', type]
+                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [uuidv4(), roomId, selectedDate, "Offen", 1, 'Manuell', type, pension_id]
                     );
                 } else {
                     await db.execute(
-                        "UPDATE cleaning_tasks SET is_deleted = 1 WHERE room_id = ? AND date = ? AND task_type = ? AND (delayed_from IS NULL OR delayed_from != ?)",
-                        [roomId, selectedDate, type, selectedDate]
+                        "UPDATE cleaning_tasks SET is_deleted = 1 WHERE room_id = ? AND date = ? AND task_type = ? AND (delayed_from IS NULL OR delayed_from != ?) AND (pension_id = ? OR ? IS NULL)",
+                        [roomId, selectedDate, type, selectedDate, pension_id, pension_id]
                     );
                 }
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to toggle cleaning:", error);
@@ -269,13 +312,15 @@ export default function CleaningPage() {
 
     const addManualTask = async (title: string) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 await db.execute(
-                    "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), null, selectedDate, "Offen", 1, 'Manuell', title]
+                    "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [uuidv4(), null, selectedDate, "Offen", 1, 'Manuell', title, pension_id]
                 );
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to add manual task:", error);
@@ -284,13 +329,15 @@ export default function CleaningPage() {
 
     const addTaskFromSuggestion = async (suggestion: TaskSuggestion) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 await db.execute(
-                    "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), null, selectedDate, "Offen", 1, 'Vorschlag', suggestion.title]
+                    "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, title, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [uuidv4(), null, selectedDate, "Offen", 1, 'Vorschlag', suggestion.title, pension_id]
                 );
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to add logic task:", error);
@@ -299,17 +346,19 @@ export default function CleaningPage() {
 
     const delayTask = async (taskId: string, days: number) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 const targetDate = new Date(selectedDate);
                 targetDate.setDate(targetDate.getDate() + days);
                 const dateStr = targetDate.toISOString().split('T')[0];
 
                 await db.execute(
-                    "UPDATE cleaning_tasks SET date = ?, delayed_from = ?, source = ? WHERE id = ?",
-                    [dateStr, days > 0 ? selectedDate : null, 'Verschoben', taskId]
+                    "UPDATE cleaning_tasks SET date = ?, delayed_from = ?, source = ? WHERE id = ? AND (pension_id = ? OR ? IS NULL)",
+                    [dateStr, days > 0 ? selectedDate : null, 'Verschoben', taskId, pension_id, pension_id]
                 );
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to delay task:", error);
@@ -318,11 +367,12 @@ export default function CleaningPage() {
 
     const generateCleaningPlan = async () => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 const checkouts = await db.select<Booking[]>(
-                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND (is_deleted = 0 OR is_deleted IS NULL)",
-                    [selectedDate]
+                    "SELECT id, room_id FROM bookings WHERE end_date = ? AND status != 'Draft' AND (is_deleted = 0 OR is_deleted IS NULL) AND (pension_id = ? OR ? IS NULL)",
+                    [selectedDate, pension_id, pension_id]
                 );
 
                 if (checkouts.length === 0) {
@@ -345,8 +395,8 @@ export default function CleaningPage() {
 
                 for (const roomId of roomsToClean) {
                     await db.execute(
-                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), roomId, selectedDate, "Offen", 0, 'Auto', 'cleaning']
+                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [uuidv4(), roomId, selectedDate, "Offen", 0, 'Auto', 'cleaning', pension_id]
                     );
                 }
 
@@ -360,12 +410,13 @@ export default function CleaningPage() {
 
                 for (const booking of checkInsToGenerate) {
                     await db.execute(
-                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin']
+                        "INSERT INTO cleaning_tasks (id, room_id, date, status, is_manual, source, task_type, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [uuidv4(), booking.room_id, selectedDate, "Offen", 0, 'Auto', 'checkin', pension_id]
                     );
                 }
 
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to generate plan:", error);
@@ -374,10 +425,12 @@ export default function CleaningPage() {
 
     const updateTaskStatus = async (taskId: string, newStatus: string) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
-                await db.execute("UPDATE cleaning_tasks SET status = ? WHERE id = ?", [newStatus, taskId]);
+                await db.execute("UPDATE cleaning_tasks SET status = ? WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [newStatus, taskId, pension_id, pension_id]);
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to update task status:", error);
@@ -386,10 +439,12 @@ export default function CleaningPage() {
 
     const assignStaff = async (taskId: string, staffId: string) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
-                await db.execute("UPDATE cleaning_tasks SET staff_id = ? WHERE id = ?", [staffId === "none" ? null : staffId, taskId]);
+                await db.execute("UPDATE cleaning_tasks SET staff_id = ? WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [staffId === "none" ? null : staffId, taskId, pension_id, pension_id]);
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to assign staff:", error);
@@ -398,9 +453,12 @@ export default function CleaningPage() {
 
     const updateTaskComments = async (taskId: string, comments: string) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
-                await db.execute("UPDATE cleaning_tasks SET comments = ? WHERE id = ?", [comments, taskId]);
+                await db.execute("UPDATE cleaning_tasks SET comments = ? WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [comments, taskId, pension_id, pension_id]);
+                await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to update comments:", error);
@@ -415,20 +473,22 @@ export default function CleaningPage() {
         const capacity = parseInt(formData.get("capacity") as string) || 5;
 
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 if (editingStaff) {
                     await db.execute(
-                        "UPDATE staff SET name = ?, role = ?, daily_capacity = ? WHERE id = ?",
-                        [name, role, capacity, editingStaff.id]
+                        "UPDATE staff SET name = ?, role = ?, daily_capacity = ? WHERE id = ? AND (pension_id = ? OR ? IS NULL)",
+                        [name, role, capacity, editingStaff.id, pension_id, pension_id]
                     );
                 } else {
                     await db.execute(
-                        "INSERT INTO staff (id, name, role, daily_capacity) VALUES (?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), name, role, capacity]
+                        "INSERT INTO staff (id, name, role, daily_capacity, pension_id) VALUES (?, ?, ?, ?, ?)",
+                        [uuidv4(), name, role, capacity, pension_id]
                     );
                 }
                 await loadData();
+                SyncService.getInstance().triggerSync();
                 setIsAddStaffOpen(false);
                 setEditingStaff(null);
             }
@@ -444,10 +504,12 @@ export default function CleaningPage() {
             description: `Möchten Sie ${name} wirklich aus dem Team entfernen?`,
             onConfirm: async () => {
                 try {
-                    const db = await initDb();
+                    const pension_id = await SyncService.getInstance().getPensionId();
+                    const db = await initDb(pension_id || undefined);
                     if (db) {
-                        await db.execute("UPDATE staff SET is_deleted = 1 WHERE id = ?", [id]);
+                        await db.execute("UPDATE staff SET is_deleted = 1 WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [id, pension_id, pension_id]);
                         await loadData();
+                        SyncService.getInstance().triggerSync();
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }
                 } catch (error) {
@@ -465,13 +527,15 @@ export default function CleaningPage() {
         const frequency = parseInt(newSuggestionFrequency) || 1;
 
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 await db.execute(
-                    "INSERT INTO cleaning_task_suggestions (id, title, weekday, frequency_weeks) VALUES (?, ?, ?, ?)",
-                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), title, weekday, frequency]
+                    "INSERT INTO cleaning_task_suggestions (id, title, weekday, frequency_weeks, pension_id) VALUES (?, ?, ?, ?, ?)",
+                    [uuidv4(), title, weekday, frequency, pension_id]
                 );
                 await loadData();
+                SyncService.getInstance().triggerSync();
                 (e.target as HTMLFormElement).reset();
                 setNewSuggestionWeekday("1");
                 setNewSuggestionFrequency("1");
@@ -488,10 +552,12 @@ export default function CleaningPage() {
             description: `Möchten Sie den Vorschlag "${title}" wirklich löschen?`,
             onConfirm: async () => {
                 try {
-                    const db = await initDb();
+                    const pension_id = await SyncService.getInstance().getPensionId();
+                    const db = await initDb(pension_id || undefined);
                     if (db) {
-                        await db.execute("UPDATE cleaning_task_suggestions SET is_deleted = 1 WHERE id = ?", [id]);
+                        await db.execute("UPDATE cleaning_task_suggestions SET is_deleted = 1 WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [id, pension_id, pension_id]);
                         await loadData();
+                        SyncService.getInstance().triggerSync();
                         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
                     }
                 } catch (error) {
@@ -503,13 +569,15 @@ export default function CleaningPage() {
 
     const updateSuggestion = async (id: string, updates: Partial<TaskSuggestion>) => {
         try {
-            const db = await initDb();
+            const pension_id = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pension_id || undefined);
             if (db) {
                 const keys = Object.keys(updates);
                 const values = Object.values(updates);
                 const setClause = keys.map(k => `${k} = ?`).join(", ");
-                await db.execute(`UPDATE cleaning_task_suggestions SET ${setClause} WHERE id = ?`, [...values, id]);
+                await db.execute(`UPDATE cleaning_task_suggestions SET ${setClause} WHERE id = ? AND (pension_id = ? OR ? IS NULL)`, [...values, id, pension_id, pension_id]);
                 await loadData();
+                SyncService.getInstance().triggerSync();
             }
         } catch (error) {
             console.error("Failed to update suggestion:", error);
@@ -982,6 +1050,11 @@ export default function CleaningPage() {
                                         const activeTask = tasks.find(t => t.room_id === room.id && t.date === selectedDate && t.task_type === 'checkin');
                                         const isActive = !!activeTask;
                                         const booking = checkIns.find(b => b.room_id === room.id);
+                                        const checkoutForRoom = checkouts.find(b => b.room_id === room.id);
+                                        
+                                        // A room is truly 'Active' for arrival preparations only if there's an incoming guest 
+                                        // who is NOT the same as the departing guest (unless they have different booking IDs)
+                                        const trulyActive = isActive || (!!booking && (!checkoutForRoom || checkoutForRoom.id !== booking.id));
                                         const hasDog = booking ? (booking.dog_count > 0 || booking.has_dog === 1) : false;
                                         const hasExtraBed = booking ? (booking.extra_bed_count > 0) : false;
 

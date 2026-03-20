@@ -89,12 +89,13 @@ function getIsolatedMockData(pensionId?: string): Record<string, any[]> {
         ? JSON.parse(JSON.stringify(mockDataTemplate))
         : Object.keys(mockDataTemplate).reduce((acc, key) => ({ ...acc, [key]: [] }), {});
 
-    // Ensure all rows have the correct pension_id
+    // Ensure all rows have the correct pension_id and default fields
     Object.keys(initialData).forEach(table => {
       initialData[table] = initialData[table].map((item: any) => ({
         pension_id: isDemoAccount ? "00000000-0000-0000-0000-000000000001" : pId,
         updated_at: "2026-01-01T00:00:00",
         synced_at: null,
+        is_deleted: 0,
         ...item
       }));
     });
@@ -133,6 +134,15 @@ export function initDb(pensionId?: string): Promise<DatabaseMock | null> {
   return initPromises[key];
 }
 
+/**
+ * Clears all cached database promises.
+ * Call this upon logout to ensure the next login uses a fresh connection.
+ */
+export function resetDb() {
+  console.log("[DB] Resetting database connection cache.");
+  initPromises = {};
+}
+
 async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
   if (typeof window === "undefined") return null;
 
@@ -157,8 +167,12 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
               columns.forEach((col, i) => {
                 newRow[col] = params?.[i];
               });
-              const existingIndex = mockData[table].findIndex(item => item.id === newRow.id);
-              if (existingIndex !== -1 && uq.includes("REPLACE")) {
+              
+              const idField = table === 'settings' ? 'key' : 'id';
+              const existingIndex = mockData[table].findIndex(item => String(item[idField]) === String(newRow[idField]));
+              
+              if (existingIndex !== -1) {
+                  // Perform update instead of push to avoid duplicates
                   mockData[table][existingIndex] = { ...mockData[table][existingIndex], ...newRow };
               } else {
                   mockData[table].push(newRow);
@@ -169,13 +183,11 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
             const table = Object.keys(mockData).find(t => uq.startsWith(`UPDATE ${t.toUpperCase()}`)) as keyof typeof mockData;
             if (table) {
                 const idField = table === 'settings' ? 'key' : 'id';
-                const idMatch = query.match(/WHERE\s+(\w+)\s*=\s*\?/i);
+                const idMatch = query.match(/WHERE\s+([\w\d_\.]+)\s*=\s*\?/i);
                 if (idMatch) {
-                    // Find which parameter index corresponds to the ID field
-                    // This is a simplified mock - we assume the first ? after WHERE is the ID
                     const wherePart = query.split(/WHERE/i)[1] || "";
                     const whereConditions = wherePart.split(/AND/i).map(c => c.trim().toLowerCase());
-                    const idParamIdxInWhere = whereConditions.findIndex(c => c.includes(`${idField.toLowerCase()} = ?`) || c.includes(`${idField.toLowerCase()}=?`));
+                    const idParamIdxInWhere = whereConditions.findIndex(c => c.includes(`${idMatch[1].toLowerCase()} = ?`) || c.includes(`${idMatch[1].toLowerCase()}=?`));
                     
                     if (idParamIdxInWhere !== -1) {
                         const setPart = query.match(/SET\s+(.+?)\s+WHERE/i)?.[1] || "";
@@ -188,7 +200,7 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
                             let paramIdx = 0;
                             assignments.forEach((a) => {
                                 if (a.includes("=?") || a.includes("= ?")) {
-                                    const col = a.split("=")[0].trim();
+                                    const col = a.split("=")[0].trim().split('.').pop() || "";
                                     mockData[table][targetIdx][col] = params?.[paramIdx++];
                                 }
                             });
@@ -203,8 +215,9 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
                 if (!query.includes("WHERE")) {
                     mockData[table] = [];
                 } else {
-                    const idValue = params?.[0];
                     const idField = table === 'settings' ? 'key' : 'id';
+                    // Extract ID from params (usually the first one)
+                    const idValue = params?.[0];
                     mockData[table] = mockData[table].filter(item => String(item[idField]) !== String(idValue));
                 }
             }
@@ -215,16 +228,21 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
         const uq = query.toUpperCase();
         console.log("[Mock DB] Select:", query, params);
 
-        const table = Object.keys(mockData).find(t => uq.includes(`FROM ${t.toUpperCase()}`)) as keyof typeof mockData;
-        if (!table) {
+        // 1. Identify main table
+        const tableMatch = query.match(/FROM\s+([\w\d_]+)(?:\s+as\s+)?([\w\d_]+)?/i);
+        const tableName = tableMatch?.[1].toLowerCase() as keyof typeof mockData;
+        
+        if (!tableName || !mockData[tableName]) {
           if (uq.includes("COUNT(*)")) return [{ count: 0 }] as unknown as T;
           return [] as unknown as T;
         }
 
-        let res = [...(mockData[table] || [])];
+        let res = [...(mockData[tableName] || [])];
 
-        if (table === "bookings" || uq.includes("BOOKINGS")) {
-            res = [...mockData.bookings];
+        // 2. Perform basic joins if detected
+        // Special patterns for the app
+        if (tableName === "bookings" || uq.includes("BOOKINGS")) {
+            // For bookings table, we often translate status codes
             if (uq.includes("STATUS IN")) {
                 const statusStr = (query.match(/IN\s*\((.*?)\)/i)?.[1] || "").toLowerCase();
                 res = res.filter(b => {
@@ -239,17 +257,15 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
                     return false;
                 });
             }
-            if (params && params.length > 0) {
-                if (params.length >= 6) {
-                    const s = params[0], e = params[1];
-                    res = res.filter(b => b.start_date <= e && b.end_date >= s);
-                } else if (uq.includes(">=") && (uq.includes("END_DATE") || uq.includes("B.END_DATE"))) {
-                    res = res.filter(b => b.end_date >= params[0]);
-                } else if (uq.includes("<") && (uq.includes("START_DATE") || uq.includes("B.START_DATE"))) {
-                    res = res.filter(b => b.start_date < params[0]);
-                }
+            
+            // Manual date range optimization from original code
+            if (params && params.length >= 6 && uq.includes("START_DATE <=") && uq.includes("END_DATE >=")) {
+                const s = params[0], e = params[1];
+                res = res.filter(b => b.start_date <= e && b.end_date >= s);
             }
-            return res.map(b => {
+
+            // Always enrich bookings with joined data
+            res = res.map(b => {
                 const guest = mockData.guests.find(g => g.id === b.guest_id);
                 const room = mockData.rooms.find(r => r.id === b.room_id);
                 const group = mockData.booking_groups.find(g => g.id === b.group_id);
@@ -266,27 +282,171 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
                     group_name: group?.name || "",
                     occasion_title: occasion?.title || ""
                 };
-            }) as unknown as T;
-        }
-
-        if (uq.includes("WHERE")) {
-            const matches = query.match(/(\w+)\s*=\s*(\?|'[^']*'|"[^"]*")/gi);
-            if (matches) {
-                let pIdx = 0;
-                const filters: Record<string, any> = {};
-                matches.forEach(m => {
-                    const [f, v] = m.split("=").map(s => s.trim());
-                    if (v === "?") filters[f.toLowerCase()] = params?.[pIdx++];
-                    else filters[f.toLowerCase()] = v.replace(/['"]/g, "");
+            });
+        } else if (tableName === "rooms") {
+            // Join with bookings for room-based pages (Cleaning / Breakfast)
+            if (uq.includes("JOIN BOOKINGS")) {
+                const today = new Date().toISOString().split('T')[0];
+                const selectedDate = params?.[0] || today;
+                
+                res = res.map(r => {
+                    const booking = mockData.bookings.find(b => 
+                        b.room_id === r.id && 
+                        b.status !== 'Storniert' && b.status !== 'Draft' &&
+                        (uq.includes("STATUS != 'CHECKED-OUT'") ? b.status !== 'Checked-Out' : true) &&
+                        selectedDate >= b.start_date && selectedDate <= b.end_date
+                    );
+                    
+                    const cleaningTask = mockData.cleaning_tasks?.find(ct => ct.room_id === r.id && ct.date === selectedDate);
+                    const guest = booking ? mockData.guests.find(g => g.id === booking.guest_id) : null;
+                    const breakfast = booking ? mockData.breakfast_options?.find(bo => bo.booking_id === booking.id && bo.date === selectedDate) : null;
+                    
+                    return {
+                        ...r,
+                        room_id: r.id,
+                        room_name: r.name,
+                        room_type: r.type,
+                        booking_id: booking?.id,
+                        booking_status: booking?.status,
+                        start_date: booking?.start_date,
+                        end_date: booking?.end_date,
+                        guest_name: guest?.name || (booking ? "Unbekannt" : null),
+                        task_id: cleaningTask?.id,
+                        task_status: cleaningTask?.status,
+                        task_title: cleaningTask?.title,
+                        task_type: cleaningTask?.task_type,
+                        task_comments: cleaningTask?.comments,
+                        breakfast_id: breakfast?.id,
+                        time: breakfast?.time,
+                        guest_count: breakfast?.guest_count,
+                        comments: breakfast?.comments,
+                        is_prepared: breakfast?.is_prepared || 0,
+                        is_included: breakfast?.is_included || 0,
+                        source: breakfast?.source
+                    };
                 });
-                res = res.filter(item => Object.entries(filters).every(([f, v]) => {
-                    // Honor the pension_id filter to ensure strict data separation in the mock DB
-                    return String(item[f]) === String(v);
-                }));
+            }
+        }        // Helper for robust comparison
+        const compareValues = (itemVal: any, op: string, targetVal: any): boolean => {
+            // 1. Handle NULLs
+            if (op === 'IS NULL') return itemVal === null || itemVal === undefined;
+            if (op === 'IS NOT NULL') return itemVal !== null && itemVal !== undefined;
+
+            // 2. Handle Booleans vs Numbers (Standardize to Number for comparison)
+            let v1 = itemVal;
+            let v2 = targetVal;
+            if (typeof v1 === 'boolean') v1 = v1 ? 1 : 0;
+            if (typeof v2 === 'boolean') v2 = v2 ? 1 : 0;
+
+            // 3. Handle Dates (Truncate to 10 chars if both look like YYYY-MM-DD)
+            if (typeof v1 === 'string' && typeof v2 === 'string' && v1.length >= 10 && v2.length >= 10) {
+                if (/^\d{4}-\d{2}-\d{2}/.test(v1) && /^\d{4}-\d{2}-\d{2}/.test(v2)) {
+                    v1 = v1.substring(0, 10);
+                    v2 = v2.substring(0, 10);
+                }
+            }
+
+            // 4. Perform comparison
+            switch (op) {
+                case '=': return String(v1) === String(v2);
+                case '!=': return String(v1) !== String(v2);
+                case '>': return v1 > v2;
+                case '<': return v1 < v2;
+                case '>=': return v1 >= v2;
+                case '<=': return v1 <= v2;
+                default: return true;
+            }
+        };
+
+        // 3. Apply WHERE filters
+        if (uq.includes("WHERE")) {
+            const wherePart = query.split(/WHERE/i)[1]?.split(/ORDER BY|GROUP BY|LIMIT/i)[0] || "";
+            
+            // New approach: Find ALL parameters in the WHERE part in order
+            const totalParamsInWhere = (wherePart.match(/\?/g) || []).length;
+            let pIdx = 0;
+
+            // Regex to find conditions like: field = ?, field IS NULL, field != 'val'
+            const matches = wherePart.match(/(?:[\w\d_]+\.)?([\w\d_]+)\s*(?:(=|!=|<>|>|<|>=|<=)\s*(\?|'[^']*'|"[^"]*"|\d+)|(IS NULL)|(IS NOT NULL))/gi);
+            
+            if (matches) {
+                const criteria: { field: string, op: string, val: any }[] = [];
+                
+                // We need to know which ? corresponds to which match
+                // This is still a bit simplified but better. 
+                // We'll iterate through the matches and if a match uses a ?, we take the next param.
+                
+                matches.forEach(m => {
+                    const parts = m.match(/(?:[\w\d_]+\.)?([\w\d_]+)\s*(?:(=|!=|<>|>|<|>=|<=)\s*(\?|'[^']*'|"[^"]*"|\d+)|(IS NULL)|(IS NOT NULL))/i);
+                    if (parts) {
+                        const field = parts[1].toLowerCase();
+                        let op = parts[2];
+                        let val: any = parts[3];
+                        
+                        if (parts[4]) { // IS NULL
+                            op = 'IS NULL';
+                            val = null;
+                        } else if (parts[5]) { // IS NOT NULL
+                            op = 'IS NOT NULL';
+                            val = null;
+                        } else {
+                            if (op === '<>') op = '!=';
+                            if (val === "?") {
+                                // Find the index of this ? in the wherePart to keep pIdx in sync
+                                // However, simpler: just count ? before this match
+                                const indexInWhere = wherePart.indexOf(m);
+                                const paramsBefore = (wherePart.substring(0, indexInWhere).match(/\?/g) || []).length;
+                                val = params?.[paramsBefore];
+                            }
+                            else if (val.startsWith("'") || val.startsWith('"')) val = val.substring(1, val.length - 1);
+                            else if (!isNaN(Number(val))) val = Number(val);
+                        }
+                        
+                        criteria.push({ field, op, val });
+                    }
+                });
+
+                res = res.filter(item => {
+                    // Group criteria by field to handle OR conditions like (pension_id = ? OR pension_id IS NULL)
+                    // and (date = ? OR delayed_from = ?)
+                    const fieldGroups: Record<string, typeof criteria> = {};
+                    criteria.forEach(c => {
+                        // Special group for date/delayed mapping in cleaning plan
+                        const groupKey = (c.field === 'date' || c.field === 'delayed_from') ? 'date_group' : c.field;
+                        if (!fieldGroups[groupKey]) fieldGroups[groupKey] = [];
+                        fieldGroups[groupKey].push(c);
+                    });
+
+                    return Object.values(fieldGroups).every(group => {
+                        return group.some(c => {
+                            let itemVal = item[c.field];
+                            // Special handling for is_deleted
+                            if (c.field === 'is_deleted' && (itemVal === undefined || itemVal === null)) itemVal = 0;
+                            
+                            return compareValues(itemVal, c.op, c.val);
+                        });
+                    });
+                });
             }
         }
+
         if (uq.includes("COUNT(*)")) return [{ count: res.length }] as unknown as T;
         if (uq.includes("MAX(SYNCED_AT)")) return [{ max_sync: "2026-03-01T00:00:00Z" }] as unknown as T;
+
+        // 4. Apply ORDER BY
+        if (uq.includes("ORDER BY")) {
+            const orderMatch = query.match(/ORDER BY\s+([\w\d_\.]+)(?:\s+(ASC|DESC))?/i);
+            if (orderMatch) {
+                const field = orderMatch[1].split('.').pop()?.toLowerCase() || "";
+                const direction = orderMatch[2]?.toUpperCase() === "DESC" ? -1 : 1;
+                res.sort((a, b) => {
+                    if (a[field] < b[field]) return -1 * direction;
+                    if (a[field] > b[field]) return 1 * direction;
+                    return 0;
+                });
+            }
+        }
+
         return res as unknown as T;
       }
     };
@@ -395,12 +555,13 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
       );
 
       CREATE TABLE IF NOT EXISTS cleaning_tasks (
-        id TEXT PRIMARY KEY, room_id TEXT, staff_id TEXT, date TEXT, status TEXT,
+        id TEXT PRIMARY KEY, room_id TEXT, booking_id TEXT, staff_id TEXT, date TEXT, status TEXT,
         is_exception INTEGER DEFAULT 0, original_date TEXT, title TEXT,
         task_type TEXT DEFAULT 'cleaning',
         updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now') || 'Z'),
         synced_at TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id),
+        FOREIGN KEY (booking_id) REFERENCES bookings(id),
         FOREIGN KEY (staff_id) REFERENCES staff(id)
       );
 
@@ -464,11 +625,12 @@ async function _initDb(pensionId?: string): Promise<DatabaseMock | null> {
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN source TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN title TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN task_type TEXT DEFAULT 'cleaning'"); } catch (e) { }
+    try { await db.execute("ALTER TABLE cleaning_tasks ADD COLUMN booking_id TEXT"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN source TEXT DEFAULT 'auto'"); } catch (e) { }
     try { await db.execute("ALTER TABLE breakfast_options ADD COLUMN is_manual INTEGER DEFAULT 0"); } catch (e) { }
 
     // Add updated_at and synced_at to all tables (ALTER for existing DBs)
-    const tables = ["rooms", "room_configs", "guests", "booking_groups", "occasions", "bookings", "staff", "cleaning_tasks", "cleaning_task_suggestions", "breakfast_options", "connected_devices", "settings"];
+    const tables = ["rooms", "room_configs", "guests", "booking_groups", "occasions", "bookings", "staff", "cleaning_tasks", "cleaning_task_suggestions", "breakfast_options", "connected_devices", "settings", "pensions"];
     for (const table of tables) {
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT`); } catch (e) { }
       try { await db.execute(`ALTER TABLE ${table} ADD COLUMN synced_at TEXT`); } catch (e) { }

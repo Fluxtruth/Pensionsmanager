@@ -16,7 +16,8 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { initDb } from "@/lib/db";
-import { cn } from "@/lib/utils";
+import { SyncService, syncEvents } from "@/lib/sync";
+import { cn, uuidv4 } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { savePdfNative } from "@/lib/pdf-export";
@@ -52,7 +53,8 @@ export default function BreakfastPage() {
 
     const loadData = useCallback(async () => {
         try {
-            const db = await initDb();
+            const pensionId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pensionId || undefined);
             if (db) {
                 // Fetch all rooms and join with potential bookings and breakfast options for today
                 const results = await db.select<BreakfastRow[]>(`
@@ -65,14 +67,15 @@ export default function BreakfastPage() {
                         bo.source
                     FROM rooms r
                     LEFT JOIN bookings b ON r.id = b.room_id 
-                        AND b.status != 'Checked-Out' 
-                        AND b.status != 'Draft'
-                        AND ? > b.start_date AND ? <= b.end_date AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                        AND substr(b.end_date, 1, 10) >= ? 
+                        AND substr(b.start_date, 1, 10) < ? 
+                        AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
                     LEFT JOIN guests g ON b.guest_id = g.id
-                    LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND bo.date = ? AND (bo.is_deleted = 0 OR bo.is_deleted IS NULL)
-                    WHERE r.is_deleted = 0 OR r.is_deleted IS NULL
+                    LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND substr(bo.date, 1, 10) = ? AND (bo.is_deleted = 0 OR bo.is_deleted IS NULL)
+                    WHERE (r.is_deleted = 0 OR r.is_deleted IS NULL)
+                    AND (r.pension_id = ? OR ? IS NULL)
                     ORDER BY r.id ASC, bo.time ASC, bo.id ASC
-                `, [selectedDate, selectedDate, selectedDate]);
+                `, [selectedDate, selectedDate, selectedDate, pensionId, pensionId]);
                 setData(results || []);
 
                 // Check if generation is needed: any booking without a breakfast_id
@@ -91,6 +94,17 @@ export default function BreakfastPage() {
         setPendingChanges({}); // Reset changes when date changes
     }, [loadData]);
 
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            loadData();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => {
+            syncEvents.off("sync-completed", handleSyncComplete);
+        };
+    }, [loadData]);
+
     const handleSaveAll = async () => {
         if (!hasUnsavedChanges) return;
         setIsSaving(true);
@@ -105,6 +119,7 @@ export default function BreakfastPage() {
                         await db.execute(`UPDATE breakfast_options SET ${setClause} WHERE id = ?`, [...values, id]);
                     }
                 }
+                SyncService.getInstance().triggerSync();
                 setPendingChanges({});
                 setSaveSuccess(true);
                 setTimeout(() => setSaveSuccess(false), 3000);
@@ -121,10 +136,12 @@ export default function BreakfastPage() {
         try {
             const db = await initDb();
             if (db) {
+                const pensionId = await SyncService.getInstance().getPensionId();
                 await db.execute(
-                    "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), bookingId, selectedDate, 1, "08:00", 1, 0, "", "manuell", 1]
+                    "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [uuidv4(), bookingId, selectedDate, 1, "08:00", 1, 0, "", "manuell", 1, pensionId]
                 );
+                SyncService.getInstance().triggerSync();
                 await loadData();
             }
         } catch (error) {
@@ -143,12 +160,14 @@ export default function BreakfastPage() {
                     return;
                 }
 
+                const pensionId = await SyncService.getInstance().getPensionId();
                 for (const item of missing) {
                     await db.execute(
-                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0]
+                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [uuidv4(), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0, pensionId]
                     );
                 }
+                SyncService.getInstance().triggerSync();
                 await loadData();
             }
         } catch (error) {
@@ -161,6 +180,7 @@ export default function BreakfastPage() {
             const db = await initDb();
             if (db) {
                 await db.execute("UPDATE breakfast_options SET is_deleted = 1 WHERE id = ?", [breakfastId]);
+                SyncService.getInstance().triggerSync();
                 await loadData();
             }
         } catch (error) {
@@ -177,11 +197,13 @@ export default function BreakfastPage() {
                 if (row.breakfast_id) {
                     await db.execute("UPDATE breakfast_options SET is_included = ? WHERE id = ?", [newIncluded, row.breakfast_id]);
                 } else {
+                    const pensionId = await SyncService.getInstance().getPensionId();
                     await db.execute(
-                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)), row.booking_id, selectedDate, newIncluded, "08:00", 1, 0, "", "auto", 0]
+                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [uuidv4(), row.booking_id, selectedDate, newIncluded, "08:00", 1, 0, "", "auto", 0, pensionId]
                     );
                 }
+                SyncService.getInstance().triggerSync();
                 await loadData();
             }
         } catch (error) {
@@ -207,6 +229,7 @@ export default function BreakfastPage() {
             if (db) {
                 const newStatus = currentStatus === 1 ? 0 : 1;
                 await db.execute("UPDATE breakfast_options SET is_prepared = ? WHERE id = ?", [newStatus, breakfastId]);
+                SyncService.getInstance().triggerSync();
                 await loadData();
             }
         } catch (error) {

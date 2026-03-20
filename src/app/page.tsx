@@ -68,7 +68,7 @@ export default function Home() {
         const todayBookings = await db.select<any[]>(`
           SELECT room_id, status, start_date, end_date 
           FROM bookings 
-          WHERE (start_date <= ? AND end_date >= ?) AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
+          WHERE (substr(start_date, 1, 10) <= ? AND substr(end_date, 1, 10) >= ?) AND status != 'Storniert' AND pension_id = ? AND (is_deleted = 0 OR is_deleted IS NULL)
         `, [today, today, pensionId]);
 
         const roomsWithStatus = roomResults.map(room => {
@@ -102,7 +102,7 @@ export default function Home() {
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
-          WHERE b.start_date = ? AND b.pension_id = ? AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+          WHERE substr(b.start_date, 1, 10) = ? AND b.status != 'Storniert' AND b.pension_id = ? AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
         `, [today, pensionId]);
 
         if (arrivalResults) {
@@ -121,7 +121,7 @@ export default function Home() {
           FROM bookings b
           JOIN guests g ON b.guest_id = g.id
           LEFT JOIN rooms r ON b.room_id = r.id
-          WHERE b.end_date = ? AND b.pension_id = ? AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+          WHERE substr(b.end_date, 1, 10) = ? AND b.status != 'Storniert' AND b.pension_id = ? AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
         `, [today, pensionId]);
 
         if (departureResults) {
@@ -169,9 +169,10 @@ export default function Home() {
     setIsProcessing(true);
 
     try {
-      const db = await initDb();
+      const pId = await SyncService.getInstance().getPensionId();
+      const db = await initDb(pId || undefined);
       if (db) {
-        await db.execute("UPDATE bookings SET status = 'Checked-In' WHERE id = ?", [pendingCheckIn.id]);
+        await db.execute("UPDATE bookings SET status = 'Checked-In' WHERE id = ? AND (pension_id = ? OR ? IS NULL)", [pendingCheckIn.id, pId, pId]);
 
         // Trigger Confetti!
         confetti({
@@ -182,6 +183,10 @@ export default function Home() {
         });
 
         await loadData(db);
+        
+        // Trigger sync
+        SyncService.getInstance().triggerSync();
+        
         setRefreshKey(prev => prev + 1);
         setCheckInConfirmOpen(false);
         setPendingCheckIn(null);

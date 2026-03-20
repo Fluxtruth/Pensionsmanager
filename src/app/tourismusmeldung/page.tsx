@@ -13,6 +13,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { initDb } from "@/lib/db";
+import { SyncService, syncEvents } from "@/lib/sync";
 
 interface TourismData {
     id: string;
@@ -30,7 +31,8 @@ export default function TourismusmeldungPage() {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const db = await initDb();
+            const pId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pId || undefined);
             if (db) {
                 const year = selectedDate.getFullYear();
                 const month = selectedDate.getMonth();
@@ -54,8 +56,10 @@ export default function TourismusmeldungPage() {
                         (b.end_date BETWEEN ? AND ?) OR
                         (b.start_date <= ? AND b.end_date >= ?)
                     )
+                    AND b.pension_id = ?
+                    AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
                 `;
-                const params = [startStr, endStr, startStr, endStr, startStr, endStr];
+                const params = [startStr, endStr, startStr, endStr, startStr, endStr, pId];
 
                 const results = await db.select<TourismData[]>(query, params);
                 setData(results || []);
@@ -67,8 +71,21 @@ export default function TourismusmeldungPage() {
         }
     }, [selectedDate]);
 
+
+
     useEffect(() => {
         loadData();
+    }, [loadData]);
+
+    // Automatic refresh when sync completes
+    useEffect(() => {
+        const handleSyncComplete = () => {
+            console.log("[Tourism] Sync completed, refreshing data...");
+            loadData();
+        };
+
+        syncEvents.on("sync-completed", handleSyncComplete);
+        return () => syncEvents.off("sync-completed", handleSyncComplete);
     }, [loadData]);
 
     const nextMonth = () => {

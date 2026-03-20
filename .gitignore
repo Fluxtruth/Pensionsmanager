@@ -43,4 +43,6 @@ next-env.d.ts
 # Playwright and vitest output
 playwright-report/
 test-results/
+test-results-*/
 test_output.txt
+test_output_v*.txt

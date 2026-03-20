@@ -59,6 +59,10 @@ export default function AccountPage() {
     const handleLogout = async () => {
         setLogoutLoading(true);
         try {
+            // 1. Clear local session first (DB cache, pension IDs, etc)
+            SyncService.getInstance().clearSession();
+            
+            // 2. Sign out from Supabase
             const { error } = await supabase.auth.signOut();
             if (error) throw error;
             router.push("/login");
