@@ -18,7 +18,7 @@ export default function ConfigurationPage() {
     const [logo, setLogo] = useState("/logo.jpg");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [appVersion, setAppVersion] = useState("v1.11.4");
+    const [appVersion, setAppVersion] = useState("v1.11.5");
 
     useEffect(() => {
         const loadSettings = async () => {
