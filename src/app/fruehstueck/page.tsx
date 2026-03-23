@@ -21,11 +21,13 @@ import { cn, uuidv4 } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { savePdfNative } from "@/lib/pdf-export";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface BreakfastRow {
     room_id: string;
     room_name: string;
     booking_id: string | null;
+    booking_start_date: string | null;
     guest_name: string | null;
     breakfast_id: string | null;
     time: string | null;
@@ -40,7 +42,7 @@ export default function BreakfastPage() {
     const [data, setData] = useState<BreakfastRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [downloadSuccess, setDownloadSuccess] = useState(false);
-    const [needsGeneration, setNeedsGeneration] = useState(false);
+    
     const todayStr = new Date().toISOString().split('T')[0];
     const [selectedDate, setSelectedDate] = useState(todayStr);
 
@@ -60,7 +62,7 @@ export default function BreakfastPage() {
                 const results = await db.select<BreakfastRow[]>(`
                     SELECT 
                         r.id as room_id, r.name as room_name,
-                        b.id as booking_id, g.name as guest_name,
+                        b.id as booking_id, b.start_date as booking_start_date, g.name as guest_name,
                         bo.id as breakfast_id, bo.time, bo.guest_count, bo.comments, 
                         COALESCE(bo.is_prepared, 0) as is_prepared, 
                         COALESCE(bo.is_included, 0) as is_included,
@@ -68,7 +70,7 @@ export default function BreakfastPage() {
                     FROM rooms r
                     LEFT JOIN bookings b ON r.id = b.room_id 
                         AND substr(b.end_date, 1, 10) >= ? 
-                        AND substr(b.start_date, 1, 10) < ? 
+                        AND substr(b.start_date, 1, 10) <= ? 
                         AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
                     LEFT JOIN guests g ON b.guest_id = g.id
                     LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND substr(bo.date, 1, 10) = ? AND (bo.is_deleted = 0 OR bo.is_deleted IS NULL)
@@ -78,9 +80,44 @@ export default function BreakfastPage() {
                 `, [selectedDate, selectedDate, selectedDate, pensionId, pensionId]);
                 setData(results || []);
 
-                // Check if generation is needed: any booking without a breakfast_id
-                const missingEntries = (results || []).some(r => r.booking_id && !r.breakfast_id);
-                setNeedsGeneration(missingEntries);
+                // Auto-generate missing entries for stay-over guests (check-in < selectedDate)
+                const stayOverMissing = (results || []).filter(r => 
+                    r.booking_id && 
+                    !r.breakfast_id && 
+                    r.booking_start_date && 
+                    substr_date(r.booking_start_date) < selectedDate
+                );
+
+                if (stayOverMissing.length > 0) {
+                    for (const item of stayOverMissing) {
+                        await db.execute(
+                            "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [uuidv4(), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0, pensionId]
+                        );
+                    }
+                    SyncService.getInstance().triggerSync();
+                    // Refetch after auto-generation
+                    const updatedResults = await db.select<BreakfastRow[]>(`
+                        SELECT 
+                            r.id as room_id, r.name as room_name,
+                            b.id as booking_id, b.start_date as booking_start_date, g.name as guest_name,
+                            bo.id as breakfast_id, bo.time, bo.guest_count, bo.comments, 
+                            COALESCE(bo.is_prepared, 0) as is_prepared, 
+                            COALESCE(bo.is_included, 0) as is_included,
+                            bo.source
+                        FROM rooms r
+                        LEFT JOIN bookings b ON r.id = b.room_id 
+                            AND substr(b.end_date, 1, 10) >= ? 
+                            AND substr(b.start_date, 1, 10) <= ? 
+                            AND (b.is_deleted = 0 OR b.is_deleted IS NULL)
+                        LEFT JOIN guests g ON b.guest_id = g.id
+                        LEFT JOIN breakfast_options bo ON b.id = bo.booking_id AND substr(bo.date, 1, 10) = ? AND (bo.is_deleted = 0 OR bo.is_deleted IS NULL)
+                        WHERE (r.is_deleted = 0 OR r.is_deleted IS NULL)
+                        AND (r.pension_id = ? OR ? IS NULL)
+                        ORDER BY r.id ASC, bo.time ASC, bo.id ASC
+                    `, [selectedDate, selectedDate, selectedDate, pensionId, pensionId]);
+                    setData(updatedResults || []);
+                }
             }
         } catch (error) {
             console.error("Failed to load breakfast data:", error);
@@ -149,31 +186,6 @@ export default function BreakfastPage() {
         }
     };
 
-    const generateBreakfastPlan = async () => {
-        try {
-            const db = await initDb();
-            if (db) {
-                const missing = data.filter(item => item.booking_id && !item.breakfast_id);
-
-                if (missing.length === 0) {
-                    alert("Alle aktiven Buchungen haben bereits einen Frühstückseintrag.");
-                    return;
-                }
-
-                const pensionId = await SyncService.getInstance().getPensionId();
-                for (const item of missing) {
-                    await db.execute(
-                        "INSERT INTO breakfast_options (id, booking_id, date, is_included, time, guest_count, is_prepared, comments, source, is_manual, pension_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [uuidv4(), item.booking_id, selectedDate, 1, "08:00", 1, 0, "", "auto", 0, pensionId]
-                    );
-                }
-                SyncService.getInstance().triggerSync();
-                await loadData();
-            }
-        } catch (error) {
-            console.error("Failed to generate breakfast plan:", error);
-        }
-    };
 
     const removePerson = async (breakfastId: string) => {
         try {
@@ -359,18 +371,6 @@ export default function BreakfastPage() {
                         </div>
                     )}
 
-                    <Button
-                        className={cn(
-                            "h-10 shadow-lg transition-all",
-                            needsGeneration
-                                ? "bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 animate-pulse ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-zinc-950"
-                                : "bg-orange-600 hover:bg-orange-700 shadow-orange-500/20"
-                        )}
-                        onClick={generateBreakfastPlan}
-                    >
-                        <Clock className="w-4 h-4 mr-2" />
-                        {needsGeneration ? "Plan aktualisieren" : "Plan generieren"}
-                    </Button>
                 </div>
             </div>
 
@@ -566,7 +566,13 @@ export default function BreakfastPage() {
                 </Card>
 
             </div>
+
         </div>
     );
+}
+
+// Helper to handle SQLite date substrings in JS
+function substr_date(d: string) {
+    return d.substring(0, 10);
 }
 
