@@ -10,6 +10,8 @@ class SyncEventEmitter {
       this.listeners[event] = [];
     }
     this.listeners[event].push(callback);
+    // Return unsubscribe function for convenience in useEffect
+    return () => this.off(event, callback);
   }
 
   public off(event: SyncEvent, callback: SyncCallback) {
