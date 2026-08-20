@@ -9,7 +9,7 @@ test.describe('E2E-BUC-002: Cancel Booking', () => {
     test('should cancel an existing booking', async ({ page }) => {
         
         await test.step('1. Öffne Buchungsdetails', async () => {
-            await page.click('.booking-row').first();
+            await page.locator('.booking-row').first().click();
         });
 
         await test.step('2. Klicke auf "Stornieren"', async () => {
