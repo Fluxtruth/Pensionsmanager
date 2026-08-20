@@ -364,6 +364,9 @@ export default function DatabasePage() {
                                         <div className="w-2 h-2 rounded-full bg-red-500" />
                                     )}
                                 </div>
+                                <div className="text-sm font-medium mt-1 text-zinc-600 dark:text-zinc-400 flex items-center">
+                                    Umgebung: <Badge variant="outline" className={cn("ml-2 h-5 text-[10px]", process.env.NODE_ENV === 'production' ? "text-green-600 border-green-600/30 bg-green-50/50 dark:bg-green-900/20" : "text-amber-600 border-amber-600/30 bg-amber-50/50 dark:bg-amber-900/20")}>{process.env.NODE_ENV === 'production' ? 'Prod' : 'Dev'}</Badge>
+                                </div>
                                 <div className="text-sm font-medium mt-1 text-zinc-600 dark:text-zinc-400">
                                     Pensions-ID: <span className="font-bold text-zinc-900 dark:text-zinc-100">{shortPensionId || "Lädt..."}</span>
                                 </div>

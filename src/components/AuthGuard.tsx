@@ -28,7 +28,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 const { data: { session } } = await supabase.auth.getSession();
                 setHasSession(!!session);
 
-                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/reset-password');
                 const isPublicRoute = isAuthRoute || pathname === '/impressum';
 
                 if (!session && !isPublicRoute) {
@@ -92,7 +92,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             setHasSession(!!session);
-            const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+            const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/reset-password');
 
             if (event === 'SIGNED_OUT' && !isAuthRoute) {
                 SyncService.getInstance().clearSession();
@@ -112,15 +112,29 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             if (errorMsg.includes('Refresh Token Not Found') || errorMsg.includes('Invalid Refresh Token')) {
                 console.warn("[Auth] Invalid refresh token detected");
                 supabase.auth.signOut().catch(() => {});
-                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+                const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/reset-password');
                 if (!isAuthRoute) {
                     router.replace('/login');
                 }
                 return;
             }
+            if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError') || errorMsg.includes('fetch failed')) {
+                console.warn("[Auth/Network] Supabase fetch failed (offline or network issue):", errorMsg);
+                return;
+            }
             originalConsoleError.apply(console, args);
         };
         console.error = authErrorHandler;
+
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            const reason = event.reason;
+            const message = reason?.message || String(reason || '');
+            if (message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('fetch failed')) {
+                console.warn("[Network] Suppressed unhandled network rejection:", message);
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
 
         const handleManualLock = () => {
             if (isPinEnabled) {
@@ -176,11 +190,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             subscription.unsubscribe();
             window.removeEventListener('app-lock', handleManualLock);
             window.removeEventListener('settings-changed', reloadPinSettings);
+            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
             console.error = originalConsoleError;
         };
     }, [pathname, router]);
 
-    const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register');
+    const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/reset-password');
     const isPublicRoute = isAuthRoute || pathname === '/impressum';
 
     // Don't render main content until we've checked auth
