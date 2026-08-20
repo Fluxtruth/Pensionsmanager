@@ -102,12 +102,12 @@ export class SyncService {
         .eq('id', user.id)
         .single();
 
-      if (profile?.pension_id) {
-        this.currentPensionId = profile.pension_id;
+      if ((profile as any)?.pension_id) {
+        this.currentPensionId = (profile as any).pension_id;
         if (typeof window !== 'undefined') {
-            localStorage.setItem("app_last_pension_id", profile.pension_id);
+            localStorage.setItem("app_last_pension_id", (profile as any).pension_id);
         }
-        return profile.pension_id;
+        return (profile as any).pension_id;
       }
       return null;
     } catch (e) {
