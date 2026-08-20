@@ -103,7 +103,6 @@ export const supabase =
       storageKey,
       autoRefreshToken: true,
       persistSession: true,
-      fetch: safeFetch,
       // Disable Web Locks API in development to prevent "Lock broken" AbortErrors
       // caused by React Strict Mode and HMR fast-refreshing the client instances.
       ...(process.env.NODE_ENV !== "production"
