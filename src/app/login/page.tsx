@@ -17,6 +17,7 @@ export default function LoginPage() {
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isResetMode, setIsResetMode] = useState(false);
     const router = useRouter();
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -48,6 +49,35 @@ export default function LoginPage() {
         }
     };
 
+    const handleResetPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        setMessage(null);
+
+        if (!email) {
+            setError("Bitte gib deine E-Mail-Adresse ein.");
+            return;
+        }
+
+        setIsLoading(true);
+
+        try {
+            const redirectTo = `${window.location.origin}/reset-password`;
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo,
+            });
+
+            if (error) throw error;
+
+            setMessage("Wenn ein Konto mit dieser E-Mail-Adresse existiert, haben wir eine E-Mail zum Zurücksetzen des Passworts gesendet.");
+        } catch (err: any) {
+            console.error(err);
+            setError(getGermanAuthError(err.message));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return (
         <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950 p-4">
             <header className="py-8 text-center">
@@ -63,81 +93,151 @@ export default function LoginPage() {
 
             <main className="flex-1 flex items-center justify-center">
                 <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-                    {/* Login Card */}
+                    {/* Login / Reset Card */}
                     <Card className="shadow-xl border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
                         <CardHeader className="text-center space-y-2 pb-2">
                             <div className="mx-auto w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-2">
                                 <LogIn className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                             </div>
-                            <CardTitle className="text-2xl font-bold">Willkommen zurück</CardTitle>
+                            <CardTitle className="text-2xl font-bold">
+                                {isResetMode ? "Passwort zurücksetzen" : "Willkommen zurück"}
+                            </CardTitle>
                             <CardDescription>
-                                Melden Sie sich an, um auf Ihr Dashboard zuzugreifen.
+                                {isResetMode 
+                                    ? "Geben Sie Ihre E-Mail-Adresse ein, um einen Link zum Zurücksetzen des Passworts zu erhalten." 
+                                    : "Melden Sie sich an, um auf Ihr Dashboard zuzugreifen."
+                                }
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <form onSubmit={handleLogin} className="space-y-4">
-                                {error && (
-                                    <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-md border border-red-200 dark:border-red-800/30">
-                                        {error}
-                                    </div>
-                                )}
-                                {message && (
-                                    <div className="p-3 text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 rounded-md border border-green-200 dark:border-green-800/30">
-                                        {message}
-                                    </div>
-                                )}
+                            {isResetMode ? (
+                                <form onSubmit={handleResetPassword} className="space-y-4">
+                                    {error && (
+                                        <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-md border border-red-200 dark:border-red-800/30">
+                                            {error}
+                                        </div>
+                                    )}
+                                    {message && (
+                                        <div className="p-3 text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 rounded-md border border-green-200 dark:border-green-800/30">
+                                            {message}
+                                        </div>
+                                    )}
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="email">E-Mail</Label>
-                                    <div className="relative">
-                                        <Mail className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
-                                        <Input
-                                            id="email"
-                                            type="email"
-                                            placeholder="name@example.com"
-                                            className="pl-9 h-11"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            disabled={isLoading}
-                                            required
-                                        />
+                                    <div className="space-y-2">
+                                        <Label htmlFor="reset-email">E-Mail</Label>
+                                        <div className="relative">
+                                            <Mail className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
+                                            <Input
+                                                id="reset-email"
+                                                type="email"
+                                                placeholder="name@example.com"
+                                                className="pl-9 h-11"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                disabled={isLoading}
+                                                required
+                                            />
+                                        </div>
                                     </div>
-                                </div>
 
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <Label htmlFor="password">Passwort</Label>
+                                    <Button
+                                        type="submit"
+                                        className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-md shadow-blue-500/20"
+                                        disabled={isLoading}
+                                    >
+                                        {isLoading ? "Wird verarbeitet..." : "Passwort-Reset-Link senden"}
+                                    </Button>
+
+                                    <div className="text-center mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-sm text-zinc-600 dark:text-zinc-400">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsResetMode(false);
+                                                setError(null);
+                                                setMessage(null);
+                                            }}
+                                            className="text-blue-600 hover:underline dark:text-blue-400 font-bold"
+                                        >
+                                            Zurück zum Login
+                                        </button>
                                     </div>
-                                    <div className="relative">
-                                        <Lock className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
-                                        <Input
-                                            id="password"
-                                            type="password"
-                                            placeholder="••••••••"
-                                            className="pl-9 h-11"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            disabled={isLoading}
-                                            required
-                                        />
+                                </form>
+                            ) : (
+                                <form onSubmit={handleLogin} className="space-y-4">
+                                    {error && (
+                                        <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-md border border-red-200 dark:border-red-800/30">
+                                            {error}
+                                        </div>
+                                    )}
+                                    {message && (
+                                        <div className="p-3 text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 rounded-md border border-green-200 dark:border-green-800/30">
+                                            {message}
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="email">E-Mail</Label>
+                                        <div className="relative">
+                                            <Mail className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
+                                            <Input
+                                                id="email"
+                                                type="email"
+                                                placeholder="name@example.com"
+                                                className="pl-9 h-11"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                disabled={isLoading}
+                                                required
+                                            />
+                                        </div>
                                     </div>
-                                </div>
 
-                                <Button
-                                    type="submit"
-                                    className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-md shadow-blue-500/20"
-                                    disabled={isLoading}
-                                >
-                                    {isLoading ? "Wird verarbeitet..." : "Anmelden"}
-                                </Button>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="password">Passwort</Label>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsResetMode(true);
+                                                    setError(null);
+                                                    setMessage(null);
+                                                }}
+                                                className="text-xs text-blue-600 hover:underline dark:text-blue-400 font-medium"
+                                            >
+                                                Passwort vergessen?
+                                            </button>
+                                        </div>
+                                        <div className="relative">
+                                            <Lock className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
+                                            <Input
+                                                id="password"
+                                                type="password"
+                                                placeholder="••••••••"
+                                                className="pl-9 h-11"
+                                                value={password}
+                                                onChange={(e) => setPassword(e.target.value)}
+                                                disabled={isLoading}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
 
-                                <div className="text-center mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-sm text-zinc-600 dark:text-zinc-400">
-                                    Noch keinen Account?{" "}
-                                    <Link href="/register" className="text-blue-600 hover:underline dark:text-blue-400 font-bold">
-                                        Jetzt registrieren
-                                    </Link>
-                                </div>
-                            </form>
+                                    <Button
+                                        type="submit"
+                                        className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-md shadow-blue-500/20"
+                                        disabled={isLoading}
+                                    >
+                                        {isLoading ? "Wird verarbeitet..." : "Anmelden"}
+                                    </Button>
+
+                                    <div className="text-center mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-sm text-zinc-600 dark:text-zinc-400">
+                                        Noch keinen Account?{" "}
+                                        <Link href="/register" className="text-blue-600 hover:underline dark:text-blue-400 font-bold">
+                                            Jetzt registrieren
+                                        </Link>
+                                    </div>
+                                </form>
+                            )}
                         </CardContent>
                     </Card>
 
