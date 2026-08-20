@@ -81,17 +81,61 @@ export default function ResetPasswordPage() {
         setIsLoading(true);
 
         try {
+            const params = new URLSearchParams(window.location.search);
+            const tokenHash = params.get("token_hash");
+            const token = params.get("token");
+            const emailParam = params.get("email");
+
+            // Wir loggen das, um zu sehen ob der Token überhaupt im Frontend ankommt
+            console.log("Gefundener TokenHash:", tokenHash, "| OTP Token:", token, "| Email:", emailParam);
+
+            if (tokenHash || (token && emailParam)) {
+                console.log("Verifiziere Token mit Supabase...");
+                
+                let verifyPromise;
+                if (tokenHash) {
+                    verifyPromise = supabase.auth.verifyOtp({
+                        token_hash: tokenHash,
+                        type: 'recovery'
+                    });
+                } else if (token && emailParam) {
+                    verifyPromise = supabase.auth.verifyOtp({
+                        email: emailParam,
+                        token: token,
+                        type: 'recovery'
+                    });
+                }
+
+                const { data, error: verifyError } = await verifyPromise!;
+
+                if (verifyError) {
+                    console.error("verifyOtp error details:", verifyError);
+                    throw new Error(`Fehler bei der Verifizierung: ${verifyError.message}`);
+                }
+                
+                console.log("Token erfolgreich verifiziert! Session aktiv:", data.session !== null);
+
+                // Token erst nach erfolgreicher Verifizierung aus der URL entfernen
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } else {
+                console.log("Kein Token in der URL gefunden. Versuche direkt updateUser (setzt voraus, dass bereits eine Session aktiv ist).");
+            }
+
+            console.log("Aktualisiere Passwort...");
             const { error } = await supabase.auth.updateUser({
                 password,
             });
 
-            if (error) throw error;
+            if (error) {
+                console.error("updateUser error details:", error);
+                throw error;
+            }
 
             setIsSuccess(true);
             setMessage("Ihr Passwort wurde erfolgreich geändert. Sie können sich nun mit dem neuen Passwort anmelden.");
         } catch (err: any) {
-            console.error(err);
-            setError(getGermanAuthError(err.message));
+            console.error("Kompletter Fehler-Trace:", err);
+            setError(err.message);
         } finally {
             setIsLoading(false);
         }

@@ -31,6 +31,7 @@ You must strictly adhere to the following Git workflow, remote-tracking rules, a
   * Ensure local branches properly track their upstream remotes (`git checkout --track origin/<branch>` or `git checkout -b main origin/main` if `main` only exists remotely).
   * Always fetch remote changes (`git fetch origin`) before branching, merging, or releasing to verify parity between local references and `origin/*`.
 * **Deployment & Release Push:**
+  * **Local Pre-flight Checks:** Before initiating any release or pushing to GitHub, always run local checks (e.g., `npm run lint` and `npm run typecheck`) to catch errors early and ensure a stable CI pipeline.
   * Fast-forward or merge `develop` into local `main` only during release cycles.
   * Push both branch updates and tags to the remote repository explicitly:
     ```bash
