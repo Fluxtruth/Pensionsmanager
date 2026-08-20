@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { initDb, resetDb, DatabaseMock } from "./db";
 import { uuidv4 } from "./utils";

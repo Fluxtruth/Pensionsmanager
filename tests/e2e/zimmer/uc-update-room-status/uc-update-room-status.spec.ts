@@ -9,7 +9,7 @@ test.describe('E2E-ZIM-002: Update Room Status', () => {
     test('should change the status of a room', async ({ page }) => {
         
         await test.step('1. Wähle Zimmer aus', async () => {
-            await page.click('.room-card').first();
+            await page.locator('.room-card').first().click();
         });
 
         await test.step('2. Ändere Status', async () => {
