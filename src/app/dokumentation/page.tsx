@@ -142,9 +142,10 @@ export default function DokumentationPage() {
               <CardDescription>Kritisch für den Launch</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-6 text-zinc-400 text-sm">
-                Keine Einträge
-              </div>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <li className="line-through text-zinc-400 dark:text-zinc-500">Passwort Reset</li>
+                <li>Payment</li>
+              </ul>
             </CardContent>
           </Card>
           
@@ -157,9 +158,10 @@ export default function DokumentationPage() {
               <CardDescription>Wichtig, aber nicht kritisch</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-6 text-zinc-400 text-sm">
-                Keine Einträge
-              </div>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <li>Frühstück-UX verbessern</li>
+                <li>Mobile App UI verbessern</li>
+              </ul>
             </CardContent>
           </Card>
 
@@ -172,9 +174,10 @@ export default function DokumentationPage() {
               <CardDescription>Nice to have</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-6 text-zinc-400 text-sm">
-                Keine Einträge
-              </div>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <li>UI Rework mit standardisierten Components</li>
+                <li>Einheitliche Export Dokumente</li>
+              </ul>
             </CardContent>
           </Card>
 
