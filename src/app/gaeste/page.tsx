@@ -370,18 +370,24 @@ function GuestsList() {
                                             <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
                                                 <UserCircle2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                                             </div>
-                                            <div>
-                                                <div className="font-bold text-zinc-900 dark:text-zinc-100">{guest.last_name}, {guest.first_name}</div>
-                                                {guest.middle_name && <div className="text-[10px] text-zinc-400 uppercase tracking-wider">{guest.middle_name}</div>}
+                                            <div className="min-w-0 max-w-[250px]">
+                                                <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate" title={`${guest.last_name}, ${guest.first_name}`}>
+                                                    {guest.last_name}, {guest.first_name}
+                                                </div>
+                                                {guest.middle_name && (
+                                                    <div className="text-[10px] text-zinc-400 uppercase tracking-wider truncate" title={guest.middle_name}>
+                                                        {guest.middle_name}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </TableCell>
                                     <TableCell>
                                         <div className="space-y-1">
                                             {guest.email && (
-                                                <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                                                    <Mail className="w-3 h-3 text-zinc-400" />
-                                                    {guest.email}
+                                                <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 min-w-0 max-w-[200px]">
+                                                    <Mail className="w-3 h-3 text-zinc-400 shrink-0" />
+                                                    <span className="truncate" title={guest.email}>{guest.email}</span>
                                                 </div>
                                             )}
                                             {guest.phone && (
@@ -395,9 +401,9 @@ function GuestsList() {
                                     </TableCell>
                                     <TableCell>
                                         {guest.company ? (
-                                            <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                                                <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                                                {guest.company}
+                                            <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 min-w-0 max-w-[200px]">
+                                                <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                                <span className="truncate" title={guest.company}>{guest.company}</span>
                                             </div>
                                         ) : (
                                             <span className="text-zinc-400">-</span>
