@@ -1355,9 +1355,9 @@ export default function CleaningPage() {
                                 const progress = Math.min((assignedCount / s.daily_capacity) * 100, 100);
                                 return (
                                     <div key={s.id} className="space-y-2">
-                                        <div className="flex justify-between text-sm">
-                                            <span className="font-bold text-zinc-700 dark:text-zinc-300">{s.name}</span>
-                                            <span className="text-xs font-medium text-zinc-500">{assignedCount} / {s.daily_capacity} Aufgaben</span>
+                                        <div className="flex justify-between text-sm min-w-0">
+                                            <span className="font-bold text-zinc-700 dark:text-zinc-300 truncate max-w-[120px]" title={s.name}>{s.name}</span>
+                                            <span className="text-xs font-medium text-zinc-500 whitespace-nowrap ml-2 shrink-0">{assignedCount} / {s.daily_capacity} Aufgaben</span>
                                         </div>
                                         <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
                                             <div
@@ -1387,7 +1387,7 @@ export default function CleaningPage() {
                     <form onSubmit={addSuggestion} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border">
                         <div className="md:col-span-2 space-y-2">
                             <Label htmlFor="title">Aufgabe</Label>
-                            <Input id="title" name="title" placeholder="z.B. Fenster putzen" required />
+                            <Input id="title" name="title" placeholder="z.B. Fenster putzen" required maxLength={150} />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="weekday">Wochentag</Label>
@@ -1540,7 +1540,7 @@ export default function CleaningPage() {
                     }} className="space-y-4 py-4">
                         <div className="space-y-2">
                             <Label htmlFor="manual-title">Aufgabenbezeichnung</Label>
-                            <Input id="manual-title" name="title" placeholder="z.B. Terrassenmöbel reinigen" required />
+                            <Input id="manual-title" name="title" placeholder="z.B. Terrassenmöbel reinigen" required maxLength={150} />
                         </div>
                         <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 font-bold">
                             Aufgabe erstellen
@@ -1579,8 +1579,8 @@ export default function CleaningPage() {
                                 <TableBody>
                                     {staff.map((s) => (
                                         <TableRow key={s.id}>
-                                            <TableCell className="font-bold">{s.name}</TableCell>
-                                            <TableCell className="text-xs text-zinc-500">{s.role}</TableCell>
+                                            <TableCell className="font-bold truncate max-w-[120px]" title={s.name}>{s.name}</TableCell>
+                                            <TableCell className="text-xs text-zinc-500 truncate max-w-[100px]">{s.role}</TableCell>
                                             <TableCell className="text-sm font-medium">{s.daily_capacity} Aufgaben/Tag</TableCell>
                                             <TableCell className="text-right pr-6 space-x-1">
                                                 <Button
@@ -1621,11 +1621,11 @@ export default function CleaningPage() {
                     <form onSubmit={handleAddStaff} className="space-y-4 py-4">
                         <div className="space-y-2">
                             <Label htmlFor="name">Name</Label>
-                            <Input id="name" name="name" defaultValue={editingStaff?.name} required />
+                            <Input id="name" name="name" defaultValue={editingStaff?.name} required maxLength={100} />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="role">Rolle</Label>
-                            <Input id="role" name="role" defaultValue={editingStaff?.role} />
+                            <Input id="role" name="role" defaultValue={editingStaff?.role} maxLength={50} />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="capacity">Kapazität (Aufgaben/Tag)</Label>

@@ -407,7 +407,7 @@ export default function RoomsPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="name">Name / Bezeichnung</Label>
-                                <Input id="name" name="name" placeholder="z.B. Seeblick" required />
+                                <Input id="name" name="name" placeholder="z.B. Seeblick" required maxLength={100} />
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="type">Zimmer-Typ</Label>
@@ -476,8 +476,8 @@ export default function RoomsPage() {
                                             {room.id}
                                         </TableCell>
                                         <TableCell className="font-medium">
-                                            <div className="flex items-center justify-between">
-                                                <span>{room.name}</span>
+                                            <div className="flex items-center justify-between min-w-0">
+                                                <span className="truncate max-w-[150px] sm:max-w-[200px]">{room.name}</span>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -746,7 +746,7 @@ export default function RoomsPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="edit-name">Name / Bezeichnung</Label>
-                                <Input id="edit-name" name="name" defaultValue={editingRoom.name} required />
+                                <Input id="edit-name" name="name" defaultValue={editingRoom.name} required maxLength={100} />
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="edit-type">Zimmer-Typ</Label>
