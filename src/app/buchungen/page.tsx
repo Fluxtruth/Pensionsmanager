@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { LimitedInput } from "@/components/ui/limited-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -1736,16 +1737,16 @@ function BookingsList() {
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <div className="space-y-1">
                                                             <Label className="text-[10px]">Vorname</Label>
-                                                            <Input name="first_name" required className="h-8 text-xs" placeholder="Max" maxLength={50} />
+                                                            <LimitedInput name="first_name" required className="h-8 text-xs" placeholder="Max" maxLength={40} />
                                                         </div>
                                                         <div className="space-y-1">
                                                             <Label className="text-[10px]">Nachname</Label>
-                                                            <Input name="last_name" required className="h-8 text-xs" placeholder="Mustermann" maxLength={50} />
+                                                            <LimitedInput name="last_name" required className="h-8 text-xs" placeholder="Mustermann" maxLength={40} />
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[10px]">E-Mail</Label>
-                                                        <Input name="email" type="email" className="h-8 text-xs" placeholder="max@beispiel.de" maxLength={50} />
+                                                        <LimitedInput name="email" type="email" className="h-8 text-xs" placeholder="max@beispiel.de" maxLength={40} />
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[10px]">Telefon</Label>
@@ -1753,7 +1754,7 @@ function BookingsList() {
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[10px]">Firma</Label>
-                                                        <Input name="company" className="h-8 text-xs" placeholder="Optional" maxLength={50} />
+                                                        <LimitedInput name="company" className="h-8 text-xs" placeholder="Optional" maxLength={40} />
                                                     </div>
                                                     <Button type="submit" size="sm" className="w-full bg-blue-600 font-bold text-xs mt-2">Gast speichern</Button>
                                                 </form>
@@ -3679,7 +3680,7 @@ function BookingsList() {
             <Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
+                        <DialogTitle className="truncate pr-4" title={editingGuestForMask?.name}>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
                     </DialogHeader>
                     {editingGuestForMask && (
                         <GuestMaskForm guest={editingGuestForMask} onSubmit={updateGuestInMask} />
@@ -3791,21 +3792,21 @@ function GuestMaskForm({ guest, onSubmit }: { guest: Guest, onSubmit: (e: React.
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="first_name">Vorname</Label>
-                        <Input id="first_name" name="first_name" defaultValue={guest.first_name} placeholder="Max" maxLength={50} />
+                        <LimitedInput id="first_name" name="first_name" defaultValue={guest.first_name} placeholder="Max" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={guest.middle_name} maxLength={50} />
+                        <LimitedInput id="middle_name" name="middle_name" defaultValue={guest.middle_name} maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
-                        <Input id="last_name" name="last_name" defaultValue={guest.last_name} placeholder="Mustermann" required maxLength={50} />
+                        <LimitedInput id="last_name" name="last_name" defaultValue={guest.last_name} placeholder="Mustermann" required maxLength={40} />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="email">E-Mail</Label>
-                        <Input id="email" name="email" type="email" defaultValue={guest.email} placeholder="max@beispiel.de" maxLength={50} />
+                        <LimitedInput id="email" name="email" type="email" defaultValue={guest.email} placeholder="max@beispiel.de" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefon</Label>
@@ -3815,7 +3816,7 @@ function GuestMaskForm({ guest, onSubmit }: { guest: Guest, onSubmit: (e: React.
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="company">Firma</Label>
-                        <Input id="company" name="company" defaultValue={guest.company} placeholder="Muster GmbH" maxLength={50} />
+                        <LimitedInput id="company" name="company" defaultValue={guest.company} placeholder="Muster GmbH" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label>Nationalität</Label>
