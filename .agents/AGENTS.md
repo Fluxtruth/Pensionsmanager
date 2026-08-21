@@ -44,8 +44,8 @@ You must strictly adhere to the following Git workflow, remote-tracking rules, a
 * **Inspection:** Always verify local repository status using `git status` and `git diff` before staging changes.
 * **Stashing:** If a branch switch is required with uncommitted changes in the working directory, use `git stash save "<message>"` instead of creating broken commits. Restore with `git stash pop`.
 * **Git Worktrees:** For parallel branch work without context switching or unstashing, use `git worktree add .worktrees/<directory-name> <branch>`.
-  * *Codebase Collaboration Rule:* Do not use `git checkout` in the main directory for feature development. Create a dedicated worktree for the task: `git worktree add .worktrees/pm-[TaskName] -b feature/[TaskName] develop`. 
-  * All coding, TDD, and testing must be performed inside this newly created directory.
+  * *Codebase Collaboration Rule (CRITICAL):* **NEVER edit code directly in the main repository.** You MUST create a dedicated worktree for the task IMMEDIATELY before starting any feature work, bug fixing, or refactoring: `git worktree add .worktrees/pm-[TaskName] -b feature/[TaskName] develop`. 
+  * All coding, TDD, testing, and modifications must be performed inside this newly created worktree directory from the very beginning. DO NOT make any code modifications in the main folder.
   * *Cleanup:* Physically delete the worktree when done: `git worktree remove .worktrees/pm-[TaskName]`.
 * **Artifacts & Secrets:** Never track build artifacts (`node_modules/`, `dist/`, `target/`, `.next/`), local configurations, or environment variables (`.env`, `.env.local`). Verify `.gitignore` compliance before staging.
 

@@ -244,31 +244,31 @@ function GuestsList() {
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="first_name">Vorname</Label>
-                        <Input id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" />
+                        <Input id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" maxLength={50} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} />
+                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} maxLength={50} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
-                        <Input id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required />
+                        <Input id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required maxLength={50} />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="email">E-Mail</Label>
-                        <Input id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" />
+                        <Input id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" maxLength={50} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefon</Label>
-                        <Input id="phone" name="phone" type="tel" defaultValue={defaultValues?.phone} placeholder="+49 123 456789" />
+                        <Input id="phone" name="phone" type="tel" defaultValue={defaultValues?.phone} placeholder="+49 123 456789" maxLength={30} pattern="^\+?[0-9\s\-\/\(\)]{4,30}$" title="Bitte geben Sie eine gültige Telefonnummer ein (nur Zahlen, Leerzeichen, +, -, /, ())" />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="company">Firma</Label>
-                        <Input id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" />
+                        <Input id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" maxLength={50} />
                     </div>
                     <div className="space-y-2">
                         <Label>Nationalität</Label>
@@ -278,7 +278,7 @@ function GuestsList() {
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="notes">Notizen / Präferenzen</Label>
-                    <Textarea id="notes" name="notes" defaultValue={defaultValues?.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" />
+                    <Textarea id="notes" name="notes" defaultValue={defaultValues?.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" maxLength={300} />
                 </div>
             </div>
         );
