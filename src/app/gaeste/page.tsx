@@ -323,7 +323,7 @@ function GuestsList() {
                 }}>
                     <DialogContent className="max-w-2xl">
                         <DialogHeader>
-                            <DialogTitle className="truncate pr-4" title={editingGuest?.name}>Gast bearbeiten: {editingGuest?.name}</DialogTitle>
+                            <DialogTitle className="truncate pr-4" title={editingGuest?.name}>Gast bearbeiten: {editingGuest?.name && editingGuest.name.length > 30 ? editingGuest.name.substring(0, 30) + '...' : editingGuest?.name}</DialogTitle>
                         </DialogHeader>
                         {editingGuest && (
                             <form onSubmit={updateGuest}>

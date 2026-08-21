@@ -3680,7 +3680,7 @@ function BookingsList() {
             <Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle className="truncate pr-4" title={editingGuestForMask?.name}>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
+                        <DialogTitle className="truncate pr-4" title={editingGuestForMask?.name}>Gast bearbeiten: {editingGuestForMask?.name && editingGuestForMask.name.length > 30 ? editingGuestForMask.name.substring(0, 30) + '...' : editingGuestForMask?.name}</DialogTitle>
                     </DialogHeader>
                     {editingGuestForMask && (
                         <GuestMaskForm guest={editingGuestForMask} onSubmit={updateGuestInMask} />

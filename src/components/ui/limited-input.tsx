@@ -28,7 +28,7 @@ export const LimitedInput = React.forwardRef<HTMLInputElement, LimitedInputProps
     const isExhausted = currentValue.toString().length >= maxLength;
 
     return (
-      <div className="relative flex flex-col gap-1">
+      <div className="relative flex flex-col gap-1 w-full min-w-0">
         <Input
           ref={ref}
           maxLength={maxLength}
