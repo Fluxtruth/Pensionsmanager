@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { LimitedInput } from "@/components/ui/limited-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -1736,24 +1737,24 @@ function BookingsList() {
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <div className="space-y-1">
                                                             <Label className="text-[10px]">Vorname</Label>
-                                                            <Input name="first_name" required className="h-8 text-xs" placeholder="Max" />
+                                                            <LimitedInput name="first_name" required className="h-8 text-xs" placeholder="Max" maxLength={40} />
                                                         </div>
                                                         <div className="space-y-1">
                                                             <Label className="text-[10px]">Nachname</Label>
-                                                            <Input name="last_name" required className="h-8 text-xs" placeholder="Mustermann" />
+                                                            <LimitedInput name="last_name" required className="h-8 text-xs" placeholder="Mustermann" maxLength={40} />
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[10px]">E-Mail</Label>
-                                                        <Input name="email" type="email" className="h-8 text-xs" placeholder="max@beispiel.de" />
+                                                        <LimitedInput name="email" type="email" className="h-8 text-xs" placeholder="max@beispiel.de" maxLength={40} />
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[10px]">Telefon</Label>
-                                                        <Input name="phone" type="tel" className="h-8 text-xs" placeholder="+49..." />
+                                                        <Input name="phone" type="tel" className="h-8 text-xs" placeholder="+49..." maxLength={30} pattern="^\+?[0-9\s\-\/\(\)]{4,30}$" title="Bitte geben Sie eine gültige Telefonnummer ein (nur Zahlen, Leerzeichen, +, -, /, ())" />
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[10px]">Firma</Label>
-                                                        <Input name="company" className="h-8 text-xs" placeholder="Optional" />
+                                                        <LimitedInput name="company" className="h-8 text-xs" placeholder="Optional" maxLength={40} />
                                                     </div>
                                                     <Button type="submit" size="sm" className="w-full bg-blue-600 font-bold text-xs mt-2">Gast speichern</Button>
                                                 </form>
@@ -3679,7 +3680,7 @@ function BookingsList() {
             <Dialog open={isGuestMaskOpen} onOpenChange={setIsGuestMaskOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Gast bearbeiten: {editingGuestForMask?.name}</DialogTitle>
+                        <DialogTitle className="truncate pr-4" title={editingGuestForMask?.name}>Gast bearbeiten: {editingGuestForMask?.name && editingGuestForMask.name.length > 30 ? editingGuestForMask.name.substring(0, 30) + '...' : editingGuestForMask?.name}</DialogTitle>
                     </DialogHeader>
                     {editingGuestForMask && (
                         <GuestMaskForm guest={editingGuestForMask} onSubmit={updateGuestInMask} />
@@ -3791,31 +3792,31 @@ function GuestMaskForm({ guest, onSubmit }: { guest: Guest, onSubmit: (e: React.
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="first_name">Vorname</Label>
-                        <Input id="first_name" name="first_name" defaultValue={guest.first_name} placeholder="Max" />
+                        <LimitedInput id="first_name" name="first_name" defaultValue={guest.first_name} placeholder="Max" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={guest.middle_name} />
+                        <LimitedInput id="middle_name" name="middle_name" defaultValue={guest.middle_name} maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
-                        <Input id="last_name" name="last_name" defaultValue={guest.last_name} placeholder="Mustermann" required />
+                        <LimitedInput id="last_name" name="last_name" defaultValue={guest.last_name} placeholder="Mustermann" required maxLength={40} />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="email">E-Mail</Label>
-                        <Input id="email" name="email" type="email" defaultValue={guest.email} placeholder="max@beispiel.de" />
+                        <LimitedInput id="email" name="email" type="email" defaultValue={guest.email} placeholder="max@beispiel.de" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefon</Label>
-                        <Input id="phone" name="phone" type="tel" defaultValue={guest.phone} placeholder="+49 123 456789" />
+                        <Input id="phone" name="phone" type="tel" defaultValue={guest.phone} placeholder="+49 123 456789" maxLength={30} pattern="^\+?[0-9\s\-\/\(\)]{4,30}$" title="Bitte geben Sie eine gültige Telefonnummer ein (nur Zahlen, Leerzeichen, +, -, /, ())" />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="company">Firma</Label>
-                        <Input id="company" name="company" defaultValue={guest.company} placeholder="Muster GmbH" />
+                        <LimitedInput id="company" name="company" defaultValue={guest.company} placeholder="Muster GmbH" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label>Nationalität</Label>
@@ -3825,7 +3826,7 @@ function GuestMaskForm({ guest, onSubmit }: { guest: Guest, onSubmit: (e: React.
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="notes">Notizen / Präferenzen</Label>
-                    <Textarea id="notes" name="notes" defaultValue={guest.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" />
+                    <Textarea id="notes" name="notes" defaultValue={guest.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" maxLength={300} />
                 </div>
             </div>
             <Button type="submit" className="w-full mt-2 font-bold bg-blue-600">Aktualisieren</Button>

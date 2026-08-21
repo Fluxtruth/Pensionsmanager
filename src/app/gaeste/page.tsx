@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Plus, Users, Search, GitBranch, Mail, Phone, Building2, UserCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LimitedInput } from "@/components/ui/limited-input";
 import {
     Table,
     TableBody,
@@ -244,31 +245,31 @@ function GuestsList() {
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="first_name">Vorname</Label>
-                        <Input id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" />
+                        <LimitedInput id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} />
+                        <LimitedInput id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
-                        <Input id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required />
+                        <LimitedInput id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required maxLength={40} />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="email">E-Mail</Label>
-                        <Input id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" />
+                        <LimitedInput id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefon</Label>
-                        <Input id="phone" name="phone" type="tel" defaultValue={defaultValues?.phone} placeholder="+49 123 456789" />
+                        <Input id="phone" name="phone" type="tel" defaultValue={defaultValues?.phone} placeholder="+49 123 456789" maxLength={30} pattern="^\+?[0-9\s\-\/\(\)]{4,30}$" title="Bitte geben Sie eine gültige Telefonnummer ein (nur Zahlen, Leerzeichen, +, -, /, ())" />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="company">Firma</Label>
-                        <Input id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" />
+                        <LimitedInput id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label>Nationalität</Label>
@@ -278,7 +279,7 @@ function GuestsList() {
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="notes">Notizen / Präferenzen</Label>
-                    <Textarea id="notes" name="notes" defaultValue={defaultValues?.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" />
+                    <Textarea id="notes" name="notes" defaultValue={defaultValues?.notes} placeholder="Besondere Wünsche, Allergien, etc." className="min-h-[100px]" maxLength={300} />
                 </div>
             </div>
         );
@@ -322,7 +323,7 @@ function GuestsList() {
                 }}>
                     <DialogContent className="max-w-2xl">
                         <DialogHeader>
-                            <DialogTitle>Gast bearbeiten: {editingGuest?.name}</DialogTitle>
+                            <DialogTitle className="truncate pr-4" title={editingGuest?.name}>Gast bearbeiten: {editingGuest?.name && editingGuest.name.length > 30 ? editingGuest.name.substring(0, 30) + '...' : editingGuest?.name}</DialogTitle>
                         </DialogHeader>
                         {editingGuest && (
                             <form onSubmit={updateGuest}>
@@ -369,18 +370,24 @@ function GuestsList() {
                                             <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
                                                 <UserCircle2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                                             </div>
-                                            <div>
-                                                <div className="font-bold text-zinc-900 dark:text-zinc-100">{guest.last_name}, {guest.first_name}</div>
-                                                {guest.middle_name && <div className="text-[10px] text-zinc-400 uppercase tracking-wider">{guest.middle_name}</div>}
+                                            <div className="min-w-0 max-w-[250px]">
+                                                <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate" title={`${guest.last_name}, ${guest.first_name}`}>
+                                                    {guest.last_name}, {guest.first_name}
+                                                </div>
+                                                {guest.middle_name && (
+                                                    <div className="text-[10px] text-zinc-400 uppercase tracking-wider truncate" title={guest.middle_name}>
+                                                        {guest.middle_name}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </TableCell>
                                     <TableCell>
                                         <div className="space-y-1">
                                             {guest.email && (
-                                                <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                                                    <Mail className="w-3 h-3 text-zinc-400" />
-                                                    {guest.email}
+                                                <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 min-w-0 max-w-[200px]">
+                                                    <Mail className="w-3 h-3 text-zinc-400 shrink-0" />
+                                                    <span className="truncate" title={guest.email}>{guest.email}</span>
                                                 </div>
                                             )}
                                             {guest.phone && (
@@ -394,9 +401,9 @@ function GuestsList() {
                                     </TableCell>
                                     <TableCell>
                                         {guest.company ? (
-                                            <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                                                <Building2 className="w-3.5 h-3.5 text-zinc-400" />
-                                                {guest.company}
+                                            <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 min-w-0 max-w-[200px]">
+                                                <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                                <span className="truncate" title={guest.company}>{guest.company}</span>
                                             </div>
                                         ) : (
                                             <span className="text-zinc-400">-</span>
