@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "pensionsmanager",
-  "version": "1.11.12",
+  "version": "1.11.14",
   "identifier": "com.pensionsmanager.pensionsmanager",
   "build": {
     "frontendDist": "../out",
