@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Plus, Users, Search, GitBranch, Mail, Phone, Building2, UserCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LimitedInput } from "@/components/ui/limited-input";
 import {
     Table,
     TableBody,
@@ -244,21 +245,21 @@ function GuestsList() {
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="first_name">Vorname</Label>
-                        <Input id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" maxLength={50} />
+                        <LimitedInput id="first_name" name="first_name" defaultValue={defaultValues?.first_name} placeholder="Max" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="middle_name">Zweitname</Label>
-                        <Input id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} maxLength={50} />
+                        <LimitedInput id="middle_name" name="middle_name" defaultValue={defaultValues?.middle_name} maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="last_name">Nachname <span className="text-red-500">*</span></Label>
-                        <Input id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required maxLength={50} />
+                        <LimitedInput id="last_name" name="last_name" defaultValue={defaultValues?.last_name} placeholder="Mustermann" required maxLength={40} />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="email">E-Mail</Label>
-                        <Input id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" maxLength={50} />
+                        <LimitedInput id="email" name="email" type="email" defaultValue={defaultValues?.email} placeholder="max@beispiel.de" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefon</Label>
@@ -268,7 +269,7 @@ function GuestsList() {
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="company">Firma</Label>
-                        <Input id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" maxLength={50} />
+                        <LimitedInput id="company" name="company" defaultValue={defaultValues?.company} placeholder="Muster GmbH" maxLength={40} />
                     </div>
                     <div className="space-y-2">
                         <Label>Nationalität</Label>
@@ -322,7 +323,7 @@ function GuestsList() {
                 }}>
                     <DialogContent className="max-w-2xl">
                         <DialogHeader>
-                            <DialogTitle>Gast bearbeiten: {editingGuest?.name}</DialogTitle>
+                            <DialogTitle className="truncate pr-4" title={editingGuest?.name}>Gast bearbeiten: {editingGuest?.name}</DialogTitle>
                         </DialogHeader>
                         {editingGuest && (
                             <form onSubmit={updateGuest}>
