@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { BedDouble, Bed, Home, Users, Pencil, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Flower2, Accessibility } from "lucide-react";
+import { BedDouble, Bed, Home, Users, Pencil, ShieldCheck, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Flower2, Accessibility, Sparkles, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
     Dialog,
@@ -27,6 +28,7 @@ import { SyncService, syncEvents } from "@/lib/sync";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ROOM_TYPES } from "@/lib/constants";
+import { calculatePlanInfo } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
 interface Room {
@@ -367,6 +369,8 @@ export default function RoomsPage() {
         }
     };
 
+    const planInfo = calculatePlanInfo(rooms.length);
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -441,6 +445,32 @@ export default function RoomsPage() {
                         </form>
                     </DialogContent>
                 </Dialog>
+            </div>
+
+            {/* Tarif & Kontingent Infoleiste */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-gradient-to-r from-blue-50/90 via-indigo-50/40 to-white dark:from-zinc-900/90 dark:via-zinc-900/40 dark:to-zinc-900 border border-blue-200/80 dark:border-blue-900/50 text-xs shadow-xs">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-600 text-white shadow-xs shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <div className="font-semibold text-zinc-900 dark:text-zinc-100 flex flex-wrap items-center gap-2">
+                            <span>Aktiver Tarif: <strong className="text-blue-600 dark:text-blue-400">{planInfo.plan.name}</strong> ({rooms.length} {planInfo.roomsLimit ? `von ${planInfo.roomsLimit}` : ""} Zimmer angelegt)</span>
+                            <Badge variant="outline" className="text-[10px] h-5 font-bold border-blue-200 text-blue-700 dark:border-blue-800 dark:text-blue-400 bg-white/80 dark:bg-zinc-800">
+                                {planInfo.plan.pricePerMonth} / Mo
+                            </Badge>
+                        </div>
+                        <p className="text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            {planInfo.upgradeNotice}
+                        </p>
+                    </div>
+                </div>
+
+                <Link href="/account/tarif" className="shrink-0 self-start sm:self-center">
+                    <Button variant="outline" size="sm" className="h-7 text-xs font-semibold text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 gap-1 px-2.5">
+                        Tarifdetails & Module <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Button>
+                </Link>
             </div>
 
             <Card className="border-none shadow-sm bg-white dark:bg-zinc-900/50">

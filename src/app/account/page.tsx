@@ -79,6 +79,15 @@ const ACCOUNT_SUBPAGES: AccountSubpageItem[] = [
         badge: "Software"
     },
     {
+        title: "Tarifdetails & Module",
+        description: "Aktiver Pricing-Plan, Zimmerkontingente, Leistungsumfang und Zusatzmodule.",
+        href: "/account/tarif",
+        icon: Sparkles,
+        iconBg: "bg-rose-100 dark:bg-rose-900/30",
+        iconColor: "text-rose-600 dark:text-rose-400",
+        badge: "Pläne"
+    },
+    {
         title: "Rechtsdokumente & Compliance",
         description: "Verträge, DSGVO-Auftragsverarbeitung (AVV), TOMs, NDA und gesetzliche Richtlinien.",
         href: "/account/rechtliches",

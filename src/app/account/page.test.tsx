@@ -65,11 +65,12 @@ describe('Account Hub Page', () => {
         // Verify Subpage Hub section
         expect(screen.getByText('Verwaltung & Systembereiche')).toBeInTheDocument();
 
-        // Verify all 5 subpage tiles are present
+        // Verify all 6 subpage tiles are present
         expect(screen.getByText('Konfiguration')).toBeInTheDocument();
         expect(screen.getByText('Datenbank & Datensicherheit')).toBeInTheDocument();
         expect(screen.getByText('System-Dokumentation')).toBeInTheDocument();
         expect(screen.getByText('Update & Versionshinweise')).toBeInTheDocument();
+        expect(screen.getByText('Tarifdetails & Module')).toBeInTheDocument();
         expect(screen.getByText('Rechtsdokumente & Compliance')).toBeInTheDocument();
     });
 });
