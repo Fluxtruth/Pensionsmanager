@@ -1,0 +1,4 @@
+{
+  "name": "stripe",
+  "description": "Stripe payment, billing, customer portal, webhook and MCP server integrations."
+}

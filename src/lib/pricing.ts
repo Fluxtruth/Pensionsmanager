@@ -10,13 +10,13 @@ export interface PricingPlan {
     isPopular?: boolean;
 }
 
-export type CustomerTypeKey = "test" | "subscriber" | "enterprise";
+export type CustomerTypeKey = "none" | "test" | "subscriber" | "enterprise";
 
 export interface CustomerType {
     id: CustomerTypeKey;
     label: string;
     tagline: string;
-    badgeVariant: "default" | "secondary" | "outline";
+    badgeVariant: "default" | "secondary" | "outline" | "destructive";
     colorClass: string;
     description: string;
 }
@@ -84,6 +84,14 @@ export const PRICING_PLANS: PricingPlan[] = [
 ];
 
 export const CUSTOMER_TYPES: Record<CustomerTypeKey, CustomerType> = {
+    none: {
+        id: "none",
+        label: "Kein Kunde",
+        tagline: "Kein aktives Abonnement",
+        badgeVariant: "destructive",
+        colorClass: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800",
+        description: "Kein aktives Abonnement vorhanden. Funktionen sind gesperrt, bis ein Tarif gebucht wird."
+    },
     test: {
         id: "test",
         label: "Testkunde",
@@ -215,8 +223,8 @@ export function calculatePlanInfo(roomCount: number): CalculatedPlanInfo {
         const remaining = Math.max(0, limit - validCount);
         const progress = Math.min(100, (validCount / limit) * 100);
         const upgradeNotice = remaining === 0
-            ? "Maximales Kontingent in Tarif S erreicht. Bei Anlage des nächsten Zimmers erfolgt der Wechsel zu Tarif M."
-            : `Noch ${remaining} ${remaining === 1 ? "Zimmer" : "Zimmer"} im Tarif S verfügbar (bis Wechsel zu Tarif M).`;
+            ? "Maximales Kontingent in Tarif S (5 Zimmer) erreicht. Für weitere Zimmer ist ein manuelles Upgrade auf Tarif M erforderlich."
+            : `Noch ${remaining} ${remaining === 1 ? "Zimmer" : "Zimmer"} im Tarif S verfügbar (Upgrade auf Tarif M für bis zu 15 Zimmer möglich).`;
 
         return {
             plan,
@@ -234,8 +242,8 @@ export function calculatePlanInfo(roomCount: number): CalculatedPlanInfo {
         const remaining = Math.max(0, limit - validCount);
         const progress = Math.min(100, ((validCount - 5) / 10) * 100);
         const upgradeNotice = remaining === 0
-            ? "Maximales Kontingent in Tarif M erreicht. Bei Anlage des nächsten Zimmers erfolgt der Wechsel zu Tarif L."
-            : `Noch ${remaining} ${remaining === 1 ? "Zimmer" : "Zimmer"} im Tarif M verfügbar (bis Wechsel zu Tarif L).`;
+            ? "Maximales Kontingent in Tarif M (15 Zimmer) erreicht. Für weitere Zimmer ist ein manuelles Upgrade auf Tarif L erforderlich."
+            : `Noch ${remaining} ${remaining === 1 ? "Zimmer" : "Zimmer"} im Tarif M verfügbar (Upgrade auf Tarif L für unbegrenzte Zimmer möglich).`;
 
         return {
             plan,

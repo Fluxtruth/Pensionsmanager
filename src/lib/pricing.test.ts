@@ -54,7 +54,8 @@ describe("Pricing helper logic", () => {
         });
     });
 
-    it("defines the 3 customer types", () => {
+    it("defines the 4 customer types", () => {
+        expect(CUSTOMER_TYPES.none.label).toBe("Kein Kunde");
         expect(CUSTOMER_TYPES.test.label).toBe("Testkunde");
         expect(CUSTOMER_TYPES.subscriber.label).toBe("Abonnent");
         expect(CUSTOMER_TYPES.enterprise.label).toBe("Enterprise-Kunde");

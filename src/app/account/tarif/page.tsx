@@ -22,7 +22,13 @@ import {
     BedDouble,
     Crown,
     Mail,
-    ExternalLink
+    ExternalLink,
+    AlertTriangle,
+    RefreshCw,
+    XCircle,
+    CheckCircle,
+    Calendar,
+    CreditCard
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +71,16 @@ export default function TarifDetailsPage() {
     const [pensionName, setPensionName] = useState("Meine Pension");
     const [lastMailtoUrl, setLastMailtoUrl] = useState("");
 
+    // Stripe Subscription States
+    const [subscriptionId, setSubscriptionId] = useState<string | null>("sub_test_pension_default");
+    const [isCancelAtPeriodEnd, setIsCancelAtPeriodEnd] = useState<boolean>(false);
+    const [subscriptionActive, setSubscriptionActive] = useState<boolean>(true);
+    const [cancelModalOpen, setCancelModalOpen] = useState<boolean>(false);
+    const [cancelModalMode, setCancelModalMode] = useState<"period_end" | "immediate">("period_end");
+    const [cancelLoading, setCancelLoading] = useState<boolean>(false);
+    const [checkoutLoading, setCheckoutLoading] = useState<boolean>(false);
+    const [cancelFeedback, setCancelFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
     const planInfo = calculatePlanInfo(roomCount);
 
     const loadData = async () => {
@@ -85,9 +101,9 @@ export default function TarifDetailsPage() {
                     "SELECT value FROM settings WHERE key = 'customer_type' AND (pension_id = ? OR ? IS NULL)",
                     [pId, pId]
                 );
-                if (custTypeRes.length > 0 && custTypeRes[0].value in CUSTOMER_TYPES) {
-                    setCustomerType(custTypeRes[0].value as CustomerTypeKey);
-                }
+                let currentCustType: CustomerTypeKey = (custTypeRes.length > 0 && custTypeRes[0].value in CUSTOMER_TYPES)
+                    ? (custTypeRes[0].value as CustomerTypeKey)
+                    : "subscriber";
 
                 // Fetch pension name from branding
                 const titleRes = await db.select<{ value: string }[]>(
@@ -97,6 +113,62 @@ export default function TarifDetailsPage() {
                 if (titleRes.length > 0 && titleRes[0].value) {
                     setPensionName(titleRes[0].value);
                 }
+
+                // Fetch subscription cancel status
+                const cancelRes = await db.select<{ value: string }[]>(
+                    "SELECT value FROM settings WHERE key = 'stripe_cancel_at_period_end' AND (pension_id = ? OR ? IS NULL)",
+                    [pId, pId]
+                );
+                if (cancelRes.length > 0) {
+                    setIsCancelAtPeriodEnd(cancelRes[0].value === "1" || cancelRes[0].value === "true");
+                }
+
+                const subStatusRes = await db.select<{ value: string }[]>(
+                    "SELECT value FROM settings WHERE key = 'stripe_subscription_status' AND (pension_id = ? OR ? IS NULL)",
+                    [pId, pId]
+                );
+                let isSubActive = subStatusRes.length > 0 ? subStatusRes[0].value !== "canceled" : currentCustType !== "none";
+
+                // Query live Stripe sync API to synchronize latest checkout / subscriptions
+                try {
+                    const syncRes = await fetch("/api/subscriptions/sync", { method: "POST" });
+                    if (syncRes.ok) {
+                        const syncData = await syncRes.json();
+                        if (syncData.hasActiveSubscription) {
+                            currentCustType = "subscriber";
+                            isSubActive = true;
+                            setIsCancelAtPeriodEnd(!!syncData.cancelAtPeriodEnd);
+                            if (syncData.subscriptionId) setSubscriptionId(syncData.subscriptionId);
+
+                            await db.execute(
+                                "INSERT OR REPLACE INTO settings (key, value, pension_id, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                                ["customer_type", "subscriber", pId]
+                            );
+                            await db.execute(
+                                "INSERT OR REPLACE INTO settings (key, value, pension_id, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                                ["stripe_subscription_status", "active", pId]
+                            );
+                            await db.execute(
+                                "INSERT OR REPLACE INTO settings (key, value, pension_id, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                                ["stripe_cancel_at_period_end", syncData.cancelAtPeriodEnd ? "1" : "0", pId]
+                            );
+                            if (syncData.subscriptionId) {
+                                await db.execute(
+                                    "INSERT OR REPLACE INTO settings (key, value, pension_id, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                                    ["stripe_subscription_id", syncData.subscriptionId, pId]
+                                );
+                            }
+                            if (typeof window !== "undefined") {
+                                window.dispatchEvent(new CustomEvent("settings-changed", { detail: { customer_type: "subscriber" } }));
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Could not sync live Stripe status:", e);
+                }
+
+                setCustomerType(currentCustType);
+                setSubscriptionActive(isSubActive);
             }
 
             // Get user email
@@ -115,12 +187,24 @@ export default function TarifDetailsPage() {
         loadData();
 
         const handleSync = () => loadData();
+        const handleSettingsChanged = () => loadData();
+
         syncEvents.on("sync-completed", handleSync);
-        return () => syncEvents.off("sync-completed", handleSync);
+        if (typeof window !== "undefined") {
+            window.addEventListener("settings-changed", handleSettingsChanged);
+        }
+
+        return () => {
+            syncEvents.off("sync-completed", handleSync);
+            if (typeof window !== "undefined") {
+                window.removeEventListener("settings-changed", handleSettingsChanged);
+            }
+        };
     }, []);
 
     const handleSaveCustomerType = async (type: CustomerTypeKey) => {
         setCustomerType(type);
+        setSubscriptionActive(type !== "none");
         try {
             const pId = await SyncService.getInstance().getPensionId();
             const db = await initDb(pId || undefined);
@@ -130,9 +214,173 @@ export default function TarifDetailsPage() {
                     "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
                     ["customer_type", type, now, pId]
                 );
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                    ["stripe_subscription_status", type === "none" ? "canceled" : "active", now, pId]
+                );
+            }
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("settings-changed", { detail: { customer_type: type } }));
             }
         } catch (err) {
             console.error("Failed to save customer type:", err);
+        }
+    };
+
+    const handleStartCheckout = async (targetPlanId?: string) => {
+        setCheckoutLoading(true);
+        setCancelFeedback(null);
+        const selectedPlan = targetPlanId || planInfo.plan.id || "S";
+        try {
+            const res = await fetch("/api/create-checkout-session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ planId: selectedPlan }),
+            });
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else if (data.error) {
+                setCancelFeedback({ type: "error", message: `Checkout-Fehler: ${data.error}` });
+            }
+        } catch (err: any) {
+            setCancelFeedback({ type: "error", message: err.message || "Checkout-Aufruf fehlgeschlagen." });
+        } finally {
+            setCheckoutLoading(false);
+        }
+    };
+
+    const handleOpenCancelModal = (mode: "period_end" | "immediate") => {
+        setCancelModalMode(mode);
+        setCancelModalOpen(true);
+        setCancelFeedback(null);
+    };
+
+    const handleConfirmCancel = async () => {
+        setCancelLoading(true);
+        setCancelFeedback(null);
+
+        const immediate = cancelModalMode === "immediate";
+
+        try {
+            const res = await fetch("/api/subscriptions/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    subscriptionId: subscriptionId || "sub_test_pension_default",
+                    immediate,
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || "Fehler beim Kündigen des Abonnements.");
+            }
+
+            const pId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pId || undefined);
+            const now = new Date().toISOString();
+
+            if (immediate) {
+                setSubscriptionActive(false);
+                setCustomerType("none");
+                setIsCancelAtPeriodEnd(false);
+                if (db) {
+                    await db.execute(
+                        "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                        ["customer_type", "none", now, pId]
+                    );
+                    await db.execute(
+                        "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                        ["stripe_subscription_status", "canceled", now, pId]
+                    );
+                    await db.execute(
+                        "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                        ["stripe_cancel_at_period_end", "0", now, pId]
+                    );
+                }
+                if (typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("settings-changed", { detail: { customer_type: "none" } }));
+                }
+                setCancelFeedback({
+                    type: "success",
+                    message: "Abonnement sofort beendet. Der Kundentyp wurde auf 'Kein Kunde' gesetzt und die App gesperrt, bis ein neues Abo gebucht wird.",
+                });
+            } else {
+                setIsCancelAtPeriodEnd(true);
+                if (db) {
+                    await db.execute(
+                        "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                        ["stripe_cancel_at_period_end", "1", now, pId]
+                    );
+                }
+                if (typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("settings-changed"));
+                }
+                setCancelFeedback({
+                    type: "success",
+                    message: "Kündigung zum Periodenende vorgemerkt. Ihr Zugriff bleibt bis zum Ende des Abrechnungsmonats vollständig aktiv.",
+                });
+            }
+
+            setCancelModalOpen(false);
+        } catch (err: any) {
+            setCancelFeedback({
+                type: "error",
+                message: err.message || "Fehler bei der Kündigung.",
+            });
+        } finally {
+            setCancelLoading(false);
+        }
+    };
+
+    const handleReactivate = async () => {
+        setCancelLoading(true);
+        setCancelFeedback(null);
+        try {
+            const res = await fetch("/api/subscriptions/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    subscriptionId: subscriptionId || "sub_test_pension_default",
+                    reactivate: true,
+                }),
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "Fehler beim Reaktivieren des Abonnements.");
+            }
+
+            setIsCancelAtPeriodEnd(false);
+            setSubscriptionActive(true);
+
+            const pId = await SyncService.getInstance().getPensionId();
+            const db = await initDb(pId || undefined);
+            const now = new Date().toISOString();
+            if (db) {
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                    ["stripe_cancel_at_period_end", "0", now, pId]
+                );
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at, pension_id) VALUES (?, ?, ?, ?)",
+                    ["stripe_subscription_status", "active", now, pId]
+                );
+            }
+
+            setCancelFeedback({
+                type: "success",
+                message: "Kündigung erfolgreich widerrufen. Ihr Abonnement wird automatisch fortgeführt.",
+            });
+        } catch (err: any) {
+            setCancelFeedback({
+                type: "error",
+                message: err.message || "Fehler beim Widerrufen der Kündigung.",
+            });
+        } finally {
+            setCancelLoading(false);
         }
     };
 
@@ -190,40 +438,122 @@ ${pensionName}`;
                     <div>
                         <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                             Tarifdetails & Module
-                            <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border-rose-200 dark:border-rose-800 text-xs font-semibold px-2.5 py-0.5">
-                                Aktiver Plan: {planInfo.plan.name}
+                            <Badge className={cn(
+                                "text-xs font-semibold px-2.5 py-0.5 border",
+                                subscriptionActive && customerType !== "none"
+                                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800"
+                                    : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-300 dark:border-zinc-700"
+                            )}>
+                                {subscriptionActive && customerType !== "none" ? `Aktiver Plan: ${planInfo.plan.name}` : "Kein aktiver Plan"}
                             </Badge>
                         </h2>
                         <p className="text-muted-foreground text-sm mt-1">
                             Übersicht Ihres aktuellen Pricing-Plans, Zimmerkontingents, aktiven Leistungsumfangs und zubuchbarer Erweiterungen.
                         </p>
                     </div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => loadData()}
+                        disabled={loading}
+                        className="text-xs gap-1.5 text-zinc-600 dark:text-zinc-400 self-start sm:self-auto"
+                    >
+                        <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+                        Status aktualisieren
+                    </Button>
                 </div>
             </div>
+
+            {/* Feedback Banners */}
+            {cancelFeedback && (
+                <div className={cn(
+                    "p-4 rounded-xl border flex items-start gap-3 text-sm animate-in fade-in-50",
+                    cancelFeedback.type === "success" 
+                        ? "bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900"
+                        : "bg-rose-50 text-rose-900 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900"
+                )}>
+                    {cancelFeedback.type === "success" ? (
+                        <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                        <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1 font-medium">{cancelFeedback.message}</div>
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setCancelFeedback(null)} 
+                        className="h-6 px-2 text-xs -mr-1"
+                    >
+                        Schließen
+                    </Button>
+                </div>
+            )}
+
+            {/* Kündigung vorgemerkt Info Banner */}
+            {isCancelAtPeriodEnd && (
+                <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                        <Calendar className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                            <h4 className="font-bold text-sm">Kündigung zum Periodenende vorgemerkt</h4>
+                            <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                                Ihr Abonnement endet zum Ende des laufenden Abrechnungsmonats. Bis dahin haben Sie weiterhin uneingeschränkten Zugriff auf alle Funktionen.
+                            </p>
+                        </div>
+                    </div>
+                    <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={handleReactivate} 
+                        disabled={cancelLoading}
+                        className="bg-white dark:bg-zinc-900 border-amber-400 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-zinc-800 shrink-0 gap-1.5"
+                    >
+                        <RefreshCw className={cn("w-3.5 h-3.5", cancelLoading && "animate-spin")} />
+                        Kündigung widerrufen
+                    </Button>
+                </div>
+            )}
 
             <Separator />
 
             {/* Status-Karten Grid: Aktiver Tarif & Kundentyp */}
             <div className="grid gap-6 md:grid-cols-3">
                 {/* Aktiver Tarif & Zimmer-Auslastung */}
-                <Card className="md:col-span-2 shadow-md border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50/50 via-white to-indigo-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-blue-950/20">
+                <Card className={cn(
+                    "md:col-span-2 shadow-md transition-all",
+                    subscriptionActive && customerType !== "none"
+                        ? "border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50/50 via-white to-indigo-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-blue-950/20"
+                        : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50"
+                )}>
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                                <div className="p-2 rounded-xl bg-blue-600 text-white shadow-sm">
+                                <div className={cn(
+                                    "p-2 rounded-xl text-white shadow-sm",
+                                    subscriptionActive && customerType !== "none" ? "bg-blue-600" : "bg-zinc-500"
+                                )}>
                                     <Sparkles className="w-5 h-5" />
                                 </div>
                                 <div>
                                     <CardTitle className="text-xl font-bold">
-                                        Aktueller Tarif: {planInfo.plan.name}
+                                        {subscriptionActive && customerType !== "none" 
+                                            ? `Aktueller Tarif: ${planInfo.plan.name}` 
+                                            : "Kein aktiver Tarif"}
                                     </CardTitle>
                                     <CardDescription>
-                                        {planInfo.plan.tagline} • {planInfo.plan.pricePerMonth} / Monat
+                                        {subscriptionActive && customerType !== "none" 
+                                            ? `${planInfo.plan.tagline} • ${planInfo.plan.pricePerMonth} / Monat`
+                                            : `Passende Tarifstufe für ${roomCount} Zimmer: ${planInfo.plan.name} (${planInfo.plan.pricePerMonth} / Monat)`}
                                     </CardDescription>
                                 </div>
                             </div>
-                            <Badge variant="outline" className="font-semibold text-blue-700 dark:text-blue-400 bg-blue-100/60 dark:bg-blue-900/40 border-blue-300 dark:border-blue-800">
-                                Automatisch eingestuft
+                            <Badge variant="outline" className={cn(
+                                "font-semibold",
+                                subscriptionActive && customerType !== "none"
+                                    ? "text-blue-700 dark:text-blue-400 bg-blue-100/60 dark:bg-blue-900/40 border-blue-300 dark:border-blue-800"
+                                    : "text-rose-700 dark:text-rose-400 bg-rose-100/60 dark:bg-rose-900/40 border-rose-300 dark:border-rose-800"
+                            )}>
+                                {subscriptionActive && customerType !== "none" ? "Abonnement Aktiv" : "Inaktiv / Kein Abonnement"}
                             </Badge>
                         </div>
                     </CardHeader>
@@ -251,20 +581,60 @@ ${pensionName}`;
                                     {planInfo.upgradeNotice}
                                 </span>
                                 <div className="mt-0.5 text-zinc-500">
-                                    Die Tarifeinstufung passt sich flexibel Ihrer tatsächlichen Zimmeranzahl an. Sie zahlen stets nur das Kontingent, das Sie tatsächlich nutzen.
+                                    Ihr Zimmerkontingent bestimmt, wie viele Zimmer Sie maximal anlegen können. Das Abonnement wird niemals automatisch teurer – ein Upgrade auf mehr Zimmer führen Sie bei Bedarf jederzeit manuell über Stripe durch.
                                 </div>
                             </div>
+                        </div>
+
+                        {/* Abonnement-Aktionen (Kündigen & Testmodus) */}
+                        <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200/60 dark:border-zinc-800">
+                            {subscriptionActive && !isCancelAtPeriodEnd ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => handleOpenCancelModal("period_end")}
+                                        className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 border-zinc-300 dark:border-zinc-700"
+                                    >
+                                        Abo zum Monatsende kündigen
+                                    </Button>
+
+                                    {/* Testmodus / Sandbox Sofort-Kündigung */}
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => handleOpenCancelModal("immediate")}
+                                        className="text-xs text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 gap-1.5"
+                                    >
+                                        <Zap className="w-3.5 h-3.5 text-amber-600" />
+                                        ⚡ Sofort kündigen (Testmodus)
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Button 
+                                    size="sm"
+                                    onClick={() => handleStartCheckout(planInfo.plan.id)}
+                                    disabled={checkoutLoading}
+                                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                                >
+                                    <CreditCard className="w-3.5 h-3.5" />
+                                    Neues Abo buchen / Checkout starten
+                                </Button>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Kundentyp Card */}
+                {/* Kundentyp Card (System-Driven / Automatisch) */}
                 <Card className="shadow-md border-zinc-200 dark:border-zinc-800 flex flex-col justify-between">
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Crown className="w-5 h-5 text-amber-500" />
-                                <CardTitle className="text-base font-bold">Kundentyp</CardTitle>
+                                <div>
+                                    <CardTitle className="text-base font-bold">Kundentyp</CardTitle>
+                                    <span className="text-[10px] text-zinc-400 font-medium">Automatisch ermittelt</span>
+                                </div>
                             </div>
                             <span className={cn("text-xs font-semibold px-2.5 py-0.5 rounded-full border", currentCustomerType.colorClass)}>
                                 {currentCustomerType.label}
@@ -277,32 +647,45 @@ ${pensionName}`;
                     <CardContent className="space-y-3 pt-0">
                         <div className="space-y-1.5">
                             <Label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
-                                Kundentyp wechseln (Entwicklungsstand)
+                                Ihr aktiver Kundentyp
                             </Label>
-                            <div className="grid grid-cols-3 gap-1.5">
+                            <div className="space-y-1.5">
                                 {(Object.keys(CUSTOMER_TYPES) as CustomerTypeKey[]).map((key) => {
                                     const c = CUSTOMER_TYPES[key];
                                     const isSelected = customerType === key;
                                     return (
-                                        <button
+                                        <div
                                             key={key}
-                                            type="button"
-                                            onClick={() => handleSaveCustomerType(key)}
                                             className={cn(
-                                                "text-xs px-2 py-1.5 rounded-md font-medium text-center border transition-all",
+                                                "text-xs px-2.5 py-1.5 rounded-lg font-medium flex items-center justify-between border transition-all",
                                                 isSelected 
                                                     ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-zinc-900 dark:border-zinc-100 shadow-sm"
-                                                    : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-zinc-400"
+                                                    : "bg-zinc-50/70 dark:bg-zinc-800/40 text-zinc-500 dark:text-zinc-400 border-zinc-200/80 dark:border-zinc-800"
                                             )}
                                         >
-                                            {c.label.replace("-Kunde", "")}
-                                        </button>
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "w-2 h-2 rounded-full",
+                                                    isSelected 
+                                                        ? (key === "none" ? "bg-rose-500 dark:bg-rose-600" : "bg-emerald-400 dark:bg-emerald-600")
+                                                        : "bg-zinc-300 dark:bg-zinc-600"
+                                                )} />
+                                                <span>{c.label}</span>
+                                            </div>
+                                            {isSelected ? (
+                                                <span className={cn(
+                                                    "text-[10px] uppercase tracking-wider font-bold",
+                                                    key === "none" ? "text-rose-400 dark:text-rose-600" : "text-emerald-400 dark:text-emerald-700"
+                                                )}>
+                                                    {key === "none" ? "Inaktiv / Gesperrt" : "Aktiv"}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{c.tagline}</span>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
-                        </div>
-                        <div className="p-2.5 rounded-md bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-500 leading-snug">
-                            <strong className="text-zinc-700 dark:text-zinc-300">Hinweis:</strong> Alle Kundentypen haben im aktuellen Entwicklungsstand identischen, vollen Zugriff auf alle Funktionen.
                         </div>
                     </CardContent>
                 </Card>
@@ -321,20 +704,34 @@ ${pensionName}`;
 
                 <div className="grid gap-6 md:grid-cols-3">
                     {PRICING_PLANS.map((plan) => {
-                        const isActive = planInfo.plan.id === plan.id;
+                        const PLAN_TIER_ORDER: Record<string, number> = { S: 1, M: 2, L: 3 };
+                        const currentRank = PLAN_TIER_ORDER[planInfo.plan.id] || 1;
+                        const thisRank = PLAN_TIER_ORDER[plan.id] || 1;
+
+                        const isSubscribedPlan = subscriptionActive && customerType !== "none" && planInfo.plan.id === plan.id;
+                        const isRecommendedPlan = (!subscriptionActive || customerType === "none") && planInfo.plan.id === plan.id;
+                        const isHigherTier = subscriptionActive && customerType !== "none" && thisRank > currentRank;
+
                         return (
                             <Card 
                                 key={plan.id}
                                 className={cn(
                                     "relative flex flex-col justify-between transition-all duration-200",
-                                    isActive 
+                                    isSubscribedPlan
                                         ? "border-2 border-blue-600 dark:border-blue-500 shadow-lg shadow-blue-500/10 bg-white dark:bg-zinc-900 scale-[1.02]"
+                                        : isRecommendedPlan
+                                        ? "border-2 border-blue-300 dark:border-blue-800 bg-blue-50/20 dark:bg-blue-950/10 shadow-sm"
                                         : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-700"
                                 )}
                             >
-                                {isActive && (
+                                {isSubscribedPlan && (
                                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
                                         <Check className="w-3 h-3 stroke-[3]" /> Aktiver Tarif
+                                    </div>
+                                )}
+                                {isRecommendedPlan && (
+                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700 text-[10px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
+                                        <Sparkles className="w-3 h-3" /> Passend ({roomCount} Zimmer)
                                     </div>
                                 )}
                                 <CardHeader className="pb-4">
@@ -369,13 +766,36 @@ ${pensionName}`;
 
                                 <CardFooter className="pt-0">
                                     <div className="w-full">
-                                        {isActive ? (
+                                        {isSubscribedPlan ? (
                                             <div className="w-full py-2 text-center text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 rounded-lg border border-blue-200 dark:border-blue-900">
-                                                Derzeit aktiv ({roomCount} Zimmer)
+                                                Derzeit aktiv ({roomCount} {planInfo.roomsLimit ? `von ${planInfo.roomsLimit}` : ""} Zimmer)
                                             </div>
+                                        ) : (!subscriptionActive || customerType === "none") ? (
+                                            <Button 
+                                                onClick={() => handleStartCheckout(plan.id)}
+                                                disabled={checkoutLoading}
+                                                className={cn(
+                                                    "w-full text-xs gap-1.5",
+                                                    isRecommendedPlan 
+                                                        ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                                                        : "bg-zinc-800 hover:bg-zinc-900 text-zinc-200"
+                                                )}
+                                            >
+                                                <CreditCard className="w-3.5 h-3.5" />
+                                                {isRecommendedPlan ? "Diesen Tarif wählen" : "Tarif buchen"}
+                                            </Button>
+                                        ) : isHigherTier ? (
+                                            <Button 
+                                                onClick={() => handleStartCheckout(plan.id)}
+                                                disabled={checkoutLoading}
+                                                className="w-full text-xs bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 gap-1.5 shadow-sm font-semibold"
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
+                                                Auf {plan.name} upgraden
+                                            </Button>
                                         ) : (
                                             <div className="w-full py-2 text-center text-xs text-zinc-400 dark:text-zinc-500 font-medium">
-                                                {plan.id === "S" && roomCount > 5 ? "Unterhalb Ihres Kontingents" : "Aktiv ab passender Zimmeranzahl"}
+                                                Unterhalb Ihres aktuellen Tarifs
                                             </div>
                                         )}
                                     </div>
@@ -420,7 +840,7 @@ ${pensionName}`;
                 </div>
             </div>
 
-            {/* Zusatzmodule (Ausgegraut & Gesperrt / Noch nicht verfügbar) */}
+            {/* Zusatzmodule */}
             <div className="space-y-4 pt-2">
                 <div className="flex items-center justify-between">
                     <div>
@@ -448,41 +868,45 @@ ${pensionName}`;
                                 </Badge>
                             </div>
 
-                            <CardHeader className="pb-3">
-                                <div className="w-10 h-10 rounded-xl bg-zinc-200/80 dark:bg-zinc-800 flex items-center justify-center mb-3 text-zinc-600 dark:text-zinc-400">
-                                    {module.id === "booking-com" && <Globe className="w-5 h-5" />}
-                                    {module.id === "ai-assistant" && <Bot className="w-5 h-5" />}
-                                    {module.id === "ai-reception" && <Headphones className="w-5 h-5" />}
+                            <CardHeader className="pb-2">
+                                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3">
+                                    {module.category === "Integration" && <Globe className="w-5 h-5" />}
+                                    {module.category === "Künstliche Intelligenz" && <Bot className="w-5 h-5" />}
+                                    {module.category === "Automatisierung" && <Headphones className="w-5 h-5" />}
                                 </div>
-                                <CardTitle className="text-base font-bold text-zinc-800 dark:text-zinc-200">{module.title}</CardTitle>
-                                <CardDescription className="text-xs font-semibold text-zinc-500">
+                                <CardTitle className="text-base font-bold">{module.title}</CardTitle>
+                                <CardDescription className="text-xs text-zinc-500 dark:text-zinc-400">
                                     {module.subtitle}
                                 </CardDescription>
                             </CardHeader>
 
-                            <CardContent className="space-y-4 pt-0 flex-1">
+                            <CardContent className="space-y-3 pt-0">
                                 <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
                                     {module.description}
                                 </p>
-                                <div className="space-y-1.5 bg-zinc-100/80 dark:bg-zinc-950/60 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                                    <div className="text-[10px] font-bold uppercase text-zinc-400 tracking-wider">Highlights (Geplant)</div>
-                                    {module.highlightFeatures.map((h, i) => (
-                                        <div key={i} className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 shrink-0" />
-                                            <span>{h}</span>
-                                        </div>
-                                    ))}
+                                <div className="space-y-1.5 pt-1">
+                                    <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                                        Geplante Highlights:
+                                    </span>
+                                    <div className="space-y-1">
+                                        {module.highlightFeatures.map((h, i) => (
+                                            <div key={i} className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                                                <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+                                                <span>{h}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </CardContent>
 
-                            <CardFooter className="pt-0">
+                            <CardFooter className="pt-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/50">
                                 <Button 
                                     variant="outline" 
-                                    className="w-full gap-2 border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 transition-colors text-xs font-semibold"
+                                    size="sm" 
+                                    className="w-full text-xs font-semibold gap-2 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50"
                                     onClick={() => handleOpenRequest(module)}
                                 >
-                                    <Mail className="w-3.5 h-3.5" />
-                                    Freischaltung anfragen
+                                    <Send className="w-3.5 h-3.5" /> Freischaltung anfragen
                                 </Button>
                             </CardFooter>
                         </Card>
@@ -490,98 +914,133 @@ ${pensionName}`;
                 </div>
             </div>
 
-            {/* Modal: Freischaltung anfragen (Mail an info@pensionsmanager.de) */}
-            <Dialog open={!!requestModalModule} onOpenChange={(open) => { if (!open) setRequestModalModule(null); }}>
+            {/* Kündigungs-Bestätigungsdialog */}
+            <Dialog open={cancelModalOpen} onOpenChange={setCancelModalOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Mail className="w-5 h-5 text-blue-600" />
-                            Freischaltung anfragen: {requestModalModule?.title}
-                        </DialogTitle>
-                        <DialogDescription>
-                            Senden Sie eine Anfrage direkt per E-Mail an <strong className="text-zinc-900 dark:text-zinc-100">info@pensionsmanager.de</strong>.
+                        <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 mb-1">
+                            <AlertTriangle className="w-5 h-5" />
+                            <DialogTitle className="text-lg font-bold">
+                                {cancelModalMode === "immediate" 
+                                    ? "Abonnement sofort beenden (Testmodus)?" 
+                                    : "Abonnement zum Monatsende kündigen?"}
+                            </DialogTitle>
+                        </div>
+                        <DialogDescription className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                            {cancelModalMode === "immediate" ? (
+                                <span>
+                                    <strong>Achtung Test-Funktion:</strong> Das Abonnement wird in Stripe und lokal mit sofortiger Wirkung beendet. Der Account fällt direkt auf den Teststatus zurück, sodass Sie sofort neue Checkout-Sessions und Abos testen können.
+                                </span>
+                            ) : (
+                                <span>
+                                    Ihr Zugriff auf den vollen Funktionsumfang bleibt bis zum <strong>Ende des aktuellen Abrechnungszeitraums</strong> uneingeschränkt bestehen. Es erfolgt danach keine automatische Verlängerung mehr.
+                                </span>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setCancelModalOpen(false)}
+                            disabled={cancelLoading}
+                        >
+                            Abbrechen
+                        </Button>
+                        <Button 
+                            variant={cancelModalMode === "immediate" ? "destructive" : "default"}
+                            size="sm" 
+                            onClick={handleConfirmCancel}
+                            disabled={cancelLoading}
+                            className="gap-1.5"
+                        >
+                            {cancelLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            {cancelModalMode === "immediate" ? "Sofort beenden (Reset)" : "Kündigung bestätigen"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Freischaltungs-Modal (Zusatzmodule) */}
+            <Dialog open={!!requestModalModule} onOpenChange={(open) => !open && setRequestModalModule(null)}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-1">
+                            <Sparkles className="w-5 h-5" />
+                            <DialogTitle className="text-lg font-bold">
+                                Freischaltung anfragen: {requestModalModule?.title}
+                            </DialogTitle>
+                        </div>
+                        <DialogDescription className="text-xs">
+                            Senden Sie eine Benachrichtigung an das Entwickler-Team, um als Pilotbetrieb für das Modul vorgemerkt zu werden.
                         </DialogDescription>
                     </DialogHeader>
 
                     {requestSuccess ? (
-                        <div className="p-6 text-center space-y-4">
-                            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto">
+                        <div className="py-6 text-center space-y-3">
+                            <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center mx-auto">
                                 <CheckCircle2 className="w-6 h-6" />
                             </div>
-                            <div className="space-y-1">
-                                <h4 className="font-bold text-base">E-Mail-Anfrage vorbereitet!</h4>
-                                <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                                    Ihr Standard-E-Mail-Programm wurde mit der vorformulierten Anfrage an <strong>info@pensionsmanager.de</strong> aufgerufen.
-                                </p>
-                            </div>
-                            {lastMailtoUrl && (
-                                <div className="pt-2 flex flex-col gap-2">
-                                    <a href={lastMailtoUrl}>
-                                        <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 text-xs">
-                                            <ExternalLink className="w-3.5 h-3.5" /> E-Mail-Programm erneut öffnen
-                                        </Button>
-                                    </a>
-                                </div>
-                            )}
+                            <h4 className="font-bold text-sm">E-Mail-Anfrage vorbereitet!</h4>
+                            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                                Ihr E-Mail-Programm sollte sich mit einer vorausgefüllten Nachricht an <strong>info@pensionsmanager.de</strong> geöffnet haben.
+                            </p>
                             <Button 
-                                variant="ghost" 
                                 size="sm" 
-                                className="text-xs text-zinc-500" 
                                 onClick={() => setRequestModalModule(null)}
+                                className="mt-2"
                             >
                                 Schließen
                             </Button>
                         </div>
                     ) : (
-                        <form onSubmit={handleSendRequest} className="space-y-4 pt-2">
+                        <form onSubmit={handleSendRequest} className="space-y-4 pt-1">
                             <div className="space-y-2">
-                                <Label htmlFor="req-pension">Pension / Betriebsname</Label>
-                                <Input 
-                                    id="req-pension" 
-                                    value={pensionName} 
-                                    onChange={(e) => setPensionName(e.target.value)}
-                                    required 
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="req-email">Ihre Kontakt-E-Mail</Label>
+                                <Label htmlFor="req-email" className="text-xs font-semibold">Ihre Kontakt-E-Mail</Label>
                                 <Input 
                                     id="req-email" 
                                     type="email" 
-                                    placeholder="pension@beispiel.de" 
-                                    value={requestEmail}
+                                    value={requestEmail} 
                                     onChange={(e) => setRequestEmail(e.target.value)}
+                                    placeholder="ihre-email@pension.de"
                                     required 
+                                    className="text-xs"
                                 />
                             </div>
+
                             <div className="space-y-2">
-                                <Label htmlFor="req-note">Besondere Wünsche oder Anmerkungen (optional)</Label>
+                                <Label htmlFor="req-note" className="text-xs font-semibold">Individuelle Wünsche & Anmerkungen (optional)</Label>
                                 <Textarea 
                                     id="req-note" 
-                                    placeholder="z.B. geplante Anbindungstermine, Anforderungen..."
-                                    value={requestNote}
+                                    value={requestNote} 
                                     onChange={(e) => setRequestNote(e.target.value)}
-                                    className="resize-none text-xs"
+                                    placeholder="z. B. Welche Funktionen oder OTA-Kanäle sind für Sie besonders wichtig?"
                                     rows={3}
+                                    className="text-xs"
                                 />
                             </div>
-                            <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-800 dark:text-blue-300 flex items-center gap-2">
-                                <Info className="w-4 h-4 shrink-0" />
-                                <span>Beim Absenden öffnet sich eine vorformulierte E-Mail an <strong>info@pensionsmanager.de</strong>.</span>
+
+                            <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg text-[11px] text-zinc-500 space-y-1 border border-zinc-200 dark:border-zinc-800">
+                                <div><strong>Übermittelte Betriebsdaten:</strong></div>
+                                <div>• Betrieb: {pensionName}</div>
+                                <div>• Aktueller Tarif: {planInfo.plan.name} ({roomCount} Zimmer)</div>
                             </div>
+
                             <DialogFooter className="gap-2 sm:gap-0 pt-2">
                                 <Button 
                                     type="button" 
-                                    variant="ghost" 
+                                    variant="outline" 
+                                    size="sm" 
                                     onClick={() => setRequestModalModule(null)}
                                 >
                                     Abbrechen
                                 </Button>
                                 <Button 
                                     type="submit" 
-                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2"
+                                    size="sm" 
+                                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
                                 >
-                                    <Mail className="w-4 h-4" /> E-Mail absenden
+                                    <Send className="w-3.5 h-3.5" /> Anfrage absenden
                                 </Button>
                             </DialogFooter>
                         </form>

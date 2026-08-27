@@ -258,6 +258,12 @@ export default function RoomsPage() {
             const pId = await SyncService.getInstance().getPensionId();
             const db = await initDb(pId || undefined);
             if (db) {
+                // Quota limit check
+                if (planInfo.roomsLimit !== null && rooms.length >= planInfo.roomsLimit) {
+                    alert(`Das maximale Zimmerkontingent Ihres Tarifs (${planInfo.roomsLimit} Zimmer) ist erreicht.\n\nBitte führen Sie unter 'Account > Tarifdetails & Module' ein manuelles Upgrade durch, um weitere Zimmer anzulegen.`);
+                    return;
+                }
+
                 // Final check before insertion
                 const exists = rooms.some(r => r.id === newRoomId);
                 if (exists) {

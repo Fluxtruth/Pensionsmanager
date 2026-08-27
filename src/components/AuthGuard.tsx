@@ -2,12 +2,15 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { Sidebar } from "@/components/Sidebar";
 import { initDb } from "@/lib/db";
 import { PinEntry } from "@/components/PinEntry";
 import { SyncService } from "@/lib/sync";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Lock, CreditCard, ArrowRight, ShieldAlert } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
@@ -17,10 +20,50 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     const [appPin, setAppPin] = useState<string | null>(null);
     const [isPinEnabled, setIsPinEnabled] = useState(true);
     const [isPinVerified, setIsPinVerified] = useState(false);
+    const [customerType, setCustomerType] = useState<string>("test");
     const [hasSession, setHasSession] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const syncService = SyncService.getInstance();
+
+    const loadAppSettings = async (pensionId: string | null) => {
+        try {
+            const db = await initDb(pensionId || undefined);
+            if (db) {
+                const settings = await db.select<any[]>(
+                    "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled', 'customer_type', 'stripe_subscription_status') AND (pension_id = ? OR pension_id IS NULL)",
+                    [pensionId]
+                );
+
+                const findSetting = (key: string) => {
+                    const matching = settings.find(s => s.key === key && s.pension_id === pensionId);
+                    return matching || settings.find(s => s.key === key);
+                };
+
+                const pinSetting = findSetting('app_pin');
+                const enabledSetting = findSetting('is_pin_enabled');
+                const custTypeSetting = findSetting('customer_type');
+
+                if (custTypeSetting) {
+                    setCustomerType(custTypeSetting.value);
+                }
+
+                if (pinSetting) {
+                    setAppPin(pinSetting.value);
+                    const enabled = enabledSetting?.value !== 'false';
+                    setIsPinEnabled(enabled);
+                    if (!enabled) setIsPinVerified(true);
+                } else {
+                    setIsPinVerified(true);
+                }
+            } else {
+                setIsPinVerified(true);
+            }
+        } catch (err) {
+            console.error("Failed to load app settings:", err);
+            setIsPinVerified(true);
+        }
+    };
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -36,7 +79,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 } else {
                     if (session && !isAuthRoute) {
                         await syncService.initializeWebContext();
-                        // Start Auto-Sync automatically as soon as we have a session
                         if (!syncService.isAutoSyncActive()) {
                             console.log("[AuthGuard] Starting background auto-sync...");
                             syncService.startAutoSync();
@@ -45,44 +87,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     
                     setIsAuthorized(true);
 
-                    // Check for local PIN
                     if (session && !isAuthRoute) {
                         const pensionId = await syncService.getPensionId();
-                        const db = await initDb(pensionId || undefined);
-                        if (db) {
-                            // Query for settings. We try both the specific pensionId and NULL for compatibility/robustness
-                            const settings = await db.select<any[]>(
-                                "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)",
-                                [pensionId]
-                            );
-                            
-                            // Prefer setting with matching pensionId, fallback to NULL
-                            const findSetting = (key: string) => {
-                                const matching = settings.find(s => s.key === key && s.pension_id === pensionId);
-                                return matching || settings.find(s => s.key === key);
-                            };
-
-                            const pinSetting = findSetting('app_pin');
-                            const enabledSetting = findSetting('is_pin_enabled');
-                            
-                            if (pinSetting) {
-                                setAppPin(pinSetting.value);
-                                const enabled = enabledSetting?.value !== 'false';
-                                setIsPinEnabled(enabled);
-                                if (!enabled) setIsPinVerified(true);
-                            } else {
-                                setIsPinVerified(true); // No PIN set
-                            }
-                        } else {
-                            setIsPinVerified(true); // No DB, continue
-                        }
+                        await loadAppSettings(pensionId);
                     } else {
-                        setIsPinVerified(true); // Auth route or no session
+                        setIsPinVerified(true);
                     }
                 }
             } catch (error) {
                 console.error("Auth check failed:", error);
-                setIsPinVerified(true); // Fail open
+                setIsPinVerified(true);
             } finally {
                 setIsLoading(false);
             }
@@ -142,54 +156,26 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             }
         };
 
-        const reloadPinSettings = async () => {
+        const reloadSettings = async () => {
             try {
                 const { data: { session } } = await supabase.auth.getSession();
-                if (session && !isAuthRoute) {
+                const isAuth = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/reset-password');
+                if (session && !isAuth) {
                     const pensionId = await syncService.getPensionId();
-                    const db = await initDb(pensionId || undefined);
-                    if (db) {
-                        // Query for settings. We try both the specific pensionId and NULL
-                        const settings = await db.select<any[]>(
-                            "SELECT key, value, pension_id FROM settings WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)",
-                            [pensionId]
-                        );
-                        
-                        // Prefer matching pensionId
-                        const findSetting = (key: string) => {
-                            const matching = settings.find(s => s.key === key && s.pension_id === pensionId);
-                            return matching || settings.find(s => s.key === key);
-                        };
-
-                        const pinSetting = findSetting('app_pin');
-                        const enabledSetting = findSetting('is_pin_enabled');
-                        
-                        if (pinSetting) {
-                            setAppPin(pinSetting.value);
-                            const enabled = enabledSetting?.value !== 'false';
-                            setIsPinEnabled(enabled);
-                            // Only force verified on load if it's currently NOT locked or if it's disabled
-                            if (!enabled) {
-                                setIsPinVerified(true);
-                            }
-                        } else {
-                            setAppPin(null);
-                            setIsPinVerified(true);
-                        }
-                    }
+                    await loadAppSettings(pensionId);
                 }
             } catch (err) {
-                console.error("Failed to reload PIN settings:", err);
+                console.error("Failed to reload settings:", err);
             }
         };
 
         window.addEventListener('app-lock', handleManualLock);
-        window.addEventListener('settings-changed', reloadPinSettings);
+        window.addEventListener('settings-changed', reloadSettings);
 
         return () => {
             subscription.unsubscribe();
             window.removeEventListener('app-lock', handleManualLock);
-            window.removeEventListener('settings-changed', reloadPinSettings);
+            window.removeEventListener('settings-changed', reloadSettings);
             window.removeEventListener('unhandledrejection', handleUnhandledRejection);
             console.error = originalConsoleError;
         };
@@ -240,7 +226,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return <main className="min-h-screen w-full bg-zinc-50 dark:bg-zinc-950">{children}</main>;
     }
 
-    // Standard Layout with Sidebar (Only for authorized + verified users on non-auth routes)
+    // Check if subscription is missing ("none" / Kein Kunde)
+    const isSubscriptionLocked = customerType === "none";
+    const isExemptFromSubscriptionLock = 
+        pathname.startsWith('/account') ||
+        pathname.startsWith('/impressum') ||
+        pathname.startsWith('/agb') ||
+        pathname.startsWith('/datenschutz') ||
+        pathname.startsWith('/dokumentation') ||
+        pathname.startsWith('/success');
+
+    // Standard Layout with Sidebar
     return (
         <div className="flex h-full">
             {/* Backdrop for mobile */}
@@ -262,10 +258,53 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                         <Menu className="w-6 h-6" />
                     </button>
                     <span className="font-bold text-zinc-900 dark:text-white">Pensionsmanager</span>
-                    <div className="w-10" /> {/* Spacer */}
+                    <div className="w-10" />
                 </div>
                 <div className="flex-1 p-6 max-w-7xl mx-auto w-full">
-                    {children}
+                    {isSubscriptionLocked && !isExemptFromSubscriptionLock ? (
+                        <div className="min-h-[70vh] flex items-center justify-center p-4">
+                            <Card className="max-w-lg w-full text-center border-rose-200 dark:border-rose-900 shadow-xl bg-white dark:bg-zinc-900/90 backdrop-blur-md">
+                                <CardHeader className="pb-3">
+                                    <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
+                                        <Lock className="w-8 h-8" />
+                                    </div>
+                                    <CardTitle className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+                                        Abonnement erforderlich
+                                    </CardTitle>
+                                    <CardDescription className="text-zinc-600 dark:text-zinc-400 text-sm mt-1">
+                                        Für Ihre Pension liegt derzeit kein aktives Abonnement vor (Status: <strong>Kein Kunde</strong>). Die Verwaltungsfunktionen sind vorübergehend gesperrt.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-5 pt-1">
+                                    <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900 text-xs text-rose-900 dark:text-rose-300 text-left space-y-1.5">
+                                        <div className="font-semibold flex items-center gap-1.5">
+                                            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                                            Gesperrte Bereiche:
+                                        </div>
+                                        <div>• Zimmerverwaltung & Belegungsplan</div>
+                                        <div>• Kalender, Buchungen & Gästedatenbank</div>
+                                        <div>• Reinigungsplan & Meldescheine</div>
+                                    </div>
+
+                                    <p className="text-xs text-zinc-500">
+                                        Wählen Sie jetzt einen passenden Tarif für Ihre Zimmeranzahl, um alle Funktionen unmittelbar wieder freizuschalten.
+                                    </p>
+
+                                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                                        <Link href="/account/tarif" className="flex-1">
+                                            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2">
+                                                <CreditCard className="w-4 h-4" />
+                                                Tarif wählen & Abo aktivieren
+                                                <ArrowRight className="w-4 h-4" />
+                                            </Button>
+                                        </Link>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    ) : (
+                        children
+                    )}
                 </div>
             </main>
         </div>

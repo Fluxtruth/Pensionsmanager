@@ -72,22 +72,17 @@ describe("Tarifdetails Page", () => {
         expect(screen.getByText(/Noch 1 Zimmer im Tarif S verfügbar/i)).toBeInTheDocument();
     });
 
-    it("displays customer types and allows switching", async () => {
+    it("displays customer types automatically in system overview", async () => {
         render(<TarifDetailsPage />);
 
         await waitFor(() => {
             expect(screen.getAllByText("Testkunde").length).toBeGreaterThan(0);
         });
 
-        const subscriberButton = screen.getByRole("button", { name: "Abonnent" });
-        fireEvent.click(subscriberButton);
-
-        await waitFor(() => {
-            expect(mockExecute).toHaveBeenCalledWith(
-                expect.stringContaining("INSERT OR REPLACE INTO settings"),
-                expect.arrayContaining(["customer_type", "subscriber", "test-pension-id"])
-            );
-        });
+        expect(screen.getByText("Ihr aktiver Kundentyp")).toBeInTheDocument();
+        expect(screen.getByText("Kein Kunde")).toBeInTheDocument();
+        expect(screen.getByText("Abonnent")).toBeInTheDocument();
+        expect(screen.getByText("Enterprise-Kunde")).toBeInTheDocument();
     });
 
     it("displays all 3 greyed-out addon modules with request button", async () => {
