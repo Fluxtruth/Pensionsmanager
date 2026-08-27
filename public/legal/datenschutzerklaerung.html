@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datenschutzerklärung - Pensionsmanager</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --bg-light: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-main); background-color: #ffffff; line-height: 1.6; padding: 40px 20px;
+        }
+        .container { max-width: 860px; margin: 0 auto; background: #ffffff; }
+        .no-print-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--bg-light); border: 1px solid var(--border-color);
+            padding: 12px 20px; border-radius: 8px; margin-bottom: 30px;
+        }
+        .btn {
+            background-color: var(--primary); color: white; border: none;
+            padding: 8px 18px; font-size: 14px; font-weight: 600; border-radius: 6px;
+            cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+        }
+        .btn:hover { background-color: var(--primary-dark); }
+        .header { border-bottom: 2px solid var(--primary); padding-bottom: 20px; margin-bottom: 30px; }
+        .badge {
+            display: inline-block; background: #eff6ff; color: var(--primary);
+            font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+        }
+        h1 { font-size: 26px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
+        .meta { color: var(--text-muted); font-size: 14px; }
+        h2 {
+            font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 28px;
+            margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px;
+        }
+        p, ul, ol { margin-bottom: 14px; font-size: 14.5px; }
+        ul, ol { padding-left: 24px; }
+        li { margin-bottom: 6px; }
+        .highlight-box {
+            background-color: #f1f5f9; border-left: 4px solid var(--primary);
+            padding: 14px 18px; border-radius: 0 6px 6px 0; margin: 20px 0; font-size: 14px;
+        }
+        @media print {
+            body { padding: 0; font-size: 13px; }
+            .no-print-bar { display: none !important; }
+            @page { margin: 20mm 15mm; }
+            h1 { font-size: 22px; }
+            h2 { font-size: 16px; margin-top: 18px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="no-print-bar">
+            <div>
+                <strong>Rechtsdokumentation Pensionsmanager</strong> &bull; Art. 13/14 DSGVO
+            </div>
+            <button class="btn" onclick="window.print()">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+                    <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+                </svg>
+                Als PDF herunterladen / Drucken
+            </button>
+        </div>
+
+        <div class="header">
+            <span class="badge">Datenschutz &bull; Art. 13, 14 DSGVO</span>
+            <h1>Datenschutzerklärung für Nutzer & Tester</h1>
+            <div class="meta">Information über die Erhebung und Verarbeitung von Nutzerdaten bei der Software „Pensionsmanager“</div>
+        </div>
+
+        <h2>1. Name und Anschrift des Verantwortlichen</h2>
+        <p>Verantwortlicher im Sinne der Datenschutz-Grundverordnung (DSGVO) und anderer nationaler Datenschutzgesetze ist der Betreiber von Pensionsmanager (siehe Impressum).</p>
+
+        <h2>2. Grundsatz: Offline-First & Datensparsamkeit</h2>
+        <div class="highlight-box">
+            <strong>Datensouveränität:</strong> Ihre operativen Gästedaten, Buchungsdetails und Notizen werden primär auf Ihrem lokalen Gerät in einer SQLite-Datenbank gespeichert. Die Synchronisation mit der Cloud dient ausschließlich dem verschlüsselten Backup und der geräteübergreifenden Verfügbarkeit.
+        </div>
+
+        <h2>3. Erhebung von Nutzer- und Kontodaten</h2>
+        <p>Bei der Registrierung und Nutzung eines Benutzerkontos erheben wir:</p>
+        <ul>
+            <li>E-Mail-Adresse und verschlüsseltes Passwort-Token (über Supabase Auth)</li>
+            <li>Zeitpunkt der Kontoerstellung und des letzten Logins</li>
+            <li>Gerätekennungen (Device-IDs) zur Autorisierung und Synchronisationsverwaltung</li>
+        </ul>
+        <p><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung bzw. Durchführung vorvertraglicher Maßnahmen).</p>
+
+        <h2>4. Telemetrie, Logs und Fehlerberichte</h2>
+        <p>Zur Aufrechterhaltung der Systemsicherheit, Fehlerdiagnose und kontinuierlichen Weiterentwicklung der Software verarbeiten wir im Bedarfsfall:</p>
+        <ul>
+            <li>Anonymisierte bzw. pseudonymisierte Fehlerprotokolle (Crash Reports, Fehlermeldungen bei DB-Syncs)</li>
+            <li>Informationen über das Betriebssystem und die App-Version</li>
+            <li>IP-Adresse (ausschließlich in gekürzter Form zur Missbrauchs- und Angriffserkennung)</li>
+        </ul>
+        <p><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einem stabilen, sicheren und fehlerfreien Betrieb).</p>
+
+        <h2>5. Empfänger von Daten & Drittanbieter</h2>
+        <p>Wir setzen zur Bereitstellung der Infrastruktur folgende Dienstleister ein:</p>
+        <ul>
+            <li><strong>Supabase Inc.</strong> (Authentifizierung & Datenbank-Cloud, Standort Rechenzentrum: Frankfurt am Main, Deutschland)</li>
+            <li><strong>Hosting- & CDN-Provider</strong> (Bereitstellung der Web-Applikation und statischen Assets)</li>
+        </ul>
+
+        <h2>6. Speicherdauer</h2>
+        <p>Wir verarbeiten und speichern personenbezogene Daten der Nutzer nur so lange, wie es zur Erreichung des Speicherungszwecks erforderlich ist oder gesetzliche Aufbewahrungsfristen dies vorschreiben. Bei Löschung des Benutzerkontos werden alle Kontodaten und Cloud-Backups unwiderruflich gelöscht.</p>
+
+        <h2>7. Ihre Rechte als betroffene Person</h2>
+        <p>Sie haben nach der DSGVO jederzeit das Recht auf:</p>
+        <ul>
+            <li>Auskunft über Ihre bei uns gespeicherten Daten (Art. 15 DSGVO)</li>
+            <li>Berichtigung unrichtiger Daten (Art. 16 DSGVO)</li>
+            <li>Löschung Ihrer Daten (Art. 17 DSGVO)</li>
+            <li>Einschränkung der Verarbeitung (Art. 18 DSGVO)</li>
+            <li>Datenübertragbarkeit (Art. 20 DSGVO)</li>
+            <li>Widerspruch gegen die Verarbeitung (Art. 21 DSGVO)</li>
+            <li>Beschwerde bei einer zuständigen Datenschutz-Aufsichtsbehörde (Art. 77 DSGVO)</li>
+        </ul>
+    </div>
+</body>
+</html>

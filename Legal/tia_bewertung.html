@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transfer Impact Assessment (TIA) - Pensionsmanager</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --bg-light: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-main); background-color: #ffffff; line-height: 1.6; padding: 40px 20px;
+        }
+        .container { max-width: 860px; margin: 0 auto; background: #ffffff; }
+        .no-print-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--bg-light); border: 1px solid var(--border-color);
+            padding: 12px 20px; border-radius: 8px; margin-bottom: 30px;
+        }
+        .btn {
+            background-color: var(--primary); color: white; border: none;
+            padding: 8px 18px; font-size: 14px; font-weight: 600; border-radius: 6px;
+            cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+        }
+        .btn:hover { background-color: var(--primary-dark); }
+        .header { border-bottom: 2px solid var(--primary); padding-bottom: 20px; margin-bottom: 30px; }
+        .badge {
+            display: inline-block; background: #eff6ff; color: var(--primary);
+            font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+        }
+        h1 { font-size: 26px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
+        .meta { color: var(--text-muted); font-size: 14px; }
+        h2 {
+            font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 28px;
+            margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px;
+        }
+        p, ul, ol { margin-bottom: 14px; font-size: 14.5px; }
+        ul, ol { padding-left: 24px; }
+        li { margin-bottom: 6px; }
+        .table-data {
+            width: 100%; border-collapse: collapse; margin: 16px 0 24px 0; font-size: 13.5px;
+        }
+        .table-data th, .table-data td {
+            border: 1px solid var(--border-color); padding: 10px 12px; text-align: left; vertical-align: top;
+        }
+        .table-data th { background: var(--bg-light); font-weight: 700; }
+        .risk-badge {
+            background: #dcfce7; color: #15803d; font-weight: 700; padding: 2px 8px;
+            border-radius: 4px; font-size: 12px; display: inline-block;
+        }
+        @media print {
+            body { padding: 0; font-size: 13px; }
+            .no-print-bar { display: none !important; }
+            @page { margin: 20mm 15mm; }
+            h1 { font-size: 22px; }
+            h2 { font-size: 16px; margin-top: 18px; }
+            .table-data { font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="no-print-bar">
+            <div>
+                <strong>Rechtsdokumentation Pensionsmanager</strong> &bull; Compliance & Risikobewertung
+            </div>
+            <button class="btn" onclick="window.print()">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+                    <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+                </svg>
+                Als PDF herunterladen / Drucken
+            </button>
+        </div>
+
+        <div class="header">
+            <span class="badge">Transfer Impact Assessment (TIA)</span>
+            <h1>Datentransfer-Folgenabschätzung (TIA-Bewertung)</h1>
+            <div class="meta">Bewertung von Drittlandübermittlungen und Cloud-Dienstleistern nach DSGVO & Schrems II</div>
+        </div>
+
+        <h2>1. Ziel und Anwendungsbereich der TIA</h2>
+        <p>Diese Datentransfer-Folgenabschätzung dokumentiert die Bewertung der Risiken bezüglich internationaler Datentransfers beim Einsatz von Cloud-Infrastrukturen in der Softwarelösung <strong>„Pensionsmanager“</strong>.</p>
+
+        <h2>2. Analyse der eingesetzten Dienstleister & Standorte</h2>
+        <table class="table-data">
+            <thead>
+                <tr>
+                    <th>Dienstleister</th>
+                    <th>Standort Rechenzentrum</th>
+                    <th>Übertragungsmechanismus</th>
+                    <th>Zusätzliche Schutzmaßnahmen</th>
+                    <th>Restrisiko</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Supabase Inc.</strong><br>(Datenbank & Auth)</td>
+                    <td>Frankfurt am Main, Deutschland (EU)</td>
+                    <td>EU-Standardvertragsklauseln (SCCs) & DPA; EU-US Data Privacy Framework (DPF)</td>
+                    <td>Vollständige Verschlüsselung At-Rest (AES-256) und In-Transit (TLS 1.3), Hosting ausschließlich im EU-Cluster</td>
+                    <td><span class="risk-badge">Gering / Vertretbar</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Vercel Inc.</strong><br>(Edge / Static Delivery)</td>
+                    <td>EU Edge Nodes / Global</td>
+                    <td>EU-Standardvertragsklauseln (SCCs), DPA</td>
+                    <td>Nur statische Builds und anonymisierte Routing-Daten, keine Speicherung von Gästedaten</td>
+                    <td><span class="risk-badge">Sehr gering</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>3. Bewertung der Rechtslage und Überwachungsgesetze (FISA 702 / CLOUD Act)</h2>
+        <p>1. Obwohl Supabase Inc. und Vercel Inc. US-amerikanische Muttergesellschaften besitzen, werden die operativen Kundendatenbanken und Backups <strong>ausschließlich in Rechenzentren innerhalb der Europäischen Union (Frankfurt am Main)</strong> gehostet.</p>
+        <p>2. Die Speicherung der Gästedaten erfolgt primär lokal auf dem Endgerät (Offline-First-Architektur). Cloud-Backups werden über moderne Verschlüsselungsverfahren geschützt.</p>
+
+        <h2>4. Zusätzliche technische & organisatorische Garantien</h2>
+        <ul>
+            <li><strong>Ende-zu-Ende-Transportabsicherung:</strong> Zugriff nur über signierte JWT-Tokens und SSL/TLS 1.3.</li>
+            <li><strong>Mandantenisolation:</strong> Zugriff auf Datenbanktabellen ist strikt durch Row-Level-Security (RLS) an die jeweilige Pensions-ID gebunden.</li>
+            <li><strong>Audit & Monitoring:</strong> Laufende Überwachung verdächtiger Zugriffsversuche.</li>
+        </ul>
+
+        <h2>5. Gesamtfazit & Ergebnis der TIA</h2>
+        <p>Unter Berücksichtigung der implementierten Schutzmaßnahmen (EU-Hosting in Frankfurt, Verschlüsselung, Datensparsamkeit, vertragliche Garantien nach Standardvertragsklauseln) wird das Risiko für die Rechte und Freiheiten der betroffenen Personen als <strong>angemessen niedrig und DSGVO-konform</strong> eingestuft.</p>
+    </div>
+</body>
+</html>

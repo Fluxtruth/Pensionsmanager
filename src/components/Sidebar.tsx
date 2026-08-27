@@ -12,11 +12,8 @@ import {
     Eraser,
     Coffee,
     BarChart3,
-    Settings,
-    Database,
-    Palette,
-    Download,
     User,
+    Download,
     Lightbulb,
     Bug,
     Lock,
@@ -186,44 +183,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             )}
             <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
                 <Link
-                    href="/konfiguration"
-                    className={cn(
-                        "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                        pathname === "/konfiguration"
-                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                            : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                    )}
-                    onClick={() => {
-                        if (window.innerWidth < 1024) {
-                            onClose();
-                        }
-                    }}
-                >
-                    <Palette className="w-4 h-4" />
-                    Konfiguration
-                </Link>
-                <Link
-                    href="/admin/database"
-                    className={cn(
-                        "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                        pathname === "/admin/database"
-                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                            : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                    )}
-                    onClick={() => {
-                        if (window.innerWidth < 1024) {
-                            onClose();
-                        }
-                    }}
-                >
-                    <Database className="w-4 h-4" />
-                    Datenbank
-                </Link>
-                <Link
                     href="/account"
                     className={cn(
                         "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                        pathname === "/account"
+                        pathname === "/account" || pathname.startsWith("/account/")
                             ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                             : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
                     )}

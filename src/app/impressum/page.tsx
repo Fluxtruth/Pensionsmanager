@@ -5,10 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, Info, Mail, Phone, MapPin } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 export default function ImpressumPage() {
-  const router = useRouter();
   
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -80,7 +78,7 @@ export default function ImpressumPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <MapPin className="w-5 h-5 text-blue-600" />
-              Verantwortlich für den <span onDoubleClick={() => router.push('/dokumentation')} className="select-none">Inhalt</span> nach § 55 Abs. 2 RStV
+              Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV
             </CardTitle>
           </CardHeader>
           <CardContent>

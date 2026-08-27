@@ -7,17 +7,23 @@ vi.mock('next/navigation', () => ({
     usePathname: () => '/',
 }));
 
+// Mock SyncService
+vi.mock('@/lib/sync', () => ({
+    SyncService: {
+        getInstance: () => ({
+            getPensionId: vi.fn().mockResolvedValue('test-pension-id')
+        })
+    }
+}));
+
 // Mock the DB
 vi.mock('@/lib/db', () => ({
     initDb: vi.fn().mockResolvedValue({
         select: vi.fn().mockImplementation(async (query: string, params?: any[]) => {
-            if (params && params.includes('branding_title')) {
-                return [{ value: 'Test Pension' }];
-            }
-            if (params && params.includes('branding_logo')) {
-                return [{ value: '/test-logo.png' }];
-            }
-            return [];
+            return [
+                { key: 'branding_title', value: 'Test Pension' },
+                { key: 'branding_logo', value: '/test-logo.png' }
+            ];
         }),
         execute: vi.fn()
     })
@@ -27,10 +33,18 @@ describe('Sidebar Component', () => {
     it('renders correctly with default values', async () => {
         render(<Sidebar isOpen={true} onClose={() => {}} />);
 
-        // Check if basic navigation items are present
+        // Check if primary navigation items are present
         expect(screen.getByText('Dashboard')).toBeInTheDocument();
         expect(screen.getByText('Zimmer')).toBeInTheDocument();
         expect(screen.getByText('Buchungen')).toBeInTheDocument();
+        expect(screen.getByText('Mein Account')).toBeInTheDocument();
+        expect(screen.getByText('Impressum')).toBeInTheDocument();
+
+        // Ensure subpages are NOT rendered in the sidebar
+        expect(screen.queryByText('Konfiguration')).not.toBeInTheDocument();
+        expect(screen.queryByText('Datenbank')).not.toBeInTheDocument();
+        expect(screen.queryByText('System-Dokumentation')).not.toBeInTheDocument();
+        expect(screen.queryByText('Update & Versionshinweise')).not.toBeInTheDocument();
     });
 
     it('loads branding title and logo from db', async () => {

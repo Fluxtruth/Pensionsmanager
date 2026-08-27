@@ -1,11 +1,30 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { User, LogOut, Mail, Calendar, ShieldCheck, KeyRound, Pencil, Trash2, Lock, Shield } from "lucide-react";
+import { 
+    User, 
+    LogOut, 
+    Mail, 
+    Calendar, 
+    ShieldCheck, 
+    KeyRound, 
+    Pencil, 
+    Trash2, 
+    Lock, 
+    Shield, 
+    Palette,
+    Database,
+    FileText,
+    RefreshCw,
+    ChevronRight,
+    Sparkles,
+    Scale
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +32,62 @@ import { cn } from "@/lib/utils";
 import { initDb } from "@/lib/db";
 import { Switch } from "@/components/ui/switch";
 import { SyncService } from "@/lib/sync";
+import { Badge } from "@/components/ui/badge";
+
+interface AccountSubpageItem {
+    title: string;
+    description: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    iconBg: string;
+    iconColor: string;
+    badge?: string;
+}
+
+const ACCOUNT_SUBPAGES: AccountSubpageItem[] = [
+    {
+        title: "Konfiguration",
+        description: "Passen Sie den Namen Ihrer Pension, Logo und Branding-Einstellungen an.",
+        href: "/account/konfiguration",
+        icon: Palette,
+        iconBg: "bg-blue-100 dark:bg-blue-900/30",
+        iconColor: "text-blue-600 dark:text-blue-400"
+    },
+    {
+        title: "Datenbank & Datensicherheit",
+        description: "SQLite-Status, Cloud-Synchronisation, Backups und verbundene Geräte verwalten.",
+        href: "/account/datenbank",
+        icon: Database,
+        iconBg: "bg-emerald-100 dark:bg-emerald-900/30",
+        iconColor: "text-emerald-600 dark:text-emerald-400"
+    },
+    {
+        title: "System-Dokumentation",
+        description: "Technische Systemarchitektur, Server-Setup und interaktives Feature-Backlog.",
+        href: "/account/dokumentation",
+        icon: FileText,
+        iconBg: "bg-purple-100 dark:bg-purple-900/30",
+        iconColor: "text-purple-600 dark:text-purple-400"
+    },
+    {
+        title: "Update & Versionshinweise",
+        description: "Nach neuen Software-Versionen suchen und vollständige Release-Changelogs einsehen.",
+        href: "/account/updates",
+        icon: RefreshCw,
+        iconBg: "bg-amber-100 dark:bg-amber-900/30",
+        iconColor: "text-amber-600 dark:text-amber-400",
+        badge: "Software"
+    },
+    {
+        title: "Rechtsdokumente & Compliance",
+        description: "Verträge, DSGVO-Auftragsverarbeitung (AVV), TOMs, NDA und gesetzliche Richtlinien.",
+        href: "/account/rechtliches",
+        icon: ShieldCheck,
+        iconBg: "bg-indigo-100 dark:bg-indigo-900/30",
+        iconColor: "text-indigo-600 dark:text-indigo-400",
+        badge: "DSGVO"
+    }
+];
 
 export default function AccountPage() {
     const [user, setUser] = useState<any>(null);
@@ -59,10 +134,7 @@ export default function AccountPage() {
     const handleLogout = async () => {
         setLogoutLoading(true);
         try {
-            // 1. Clear local session first (DB cache, pension IDs, etc)
             SyncService.getInstance().clearSession();
-            
-            // 2. Sign out from Supabase
             const { error } = await supabase.auth.signOut();
             if (error) throw error;
             router.push("/login");
@@ -82,7 +154,6 @@ export default function AccountPage() {
         try {
             const db = await initDb();
             if (db) {
-                // Determine pensionId - try to get a fresh one or fallback to what we have
                 let pId = localPensionId;
                 if (!pId) {
                     pId = await SyncService.getInstance().getPensionId();
@@ -118,7 +189,6 @@ export default function AccountPage() {
             const db = await initDb();
             if (db) {
                 const now = new Date().toISOString();
-                // We try deleting for the specific pension_id, but also generally for safety if ID was null before
                 await db.execute("UPDATE settings SET is_deleted = 1 WHERE key IN ('app_pin', 'is_pin_enabled') AND (pension_id = ? OR pension_id IS NULL)", [localPensionId]);
                 setPin(null);
                 setIsPinEnabled(true);
@@ -168,14 +238,21 @@ export default function AccountPage() {
     }
 
     return (
-        <div className="flex-1 space-y-4 p-8 pt-6">
+        <div className="flex-1 space-y-6 p-8 pt-6 max-w-6xl mx-auto">
             <div className="flex items-center justify-between space-y-2">
-                <h2 className="text-3xl font-bold tracking-tight">Mein Account</h2>
+                <div>
+                    <h2 className="text-3xl font-bold tracking-tight">Mein Account</h2>
+                    <p className="text-muted-foreground">
+                        Verwalten Sie Ihr Benutzerprofil, Gerätesicherheit und Systemeinstellungen.
+                    </p>
+                </div>
             </div>
             <Separator />
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                <Card className="col-span-2 shadow-md border-zinc-200 dark:border-zinc-800">
+            {/* Profil & Sicherheit */}
+            <div className="grid gap-6 md:grid-cols-2">
+                {/* Benutzerprofil Card */}
+                <Card className="shadow-md border-zinc-200 dark:border-zinc-800">
                     <CardHeader className="flex flex-row items-center gap-4 space-y-0">
                         <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
                             <User className="w-8 h-8 text-blue-600 dark:text-blue-400" />
@@ -236,9 +313,8 @@ export default function AccountPage() {
                     </CardContent>
                 </Card>
 
-
-
-                <Card className="col-span-2 shadow-md border-zinc-200 dark:border-zinc-800">
+                {/* PIN-Sperre Card */}
+                <Card className="shadow-md border-zinc-200 dark:border-zinc-800">
                     <CardHeader className="flex flex-row items-center gap-4 space-y-0 text-amber-600 dark:text-amber-400">
                         <KeyRound className="w-6 h-6" />
                         <div>
@@ -319,7 +395,7 @@ export default function AccountPage() {
                                         <Button
                                             onClick={handleSavePin}
                                             disabled={newPin.length < 4}
-                                            className="bg-blue-600 hover:bg-blue-700 h-10 px-6"
+                                            className="bg-blue-600 hover:bg-blue-700 h-10 px-6 text-white"
                                         >
                                             Speichern
                                         </Button>
@@ -336,12 +412,62 @@ export default function AccountPage() {
                                     {pinError && <p className="text-xs text-red-500 font-medium">{pinError}</p>}
                                 </div>
                                 <p className="text-xs text-zinc-400 max-w-md">
-                                    Die PIN wird nur lokal auf diesem Gerät gespeichert und ermöglicht es Ihnen, den Zugriff schnell zu sperren/entsperren, ohne sich jedes Mal mit dem E-Mail-Passwort neu anmelden zu müssen.
+                                    Die PIN wird nur lokal auf diesem Gerät gespeichert und ermöglicht es Ihnen, den Zugriff schnell zu sperren/entsperren.
                                 </p>
                             </div>
                         )}
                     </CardContent>
                 </Card>
+            </div>
+
+            {/* Account Hub / Unterseiten Grid */}
+            <div className="space-y-4 pt-4">
+                <div>
+                    <h3 className="text-xl font-bold tracking-tight">Verwaltung & Systembereiche</h3>
+                    <p className="text-xs text-muted-foreground">
+                        Wählen Sie einen Bereich aus, um Einstellungen, Dokumentationen oder Datenbankoptionen zu öffnen.
+                    </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {ACCOUNT_SUBPAGES.map((subpage) => {
+                        const IconComponent = subpage.icon;
+                        return (
+                            <Link 
+                                key={subpage.href} 
+                                href={subpage.href}
+                                className="group block focus:outline-none"
+                            >
+                                <Card className="h-full shadow-sm hover:shadow-md border-zinc-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200 bg-white dark:bg-zinc-900 flex flex-col justify-between">
+                                    <CardHeader className="pb-3">
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                            <div className={cn("p-2.5 rounded-xl transition-colors", subpage.iconBg, subpage.iconColor)}>
+                                                <IconComponent className="w-5 h-5" />
+                                            </div>
+                                            {subpage.badge && (
+                                                <Badge variant="outline" className="text-[10px] font-semibold">
+                                                    {subpage.badge}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <CardTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                            {subpage.title}
+                                        </CardTitle>
+                                        <CardDescription className="text-xs line-clamp-2 mt-1">
+                                            {subpage.description}
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="pt-0 pb-4">
+                                        <div className="flex items-center text-xs font-semibold text-blue-600 dark:text-blue-400 group-hover:translate-x-1 transition-transform gap-1">
+                                            <span>Öffnen</span>
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            </Link>
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );

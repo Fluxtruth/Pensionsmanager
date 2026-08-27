@@ -15,6 +15,7 @@ vi.mock('@/lib/supabase/client', () => ({
     supabase: {
         auth: {
             updateUser: vi.fn(),
+            getSession: vi.fn().mockResolvedValue({ data: { session: { user: {} } } }),
         },
     },
 }));

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auftragsverarbeitungsvertrag (AVV) - Pensionsmanager</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --bg-light: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-main);
+            background-color: #ffffff;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+        .container { max-width: 860px; margin: 0 auto; background: #ffffff; }
+        .no-print-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--bg-light); border: 1px solid var(--border-color);
+            padding: 12px 20px; border-radius: 8px; margin-bottom: 30px;
+        }
+        .btn {
+            background-color: var(--primary); color: white; border: none;
+            padding: 8px 18px; font-size: 14px; font-weight: 600; border-radius: 6px;
+            cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+        }
+        .btn:hover { background-color: var(--primary-dark); }
+        .header { border-bottom: 2px solid var(--primary); padding-bottom: 20px; margin-bottom: 30px; }
+        .badge {
+            display: inline-block; background: #eff6ff; color: var(--primary);
+            font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px;
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+        }
+        h1 { font-size: 26px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
+        .meta { color: var(--text-muted); font-size: 14px; }
+        h2 {
+            font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 28px;
+            margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px;
+        }
+        p, ul, ol { margin-bottom: 14px; font-size: 14.5px; }
+        ul, ol { padding-left: 24px; }
+        li { margin-bottom: 6px; }
+        .highlight-box {
+            background-color: #f1f5f9; border-left: 4px solid var(--primary);
+            padding: 14px 18px; border-radius: 0 6px 6px 0; margin: 20px 0; font-size: 14px;
+        }
+        .table-data {
+            width: 100%; border-collapse: collapse; margin: 16px 0 24px 0; font-size: 13.5px;
+        }
+        .table-data th, .table-data td {
+            border: 1px solid var(--border-color); padding: 10px 12px; text-align: left; vertical-align: top;
+        }
+        .table-data th { background: var(--bg-light); font-weight: 700; }
+        .signature-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 50px; page-break-inside: avoid;
+        }
+        .signature-box {
+            border-top: 1px solid #94a3b8; padding-top: 10px; font-size: 13px; color: var(--text-muted);
+        }
+        @media print {
+            body { padding: 0; font-size: 13px; }
+            .no-print-bar { display: none !important; }
+            @page { margin: 20mm 15mm; }
+            h1 { font-size: 22px; }
+            h2 { font-size: 16px; margin-top: 20px; }
+            p, ul, ol, .table-data { font-size: 12.5px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="no-print-bar">
+            <div>
+                <strong>Rechtsdokumentation Pensionsmanager</strong> &bull; DSGVO Art. 28 Konform
+            </div>
+            <button class="btn" onclick="window.print()">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+                    <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+                </svg>
+                Als PDF herunterladen / Drucken
+            </button>
+        </div>
+
+        <div class="header">
+            <span class="badge">Art. 28 DSGVO</span>
+            <h1>Vertrag zur Auftragsverarbeitung (AVV / DPA)</h1>
+            <div class="meta">Vereinbarung über die Verarbeitung personenbezogener Daten im Auftrag</div>
+        </div>
+
+        <h2>§ 1 Gegenstand und Dauer der Vereinbarung</h2>
+        <p>1. Dieser Vertrag regelt die Rechte und Pflichten der Parteien im Rahmen der Verarbeitung personenbezogener Daten durch den Auftragsverarbeiter für den Verantwortlichen bei der Nutzung der Softwarelösung <strong>„Pensionsmanager“</strong>.</p>
+        <p>2. Die Dauer dieses Vertrages richtet sich nach der Laufzeit des Hauptvertrages (Pilotvereinbarung bzw. Nutzungsvertrag) und endet automatisch mit dessen Beendigung.</p>
+
+        <h2>§ 2 Konkretisierung des Auftragsinhalts (Art und Zweck)</h2>
+        <p>1. <strong>Gegenstand & Zweck:</strong> Bereitstellung einer Softwarelösung für Pensions- und Zimmerverwaltung, Gästeverwaltung, Buchungskalender, Rechnungserstellung sowie verschlüsselte Synchronisation.</p>
+        <p>2. <strong>Kategorien betroffener Personen:</strong></p>
+        <ul>
+            <li>Gäste, Mieter und Übernachtungsgäste des Verantwortlichen</li>
+            <li>Mitarbeiter, Administratoren und Ansprechpartner des Verantwortlichen</li>
+            <li>Lieferanten und externe Dienstleister (sofern eingetragen)</li>
+        </ul>
+        <p>3. <strong>Arten der verarbeiteten personenbezogenen Daten:</strong></p>
+        <ul>
+            <li>Personenstammdaten (Name, Vorname, Anrede, Geburtsdatum, Nationalität)</li>
+            <li>Kontaktdaten (Anschrift, Telefonnummer, E-Mail-Adresse)</li>
+            <li>Buchungs- und Aufenthaltsdaten (Reisezeitraum, Zimmerzuordnung, Sonderwünsche)</li>
+            <li>Abrechnungs- und Zahlungsdaten (Rechnungsbeträge, Zahlungsmethoden, Status)</li>
+            <li>System- und Telemetriedaten (Login-Zeitpunkte, IP-Adressen zur Sicherheitsüberprüfung)</li>
+        </ul>
+
+        <h2>§ 3 Weisungsgebundenheit</h2>
+        <p>1. Der Auftragsverarbeiter verarbeitet personenbezogene Daten ausschließlich auf dokumentierte Weisung des Verantwortlichen, es sei denn, er ist durch das Recht der Union oder der Mitgliedstaaten hierzu verpflichtet.</p>
+        <p>2. Die Weisungen werden anfänglich durch den Hauptvertrag festgelegt und können durch den Verantwortlichen schriftlich oder in elektronischer Form geändert oder ergänzt werden.</p>
+
+        <h2>§ 4 Pflichten des Auftragsverarbeiters & Technische und organisatorische Maßnahmen (TOMs)</h2>
+        <p>1. Der Auftragsverarbeiter gewährleistet, dass er geeignete technische und organisatorische Maßnahmen gemäß <strong>Art. 32 DSGVO</strong> trifft, um ein dem Risiko angemessenes Schutzniveau zu gewährleisten (siehe Anlage <em>„Technische und organisatorische Maßnahmen“</em>).</p>
+        <p>2. Die Daten werden primär lokal auf dem Endgerät des Nutzers gespeichert und bei aktivierter Cloud-Synchronisation über Ende-zu-Ende- bzw. Transport- und Ruhezustands-Verschlüsselung (AES-GCM / TLS 1.3) geschützt.</p>
+        <p>3. Der Auftragsverarbeiter stellt sicher, dass die zur Verarbeitung der personenbezogenen Daten befugten Personen zur Vertraulichkeit verpflichtet sind.</p>
+
+        <h2>§ 5 Unterauftragsverhältnisse (Sub-Auftragsverarbeiter)</h2>
+        <p>1. Der Verantwortliche erteilt hiermit die allgemeine Genehmigung zur Hinzuziehung folgender Unterauftragsverarbeiter für die Bereitstellung der technischen Infrastruktur:</p>
+
+        <table class="table-data">
+            <thead>
+                <tr>
+                    <th>Dienstleister</th>
+                    <th>Zweck / Dienstleistung</th>
+                    <th>Standort / Rechenzentrum</th>
+                    <th>Garantie / Rechtsgrundlage</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Supabase Inc.</strong></td>
+                    <td>Datenbank-Hosting, Authentifizierung & Cloud-Sync</td>
+                    <td>Frankfurt am Main, Deutschland (EU-Region)</td>
+                    <td>EU-Standardvertragsklauseln (SCC) / DPA</td>
+                </tr>
+                <tr>
+                    <td><strong>Vercel Inc. / Host</strong></td>
+                    <td>Web Application Hosting & Frontend Delivery</td>
+                    <td>EU / Global CDN</td>
+                    <td>EU-Standardvertragsklauseln (SCC) / DPA</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>2. Der Auftragsverarbeiter informiert den Verantwortlichen über jede beabsichtigte Änderung bezüglich der Hinzuziehung oder Ersetzung von Unterauftragsverarbeitern.</p>
+
+        <h2>§ 6 Rechte der betroffenen Personen & Unterstützungspflichten</h2>
+        <p>Der Auftragsverarbeiter unterstützt den Verantwortlichen nach Möglichkeit mit geeigneten technischen Maßnahmen bei der Erfüllung der Betroffenenrechte (Auskunft, Berichtigung, Löschung, Einschränkung, Datenübertragbarkeit gem. Art. 15–22 DSGVO).</p>
+
+        <h2>§ 7 Löschung und Rückgabe personenbezogener Daten</h2>
+        <p>Nach Abschluss der Erbringung der Verarbeitungsleistungen löscht der Auftragsverarbeiter nach Wahl des Verantwortlichen alle personenbezogenen Daten oder gibt sie dem Verantwortlichen zurück, sofern keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</p>
+
+        <div class="signature-grid">
+            <div class="signature-box">
+                Ort, Datum / Digital gezeichnet (Auftragsverarbeiter)
+            </div>
+            <div class="signature-box">
+                Ort, Datum / Bestätigt durch Kunden (Verantwortlicher)
+            </div>
+        </div>
+    </div>
+</body>
+</html>
