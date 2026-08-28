@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import Stripe from "stripe";
 
-export function getStripeSecretKey(): string {
+export function getStripeSecretKey(): string | null {
   if (process.env.STRIPE_SECRET_KEY) {
     return process.env.STRIPE_SECRET_KEY;
   }
@@ -22,10 +22,15 @@ export function getStripeSecretKey(): string {
     console.warn("Could not read .env.local directly:", e);
   }
 
-  throw new Error("STRIPE_SECRET_KEY is not defined. Please set it in .env.local");
+  return null;
+}
+
+export function isStripeConfigured(): boolean {
+  return !!getStripeSecretKey();
 }
 
 export function getStripeInstance(): Stripe {
-  const key = getStripeSecretKey();
+  // Use placeholder during build time / CI environments where STRIPE_SECRET_KEY is absent
+  const key = getStripeSecretKey() || "sk_test_placeholder_for_build_purposes";
   return new Stripe(key);
 }

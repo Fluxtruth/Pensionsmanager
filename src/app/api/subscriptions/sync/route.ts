@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
-import { getStripeInstance } from "@/lib/stripe";
+import { getStripeInstance, isStripeConfigured } from "@/lib/stripe";
 
 export async function POST(req: Request) {
   try {
+    if (!isStripeConfigured()) {
+      return NextResponse.json({
+        hasActiveSubscription: false,
+        status: "unconfigured",
+        customerType: "none",
+        subscriptionId: null,
+        cancelAtPeriodEnd: false,
+      });
+    }
+
     const stripe = getStripeInstance();
 
     // 1. Check for active subscriptions in Stripe

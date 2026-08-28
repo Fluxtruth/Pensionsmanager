@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getStripeInstance } from "@/lib/stripe";
+import { getStripeInstance, isStripeConfigured } from "@/lib/stripe";
 
 export async function POST(req: Request) {
   try {
@@ -14,6 +14,10 @@ export async function POST(req: Request) {
 
     if (!sessionId) {
       return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
+    }
+
+    if (!isStripeConfigured()) {
+      return NextResponse.json({ error: "Stripe nicht konfiguriert" }, { status: 503 });
     }
 
     const stripe = getStripeInstance();

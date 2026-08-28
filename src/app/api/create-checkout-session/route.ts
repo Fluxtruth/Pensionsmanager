@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+import { getStripeInstance, isStripeConfigured } from "@/lib/stripe";
 
 const PLAN_DETAILS: Record<string, { name: string; amount: number; description: string }> = {
   S: {
@@ -23,6 +22,14 @@ const PLAN_DETAILS: Record<string, { name: string; amount: number; description: 
 
 export async function POST(req: Request) {
   try {
+    const stripe = getStripeInstance();
+    if (!isStripeConfigured()) {
+      return NextResponse.json(
+        { error: "Stripe ist noch nicht vollständig eingerichtet (STRIPE_SECRET_KEY fehlt)." },
+        { status: 503 }
+      );
+    }
+
     let priceId: string | undefined;
     let planId: string = "S";
 

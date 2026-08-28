@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+import { getStripeInstance, isStripeConfigured } from "@/lib/stripe";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const { subscriptionId, immediate, reactivate } = body;
 
+    const stripe = getStripeInstance();
+    const hasStripeConfig = isStripeConfigured();
+
     const isTestMode =
+      !hasStripeConfig ||
       process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_") ||
       process.env.NODE_ENV !== "production";
 
     // 1. Reactivate previously canceled subscription before period end
     if (reactivate) {
       try {
-        if (subscriptionId && !subscriptionId.startsWith("sub_test_")) {
+        if (hasStripeConfig && subscriptionId && !subscriptionId.startsWith("sub_test_")) {
           const result = await stripe.subscriptions.update(subscriptionId, {
             cancel_at_period_end: false,
           });
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
 
     // 3. Try canceling in Stripe
     try {
-      if (subscriptionId && !subscriptionId.startsWith("sub_test_")) {
+      if (hasStripeConfig && subscriptionId && !subscriptionId.startsWith("sub_test_")) {
         let result;
         if (immediate) {
           result = await stripe.subscriptions.cancel(subscriptionId);
